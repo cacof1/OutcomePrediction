@@ -30,16 +30,18 @@ class DataGenerator(torch.utils.data.Dataset):
         self.data_file        = data_file
         self.label_file       = label_file
         self.inference        = inference
+        
     def __len__(self):
         return int(self.data_file.shape[0]) 
 
     def __getitem__(self, id):
+        
         # load image
         image = self.data_file[id,:]
         label = torch.tensor(self.label_file[id],dtype=torch.float)
+
         ## Transform - Data Augmentation
         if self.transform: image  = self.transform(image)
-        if self.target_transform: label  = self.target_transform(label)
 
         if(self.inference): return image
         else: return image,label
@@ -60,15 +62,4 @@ class DataModule(LightningDataModule):
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,num_workers=10)
     def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size,num_workers=10)
     def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size)
-
-def LoadSortDataLabel(LabelName, FileName, data):
-    outcome          = pd.read_csv(FileName)
-    ids_common       = set.intersection(set(data['patid']), set(outcome['patid']))    
-    outcome          = outcome[outcome['patid'].isin(ids_common)]
-    label            = outcome[LabelName]
-    
-    if(np.max(label)== 2.0): label[label ==2.0] = 0.0 ## Local Failure and Distant Failure
-    if(np.any(label > 3)):   label = (label>24).astype('int16')  ## Months/Survival at 2 years as a boolean
-    print("Nb of patients", data['data'].shape)
-    return data['data'], np.array(label)
 
