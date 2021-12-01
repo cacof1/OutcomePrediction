@@ -1,4 +1,3 @@
-from Dataloader.Dataloader import LoadFileParameter, SaveFileParameter, DataGenerator, DataModule, WSIQuery
 import pytorch_lightning as pl
 import sys
 import torch
@@ -8,7 +7,7 @@ from torchmetrics.functional import accuracy
 from torchvision import datasets, models, transforms
 
 class Classifier2D(pl.LightningModule):
-    def __init__(self, num_classes=2, backbone=models.densenet121())
+    def __init__(self, num_classes=2, backbone=models.densenet121()):
         super().__init__()
         self.num_classes = num_classes
         self.backbone = backbone
@@ -45,8 +44,8 @@ class Classifier2D(pl.LightningModule):
         return self(image)
 
     def configure_optimizers(self):
-	optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-	scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
-	return [optimizer], [scheduler]
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+        return [optimizer], [scheduler]
 
 

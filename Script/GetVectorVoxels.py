@@ -95,7 +95,7 @@ for dirName, subdirList, fileList in os.walk(basepath):
         continue        
 database = np.swapaxes(database,1,-1) ## Put channels in first
 print(database.shape)
-np.savez("database.npz",data = database,patid =id_list)
+np.savez("database.npz",data = database, patid =id_list)
 
 
 

@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from pytorch_lightning import LightningDataModule, LightningModule
 import numpy as np
 import torch
+from torch import nn
 from collections import Counter
 import torchvision
 from torchvision import datasets, models, transforms
@@ -17,19 +18,18 @@ from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 
 ## Models
-from Model.Linear2D import Linear2D
-from Model.Classifier2D import Classifier2D
-from Model.Classifier3D import Classifier3D
+from Models.Linear2D import Linear2D
+from Models.Classifier2D import Classifier2D
+from Models.Classifier3D import Classifier3D
 
 class MixModel(LightningModule):
-    def __init__(self, module_list:list[nn.Module]):
+    def __init__(self, module_list):
         super().__init__()
         self.model = module_list
         self.classifier = nn.Sequential(
             nn.LazyLinear(128),
-            nn.LazyLinear(2)
+            nn.LazyLinear(1)
         )
-        #summary(self.model.to('cuda'), (2,160,160,40))
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
@@ -37,17 +37,19 @@ class MixModel(LightningModule):
         features =  torch.cat([model(data).detach() for data, model in zip(x, self.model)], dim=1) ## Detach for no grad
         return self.classifier(features)
 
-    def training_step(self, batch,batch_idx):
-        image,label = batch
-        prediction  = self.forward(image)
-        loss = self.loss_fcn(prediction.squeeze(), label)
+    def training_step(self, batch,batch_idx):    
+        prediction  = self.forward(batch[:-1])
+        print(prediction.squeeze(), batch[-1])
+        print(prediction.squeeze(dim=1).size(), batch[-1].size())
+        loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         self.log("loss", loss)
         return loss
 
     def validation_step(self, batch,batch_idx):
-        image,label = batch
-        prediction  = self.forward(image)
-        loss = self.loss_fcn(prediction.squeeze(), label)
+        prediction  = self.forward(batch[:-1])
+        print(prediction, batch[-1])
+        print(prediction.squeeze(dim=1).size(), batch[-1].size())
+        loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         return loss
         
     def configure_optimizers(self):

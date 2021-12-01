@@ -8,7 +8,6 @@ from sklearn.feature_selection import GenericUnivariateSelect, SelectFromModel, 
 from sklearn.linear_model import LogisticRegression
 from random import randint
 import numpy as np
-from imblearn.over_sampling import SMOTE
 
 def CollectData(RANDOM_SEED, settings):
     basepath         = "/lustre/projects/ParticleCT/OutcomePrediction/Study/"+settings["Study"]+"/"    
@@ -54,12 +53,9 @@ def CollectData(RANDOM_SEED, settings):
     
     return y_init
 
-def LoadSortDataLabel(LabelName, FileName, data):
+def LoadLabel(LabelName, FileName,):
     outcome          = pd.read_csv(FileName)
-    ids_common       = set.intersection(set(data['patid']), set(outcome['patid']))
-    outcome          = outcome[outcome['patid'].isin(ids_common)]
     label            = outcome[LabelName]
     if(np.max(label)== 2.0): label[label ==2.0] = 0.0 ## Local Failure and Distant Failure
     if(np.any(label > 3)):   label = (label>24).astype('int16')  ## Months/Survival at 2 years as a boolean
-    print("Nb of patients", data['data'].shape)
-    return data['data'], np.array(label)
+    return outcome['patid'], label
