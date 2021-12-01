@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer,seed_everything
-import segmentation_models_pytorch as smp
+#import segmentation_models_pytorch as smp
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import pandas as pd
@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 import torchvision.models as models
 import numpy as np
 import torch
-import openslide
+#import openslide
 import sys, glob
 import torch.nn.functional as F
 from sklearn.model_selection import train_test_split

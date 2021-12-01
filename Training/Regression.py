@@ -41,7 +41,7 @@ callbacks = [
 ]
 
 MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
-MasterSheet    = PatientQuery(MasterSheet,
+MasterSheet    = PatientQuery(MasterSheet)
 #analysis_inclusion=1,
 #analysis_inclusion_rt=1) ## Query specific values in tags
 label          = sys.argv[2]
@@ -57,16 +57,16 @@ MasterSheet = MasterSheet[columns]
 print(MasterSheet)
 MasterSheet    = MasterSheet.dropna(subset=["CTPath"])
 print(MasterSheet)
-trainer   = Trainer(gpus=1, max_epochs=20)
+trainer   = Trainer(gpus=1, max_epochs=20) # Paolo has 2 GPUs, in this case the GPU 1 is used, GPU 0 is not used
 
 ## This is where you change how the data is organized
 module_list  = nn.ModuleList([
-    Classifier2D(), ## Anatomy  [1,512,512,190] --> [2500, 1] ## Feature array
-    Classifier2D(), ## Dose     [1,512,512*190] --> [2500, 1] ## Feature array
-    Linear2D()]     ## Clinical [2500,1] -->       [250,1]   ## Feature array
-#])
+    Classifier3D(), ## Anatomy  [1,512,512,190] --> [2500, 1] ## Feature array
+    Classifier3D() ## Dose     [1,512,512*190] --> [2500, 1] ## Feature array
+    #Linear2D()]     ## Clinical [2500,1] -->       [250,1]   ## Feature array
+])
 # Cat --> [5250,1] (2500 + 2500 + 250) --> FC Linear -> [1] (Regression/Binary classifcation)
-                              
+
 model        = MixModel(module_list)
 dataloader   = DataModule(MasterSheet, label, train_transform = train_transform, val_transform = val_transform, batch_size=1, inference=False)
 trainer.fit(model, dataloader)

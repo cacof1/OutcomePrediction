@@ -1,4 +1,4 @@
-import segmentation_models_pytorch as smp
+#import segmentation_models_pytorch as smp
 import matplotlib.pyplot as plt
 from pytorch_lightning import LightningDataModule, LightningModule
 import numpy as np
@@ -30,7 +30,7 @@ class Classifier3D(LightningModule):
             torch.nn.LazyLinear(n_classes)            
         )
         print("Classifier 3D - Exemple, Input (1,160,160,40)")
-        summary(self.model.to('cuda'), (1,160,160,40))
+        #summary(self.model.to('cuda'), (1,160,160,40))
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
