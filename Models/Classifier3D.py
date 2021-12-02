@@ -28,7 +28,6 @@ class Classifier3D(LightningModule):
             #torch.nn.LazyLinear(128),
             #torch.nn.LazyLinear(n_classes)            
         )
-        #summary(self.model.to('cuda'), (1,160,160,40))
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 

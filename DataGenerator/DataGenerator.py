@@ -5,7 +5,6 @@ from torchvision import transforms
 import pandas as pd
 import os
 from pathlib import Path
-#from sklearn.utils import shuffle
 from torch.utils.data import Dataset
 import torchvision.models as models
 import numpy as np

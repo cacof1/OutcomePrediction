@@ -41,7 +41,6 @@ callbacks = [
 ]
 
 MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
-MasterSheet    = PatientQuery(MasterSheet)#,
 #analysis_inclusion=1,
 #analysis_inclusion_rt=1) ## Query specific values in tags
 label          = sys.argv[2]
@@ -63,7 +62,6 @@ module_list  = nn.ModuleList([
     Classifier3D(), ## Dose     [1,512,512*190] --> [2500, 1] ## Feature array
     #Linear()]     ## Clinical [2500,1] -->       [250,1]   ## Feature array
 ])
-                              
 model        = MixModel(module_list)
 dataloader   = DataModule(MasterSheet, label, train_transform = train_transform, val_transform = val_transform, batch_size=4, inference=False)
 trainer.fit(model, dataloader)
