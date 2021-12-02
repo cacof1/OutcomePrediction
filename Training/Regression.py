@@ -18,17 +18,17 @@ from DataGenerator.DataProcessing import LoadLabel
 ## Module - Models
 from Models.Classifier2D import Classifier2D
 from Models.Classifier3D import Classifier3D
-from Models.Linear2D import Linear2D
+from Models.Linear import Linear
 from Models.MixModel import MixModel
 
 ## Main
 train_transform = tio.Compose([
-    tio.RandomAffine(),
+    #tio.RandomAffine(),
     #tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
 val_transform = tio.Compose([
-    tio.RandomAffine(),
+    #tio.RandomAffine(),
     #tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 callbacks = [
@@ -41,7 +41,7 @@ callbacks = [
 ]
 
 MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
-MasterSheet    = PatientQuery(MasterSheet,
+MasterSheet    = PatientQuery(MasterSheet)#,
 #analysis_inclusion=1,
 #analysis_inclusion_rt=1) ## Query specific values in tags
 label          = sys.argv[2]
@@ -54,20 +54,17 @@ Label       = [label]
 
 columns     = clinical_columns+RefColumns+Label
 MasterSheet = MasterSheet[columns]
-print(MasterSheet)
-MasterSheet    = MasterSheet.dropna(subset=["CTPath"])
-print(MasterSheet)
-trainer   = Trainer(gpus=1, max_epochs=20)
+MasterSheet = MasterSheet.dropna(subset=["CTPath"])
+trainer     = Trainer(gpus=1, max_epochs=20)
 
 ## This is where you change how the data is organized
 module_list  = nn.ModuleList([
-    Classifier2D(), ## Anatomy  [1,512,512,190] --> [2500, 1] ## Feature array
-    Classifier2D(), ## Dose     [1,512,512*190] --> [2500, 1] ## Feature array
-    Linear2D()]     ## Clinical [2500,1] -->       [250,1]   ## Feature array
-#])
-# Cat --> [5250,1] (2500 + 2500 + 250) --> FC Linear -> [1] (Regression/Binary classifcation)
+    Classifier3D(), ## Anatomy  [1,512,512,190] --> [2500, 1] ## Feature array
+    Classifier3D(), ## Dose     [1,512,512*190] --> [2500, 1] ## Feature array
+    #Linear()]     ## Clinical [2500,1] -->       [250,1]   ## Feature array
+])
                               
 model        = MixModel(module_list)
-dataloader   = DataModule(MasterSheet, label, train_transform = train_transform, val_transform = val_transform, batch_size=1, inference=False)
+dataloader   = DataModule(MasterSheet, label, train_transform = train_transform, val_transform = val_transform, batch_size=4, inference=False)
 trainer.fit(model, dataloader)
 

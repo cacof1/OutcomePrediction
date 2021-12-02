@@ -1,4 +1,3 @@
-import segmentation_models_pytorch as smp
 import matplotlib.pyplot as plt
 from pytorch_lightning import LightningDataModule, LightningModule
 import numpy as np

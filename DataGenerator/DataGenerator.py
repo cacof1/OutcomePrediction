@@ -1,17 +1,16 @@
 import matplotlib.pyplot as plt
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer,seed_everything
-import segmentation_models_pytorch as smp
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import pandas as pd
 import os
 from pathlib import Path
-from sklearn.utils import shuffle
+#from sklearn.utils import shuffle
 from torch.utils.data import Dataset
 import torchvision.models as models
 import numpy as np
 import torch
-import openslide
+#import openslide
 import sys, glob
 import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
@@ -32,8 +31,8 @@ class DataGenerator(torch.utils.data.Dataset):
         
         # Load image
         label    = self.mastersheet[self.label].iloc[id]
-        anatomy  = np.expand_dims(LoadImg(self.mastersheet["CTPath"].iloc[id], [0,0,0], [40,40,10]),0)
-        dose     = np.expand_dims(LoadImg(self.mastersheet["DosePath"].iloc[id],[0,0,0],[40,40,10]),0)
+        anatomy  = np.expand_dims(LoadImg(self.mastersheet["CTPath"].iloc[id], [100,100,100], [40,40,10]),0)
+        dose     = np.expand_dims(LoadImg(self.mastersheet["DosePath"].iloc[id],[100,100,100],[40,40,10]),0)
         #clinical = LoadClinical(self.mastersheet.iloc[id])
         
         ## Transform - Data Augmentation
@@ -65,12 +64,11 @@ def PatientQuery(mastersheet, **kwargs):
 def LoadImg(path, cm, delta): ## Select a region of size 2*delta^3 around the center of mass of the tumour
     img = sitk.ReadImage(path)
     img = sitk.GetArrayFromImage(img).astype(np.float32)
-    #img = img[cm[2]-delta[2]:cm[2]+delta[2], cm[1]-delta[1]:cm[1]+delta[1], cm[0]-delta[0]:cm[0]+delta[0]]
+    img = img[cm[2]-delta[2]:cm[2]+delta[2], cm[1]-delta[1]:cm[1]+delta[1], cm[0]-delta[0]:cm[0]+delta[0]]
     return img
 
 
 def LoadClinical(df): ## Not finished
-    print(df)
     all_cols  = ['arm','age','gender','race','ethnicity','zubrod',
                  'histology','nonsquam_squam','ajcc_stage_grp','rt_technique',
                  'egfr_hscore_200','smoke_hx','rx_terminated_ae','rt_dose',

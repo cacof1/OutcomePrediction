@@ -1,5 +1,4 @@
 import pytorch_lightning as pl
-import segmentation_models_pytorch as smp
 import matplotlib.pyplot as plt
 from pytorch_lightning import LightningDataModule, LightningModule
 import numpy as np
@@ -18,7 +17,7 @@ from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 
 ## Model
-class Linear2D(pl.LightningModule):
+class Linear(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.model = nn.Sequential(

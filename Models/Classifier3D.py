@@ -1,4 +1,3 @@
-import segmentation_models_pytorch as smp
 import matplotlib.pyplot as plt
 from pytorch_lightning import LightningDataModule, LightningModule
 import numpy as np
@@ -24,13 +23,12 @@ class Classifier3D(LightningModule):
         self.unet_model = UNet3D(in_channels=1, n_classes = n_classes, depth=depth,wf=wf)
         self.model      = torch.nn.Sequential(
             self.unet_model.encoder,
-            #torch.nn.MaxPool3d((10,10,1)),
             torch.nn.Flatten(),
-            torch.nn.LazyLinear(128),
-            torch.nn.LazyLinear(n_classes)            
+            #torch.nn.MaxPool3d((10,10,1)),
+            #torch.nn.LazyLinear(128),
+            #torch.nn.LazyLinear(n_classes)            
         )
-        print("Classifier 3D - Exemple, Input (1,160,160,40)")
-        summary(self.model.to('cuda'), (1,160,160,40))
+        #summary(self.model.to('cuda'), (1,160,160,40))
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
