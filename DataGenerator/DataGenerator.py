@@ -14,6 +14,7 @@ import sys, glob
 import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 import SimpleITK as sitk
+import scipy.ndimage as ndi
 
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, mastersheet, label, inference=False, transform=None, target_transform = None):
@@ -28,10 +29,12 @@ class DataGenerator(torch.utils.data.Dataset):
 
     def __getitem__(self, id):
         
+        roi_size = [10, 40, 40]
+        
         # Load image
         label    = self.mastersheet[self.label].iloc[id]
-        anatomy  = np.expand_dims(LoadImg(self.mastersheet["CTPath"].iloc[id], [100,100,100], [40,40,10]),0)
-        dose     = np.expand_dims(LoadImg(self.mastersheet["DosePath"].iloc[id],[100,100,100],[40,40,10]),0)
+        anatomy  = np.expand_dims(LoadImg(self.mastersheet["CTPath"].iloc[id], [100,100,100], roi_size),0)
+        dose     = np.expand_dims(LoadImg(self.mastersheet["DosePath"].iloc[id],[100,100,100], roi_size),0)
         #clinical = LoadClinical(self.mastersheet.iloc[id])
         
         ## Transform - Data Augmentation
@@ -63,7 +66,10 @@ def PatientQuery(mastersheet, **kwargs):
 def LoadImg(path, cm, delta): ## Select a region of size 2*delta^3 around the center of mass of the tumour
     img = sitk.ReadImage(path)
     img = sitk.GetArrayFromImage(img).astype(np.float32)
-    img = img[cm[2]-delta[2]:cm[2]+delta[2], cm[1]-delta[1]:cm[1]+delta[1], cm[0]-delta[0]:cm[0]+delta[0]]
+    # DEBUG: center of mass computed very roughly
+    cm = [int(i) for i in ndi.center_of_mass(img)]
+    img = img[cm[0]-delta[0]:cm[0]+delta[0], cm[1]-delta[1]:cm[1]+delta[1], cm[2]-delta[2]:cm[2]+delta[2]]
+    #img = img[cm[2]-delta[2]:cm[2]+delta[2], cm[1]-delta[1]:cm[1]+delta[1], cm[0]-delta[0]:cm[0]+delta[0]]
     return img
 
 
