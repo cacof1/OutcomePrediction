@@ -25,26 +25,33 @@ class DataGenerator(torch.utils.data.Dataset):
         self.inference        = inference
         self.mastersheet      = mastersheet
     def __len__(self):
-        return int(self.mastersheet.shape[0]) 
+        return int(self.mastersheet.shape[0])
 
     def __getitem__(self, id):
-        
-        roi_size = [10, 40, 40]
-        
+
+        roiSize = [10, 40, 40]
+
         # Load image
         label    = self.mastersheet[self.label].iloc[id]
-        anatomy  = np.expand_dims(LoadImg(self.mastersheet["CTPath"].iloc[id], [100,100,100], roi_size),0)
-        dose     = np.expand_dims(LoadImg(self.mastersheet["DosePath"].iloc[id],[100,100,100], roi_size),0)
+
+        dose     = LoadImg(self.mastersheet["DosePath"].iloc[id])
+        maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
+        checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
+        dose     = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
+
+        anatomy  = LoadImg(self.mastersheet["CTPath"].iloc[id])
+        anatomy  = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
+
         #clinical = LoadClinical(self.mastersheet.iloc[id])
-        
+
         ## Transform - Data Augmentation
         if self.transform:
             anatomy  = self.transform(anatomy)
             dose     = self.transform(dose)
-            
+
         if(self.inference): return anatomy, dose#, clinical
         else: return anatomy, dose, label#, clinical ,label
-        
+
 ### DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, mastersheet, label, train_transform = None, val_transform = None, batch_size = 8, **kwargs):
@@ -59,19 +66,33 @@ class DataModule(LightningDataModule):
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=10)
     def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size)
 
-def PatientQuery(mastersheet, **kwargs):  
+def PatientQuery(mastersheet, **kwargs):
     for key,item in kwargs.items(): mastersheet = mastersheet[mastersheet[key]==item]
     return mastersheet
 
-def LoadImg(path, cm, delta): ## Select a region of size 2*delta^3 around the center of mass of the tumour
+def LoadImg(path):
     img = sitk.ReadImage(path)
-    img = sitk.GetArrayFromImage(img).astype(np.float32)
-    # DEBUG: center of mass computed very roughly
-    cm = [int(i) for i in ndi.center_of_mass(img)]
-    img = img[cm[0]-delta[0]:cm[0]+delta[0], cm[1]-delta[1]:cm[1]+delta[1], cm[2]-delta[2]:cm[2]+delta[2]]
-    #img = img[cm[2]-delta[2]:cm[2]+delta[2], cm[1]-delta[1]:cm[1]+delta[1], cm[0]-delta[0]:cm[0]+delta[0]]
-    return img
+    return sitk.GetArrayFromImage(img).astype(np.float32)
 
+def CropImg(img, center, delta): ## Crop image 
+    return img[center[0]-delta[0]:center[0]+delta[0], center[1]-delta[1]:center[1]+delta[1], center[2]-delta[2]:center[2]+delta[2]]
+
+def findMaxDoseCoord(img):
+    result = np.where(img == np.amax(img))
+    listOfCordinates = list(zip(result[0], result[1], result[2]))
+
+    return listOfCordinates[int(len(listOfCordinates)/2)]
+
+def checkCrop(center, delta, imgShape, fn):
+    if (center[0]-delta[0] < 0 or
+        center[0]+delta[0] > imgShape[0] or
+        center[1]-delta[1] < 0 or
+        center[1]+delta[1] > imgShape[1] or
+        center[2]-delta[2] < 0 or
+        center[2]+delta[2] > imgShape[2]):
+
+        print("ERROR! Invalid crop for file %s" % (fn))
+        exit()
 
 def LoadClinical(df): ## Not finished
     all_cols  = ['arm','age','gender','race','ethnicity','zubrod',
@@ -84,12 +105,12 @@ def LoadClinical(df): ## Not finished
                  'rt_compliance_ptv90','received_conc_chemo','received_conc_cetuximab',
                  'received_cons_chemo','received_cons_cetuximab',
     ]
-        
+
     numerical_cols = ['age','volume_ptv','dmax_ptv','v100_ptv',
                       'v95_ptv','v5_lung','v20_lung','dmean_lung','v5_heart',
                       'v30_heart','v20_esophagus','v60_esophagus','Dmin_PTV_CTV_MARGIN',
                       'Dmax_PTV_CTV_MARGIN','Dmean_PTV_CTV_MARGIN']
-        
+
     category_cols = list(set(all_cols).difference(set(numerical_cols)))
     for categorical in category_cols:
         df.loc[:, df.columns.str.startswith(categorical)]

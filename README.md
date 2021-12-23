@@ -23,3 +23,6 @@ To then set up your file as a module, please use
 ```shell script
 conda-develop /path/to/OutcomePrediction/
 ```
+
+Data comments:
+- Patient 0617-444138 is very strange (extrememly short CT). The max dose crop is not working, it is better removing it from the mastersheet file.
