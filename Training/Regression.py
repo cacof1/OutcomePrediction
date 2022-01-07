@@ -7,7 +7,7 @@ from torchvision import datasets, models, transforms
 from torchvision import transforms
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer,seed_everything
-from torchsummary import summary
+from torchinfo import summary
 import sys
 import torchio as tio
 import torchmetrics
@@ -57,12 +57,13 @@ MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 trainer     = Trainer(gpus=1, max_epochs=20)
 
 ## This is where you change how the data is organized
-module_list  = nn.ModuleList([
-    Classifier3D(), ## Anatomy  [1,512,512,190] --> [2500, 1] ## Feature array
-    Classifier3D(), ## Dose     [1,512,512*190] --> [2500, 1] ## Feature array
-    #Linear()]     ## Clinical [2500,1] -->       [250,1]   ## Feature array
-])
-model        = MixModel(module_list)
-dataloader   = DataModule(MasterSheet, label, train_transform = train_transform, val_transform = val_transform, batch_size=4, inference=False)
+module_dict  = nn.ModuleDict({
+    "Anatomy": Classifier3D(), 
+    "Dose": Classifier3D(),
+    #"Clinical":Linear()
+})
+
+model        = MixModel(module_dict)
+dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=4, inference=False)
 trainer.fit(model, dataloader)
 

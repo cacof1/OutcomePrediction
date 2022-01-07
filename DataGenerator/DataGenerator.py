@@ -17,8 +17,9 @@ import SimpleITK as sitk
 import scipy.ndimage as ndi
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, mastersheet, label, inference=False, transform=None, target_transform = None):
+    def __init__(self, mastersheet, label, keys, inference=False, transform=None, target_transform = None):
         super().__init__()
+        self.keys             = keys
         self.transform        = transform
         self.target_transform = target_transform
         self.label            = label
@@ -29,38 +30,41 @@ class DataGenerator(torch.utils.data.Dataset):
 
     def __getitem__(self, id):
 
+        datadict = {}
         roiSize = [10, 40, 40]
 
-        # Load image
         label    = self.mastersheet[self.label].iloc[id]
 
-        dose     = LoadImg(self.mastersheet["DosePath"].iloc[id])
-        maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
-        checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
-        dose     = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
+        if "Dose" in self.keys:
+            dose     = LoadImg(self.mastersheet["DosePath"].iloc[id])
+            maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
+            checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
+            datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
+            if self.transform:            
+                dose  = self.transform(dose)
+            
+        if "Anatomy" in self.keys:
+            anatomy  = LoadImg(self.mastersheet["CTPath"].iloc[id])
+            datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
+            if self.transform:            
+                anatomy  = self.transform(anatomy)
+        if "Clinical" in self.keys:
+            datadict["Clinical"] = LoadClinical(self.mastersheet.iloc[id])
 
-        anatomy  = LoadImg(self.mastersheet["CTPath"].iloc[id])
-        anatomy  = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
-
-        #clinical = LoadClinical(self.mastersheet.iloc[id])
-
-        ## Transform - Data Augmentation
-        if self.transform:
-            anatomy  = self.transform(anatomy)
-            dose     = self.transform(dose)
-
-        if(self.inference): return anatomy, dose#, clinical
-        else: return anatomy, dose, label#, clinical ,label
+        if(self.inference): return datadict
+        else: return datadict, label.astype(np.float32)
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, mastersheet, label, train_transform = None, val_transform = None, batch_size = 8, **kwargs):
+    def __init__(self, mastersheet, label, keys, train_transform = None, val_transform = None, batch_size = 8, **kwargs):
         super().__init__()
         self.batch_size      = batch_size
-        ids_split            = np.round(np.array([0.7, 0.8, 1.0])*len(mastersheet)).astype(np.int32)
-        self.train_data      = DataGenerator(mastersheet[:ids_split[0]],              label, transform = train_transform, **kwargs)
-        self.val_data        = DataGenerator(mastersheet[ids_split[0]:ids_split[1]],  label, transform = val_transform, **kwargs)
-        self.test_data       = DataGenerator(mastersheet[ids_split[1]:ids_split[-1]], label, transform = val_transform, **kwargs)
+        train, val_test       = train_test_split(mastersheet, train_size=0.7)
+        val, test             = train_test_split(val_test,test_size =0.66)
+
+        self.train_data      = DataGenerator(train, label, keys, transform = train_transform, **kwargs)
+        self.val_data        = DataGenerator(val,   label, keys, transform = val_transform, **kwargs)
+        self.test_data       = DataGenerator(test,  label, keys, transform = val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,num_workers=10)
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=10)

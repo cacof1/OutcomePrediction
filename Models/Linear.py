@@ -9,7 +9,6 @@ from torchvision import datasets, models, transforms
 from torchvision import transforms
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer,seed_everything
-from torchsummary import summary
 import sys
 import torchio as tio
 import sklearn
