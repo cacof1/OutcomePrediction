@@ -32,7 +32,11 @@ class MixModel(LightningModule):
         self.loss_fcn = torch.nn.MSELoss() # loss_fcn
 
     def forward(self, datadict):
-        features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1) 
+        features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
+        #for key in self.module_dict.keys():
+            #data = self.module_dict[key](datadict[key])
+            #print(key,data)
+            
         #print("features",features, features.shape)
         return self.classifier(features)
 
@@ -52,7 +56,7 @@ class MixModel(LightningModule):
         return loss
         
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
         return [optimizer], [scheduler]
 

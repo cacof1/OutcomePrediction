@@ -64,7 +64,7 @@ class UNet3D(nn.Module):
 
     ## Write the Modules
     def forward(self, x):
-        x         = self.encoder(x)
+        x         = self.encoder(x)        
         x         = self.decoder(x)
         return x
     

@@ -31,6 +31,8 @@ class Classifier3D(LightningModule):
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, x):
+        print("pre-unet3d",x)
+        print("post-unet3d",self.model(x))
         return self.model(x)
 
     def training_step(self, batch,batch_idx):
