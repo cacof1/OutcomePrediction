@@ -43,8 +43,7 @@ class MixModel(LightningModule):
     def training_step(self, batch,batch_idx):
         datadict, label = batch
         prediction  = self.forward(datadict)
-        print(prediction)
-        print(prediction, label)
+        #print(prediction, label)
         loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         self.log("loss", loss)
         return loss

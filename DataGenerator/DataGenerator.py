@@ -41,13 +41,16 @@ class DataGenerator(torch.utils.data.Dataset):
             checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
             if self.transform:            
-                dose  = self.transform(dose)
-            
+                datadict["Dose"]  = self.transform(datadict["Dose"])
+
+                
         if "Anatomy" in self.keys:
             anatomy  = LoadImg(self.mastersheet["CTPath"].iloc[id])
             datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
             if self.transform:            
-                anatomy  = self.transform(anatomy)
+                datadict["Anatomy"]  = torch.from_numpy(self.transform(datadict["Anatomy"]))
+
+        print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
             datadict["Clinical"] = LoadClinical(self.mastersheet.iloc[id])
 

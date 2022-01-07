@@ -23,8 +23,9 @@ from Models.MixModel import MixModel
 
 ## Main
 train_transform = tio.Compose([
+    tio.transforms.ZNormalization(),
     #tio.RandomAffine(),
-    #tio.RescaleIntensity(out_min_max=(0, 1))
+    tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
 val_transform = tio.Compose([
