@@ -34,6 +34,7 @@ class UnifiedClassifier3D(LightningModule):
         anatomy_features = self.anatomy_unet_model(anatomy)
         dose_features = self.dose_unet_model(dose)
         total_features = torch.cat([anatomy_features, dose_features], dim=1)
+        print(total_features)
         return self.classifier(total_features)
 
     def training_step(self, batch, batch_idx):
@@ -49,7 +50,9 @@ class UnifiedClassifier3D(LightningModule):
         return {"loss":loss,"prediction":prediction.squeeze(),"label":label}
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        #optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        lr=1e-6
+        optimizer = torch.optim.Adam(list(self.anatomy_unet_model.parameters()) + list(self.dose_unet_model.parameters()) + list(self.classifier.parameters()), lr=lr)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
         return [optimizer], [scheduler]
 
