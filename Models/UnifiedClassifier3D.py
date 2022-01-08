@@ -50,7 +50,6 @@ class UnifiedClassifier3D(LightningModule):
         return {"loss":loss,"prediction":prediction.squeeze(),"label":label}
 
     def configure_optimizers(self):
-        #optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
         lr=1e-6
         optimizer = torch.optim.Adam(list(self.anatomy_unet_model.parameters()) + list(self.dose_unet_model.parameters()) + list(self.classifier.parameters()), lr=lr)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
