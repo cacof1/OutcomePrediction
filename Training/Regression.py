@@ -56,6 +56,8 @@ Label       = [label]
 columns     = clinical_columns+RefColumns+Label
 MasterSheet = MasterSheet[columns]
 MasterSheet = MasterSheet.dropna(subset=["CTPath"])
+MasterSheet = MasterSheet.dropna(subset=[label])
+#print(MasterSheet[label])
 trainer     = Trainer(gpus=1, max_epochs=20)
 
 model        = UnifiedClassifier3D()
