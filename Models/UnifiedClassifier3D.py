@@ -16,6 +16,7 @@ import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 
+
 ## Model
 class UnifiedClassifier3D(LightningModule):
     def __init__(self, n_classes = 1, wf=5, depth=3):
@@ -41,13 +42,13 @@ class UnifiedClassifier3D(LightningModule):
     def training_step(self, batch, batch_idx):
         datadict, label = batch
         prediction  = self.forward(datadict["Anatomy"], datadict["Dose"])
-        loss = self.loss_fcn(prediction.squeeze(), label)
+        loss = self.loss_fcn(prediction.flatten(), label.flatten())
         return {"loss":loss,"prediction":prediction.squeeze().detach(),"label":label}
 
     def validation_step(self, batch, batch_idx):
         datadict, label = batch
         prediction  = self.forward(datadict["Anatomy"], datadict["Dose"])
-        loss = self.loss_fcn(prediction.squeeze(), label)
+        loss = self.loss_fcn(prediction.flatten(), label.flatten())
         return {"loss":loss,"prediction":prediction.squeeze().detach(),"label":label}
 
     def configure_optimizers(self):
