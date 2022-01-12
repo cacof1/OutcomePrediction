@@ -55,11 +55,12 @@ Label       = [label]
 columns     = clinical_columns+RefColumns+Label
 MasterSheet = MasterSheet[columns]
 MasterSheet = MasterSheet.dropna(subset=["CTPath"])
+MasterSheet = MasterSheet.dropna(subset=[label])
 trainer     = Trainer(gpus=1, max_epochs=20)
 
 ## This is where you change how the data is organized
 module_dict  = nn.ModuleDict({
-    "Anatomy": Classifier3D(), 
+    "Anatomy": Classifier3D(),
     "Dose": Classifier3D(),
     #"Clinical":Linear()
 })
