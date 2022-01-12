@@ -15,16 +15,19 @@ import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 import SimpleITK as sitk
 import scipy.ndimage as ndi
-
+from DataGenerator.DataProcessing import LoadClincalData
+from sklearn.preprocessing import StandardScaler
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, mastersheet, label, keys, inference=False, transform=None, target_transform = None):
+    def __init__(self, mastersheet, label, keys, inference=False, clinical_norm = None, transform=None, target_transform = None):
         super().__init__()
-        self.keys             = keys
+        self.keys             = list(keys)
         self.transform        = transform
         self.target_transform = target_transform
         self.label            = label
         self.inference        = inference
         self.mastersheet      = mastersheet
+        self.clinical_norm = clinical_norm
+
     def __len__(self):
         return int(self.mastersheet.shape[0])
 
@@ -50,27 +53,32 @@ class DataGenerator(torch.utils.data.Dataset):
             if self.transform:            
                 datadict["Anatomy"]  = torch.from_numpy(self.transform(datadict["Anatomy"]))
 
-        print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
+            print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
-            datadict["Clinical"] = LoadClinical(self.mastersheet.iloc[id])
+            clinical_data = LoadClincalData(self.mastersheet)
+            #data = clinical_data.iloc[id].to_numpy()
+            data = self.clinical_norm.transform([clinical_data.iloc[id].to_numpy()])
+            datadict["Clinical"] = data.flatten()
 
         if(self.inference): return datadict
         else: return datadict, label.astype(np.float32)
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, mastersheet, label, keys, train_transform = None, val_transform = None, batch_size = 8, **kwargs):
+    def __init__(self, mastersheet, label, keys, train_transform = None, val_transform = None, batch_size = 64, Norm = None, **kwargs):
         super().__init__()
         self.batch_size      = batch_size
+        self.Norm = Norm
         train, val_test       = train_test_split(mastersheet, train_size=0.7)
         val, test             = train_test_split(val_test,test_size =0.66)
 
-        self.train_data      = DataGenerator(train, label, keys, transform = train_transform, **kwargs)
-        self.val_data        = DataGenerator(val,   label, keys, transform = val_transform, **kwargs)
-        self.test_data       = DataGenerator(test,  label, keys, transform = val_transform, **kwargs)
+        self.train_data  = DataGenerator(train, label, keys, clinical_norm = self.Norm, transform = train_transform, **kwargs)
+        self.val_data        = DataGenerator(val,   label, keys, clinical_norm = self.Norm, transform = val_transform, **kwargs)
+        self.test_data       = DataGenerator(test,  label, keys, clinical_norm = self.Norm, transform = val_transform, **kwargs)
+        print('test')
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,num_workers=10)
-    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=10)
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,num_workers=0)
+    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=0)
     def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size)
 
 def PatientQuery(mastersheet, **kwargs):
@@ -120,8 +128,8 @@ def LoadClinical(df): ## Not finished
 
     category_cols = list(set(all_cols).difference(set(numerical_cols)))
     for categorical in category_cols:
-        df.loc[:, df.columns.str.startswith(categorical)]
-        temp_col = pd.get_dummies(outcome[categorical], prefix=categorical)
+        df.loc[df.index.str.startswith(categorical)]
+        temp_col = pd.get_dummies(df[categorical], prefix=categorical)
 
     for numerical in numerical_cols:
         X_test = X_test.join([outcome[numerical]])

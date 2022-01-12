@@ -33,11 +33,10 @@ class MixModel(LightningModule):
 
     def forward(self, datadict):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
-        #for key in self.module_dict.keys():
-            #data = self.module_dict[key](datadict[key])
-            #print(key,data)
-            
-        #print("features",features, features.shape)
+        for key in self.module_dict.keys():
+            data = self.module_dict[key](datadict[key])
+            print(key,data)
+        print("features",features, features.shape)
         return self.classifier(features)
 
     def training_step(self, batch,batch_idx):
