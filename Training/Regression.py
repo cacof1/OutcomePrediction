@@ -22,25 +22,30 @@ from Models.Linear import Linear
 from Models.MixModel import MixModel
 import os
 from DataGenerator.DataProcessing import LoadClincalData
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+
+
 ## Main
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
-    #tio.RandomAffine(),
+    tio.RandomAffine(),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
 val_transform = tio.Compose([
-    #tio.RandomAffine(),
-    #tio.RescaleIntensity(out_min_max=(0, 1))
+    tio.transforms.ZNormalization(),
+    tio.RandomAffine(),
+    tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 callbacks = [
     ModelCheckpoint(
         dirpath='./',
-        monitor='val_loss',
+        monitor='loss',
         filename="model_DeepSurv",
-        save_top_k=1,
+        save_top_k=3,
         mode='min'),
+    EarlyStopping(monitor='val_loss',
+                  check_finite=True),
 ]
 
 
@@ -49,9 +54,10 @@ MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
 #analysis_inclusion_rt=1) ## Query specific values in tags
 label          = sys.argv[2]
 
-#existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
-#ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
-#MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
+# For local test
+existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
+ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
+MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
 
 
 
@@ -74,7 +80,10 @@ Label       = [label]
 columns     = clinical_columns+RefColumns+Label
 MasterSheet = MasterSheet[columns]
 MasterSheet = MasterSheet.dropna(subset=["CTPath"])
-trainer     = Trainer(gpus=1, max_epochs=20)
+MasterSheet = MasterSheet.dropna(subset=clinical_columns)
+MasterSheet = MasterSheet.dropna(subset=[label])
+
+trainer     = Trainer(gpus=1, max_epochs=20, callbacks=callbacks)
 
 ## This is where you change how the data is organized
 module_dict  = nn.ModuleDict({
@@ -83,11 +92,16 @@ module_dict  = nn.ModuleDict({
     "Clinical": Linear()
 })
 
-data = LoadClincalData(MasterSheet)
+numerical_data, category_data = LoadClincalData(MasterSheet)
 sc = StandardScaler()
-data1 = sc.fit_transform(data)
+data1 = sc.fit_transform(numerical_data)
+
+ohe = OneHotEncoder()
+ohe.fit(category_data)
+X_train_enc = ohe.transform(category_data)
 
 model        = MixModel(module_dict)
-dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=4, Norm = sc, inference=False)
+
+dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=5, numerical_norm = sc, category_norm = ohe, inference=False)
 trainer.fit(model, dataloader)
 
