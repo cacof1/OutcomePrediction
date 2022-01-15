@@ -2,7 +2,7 @@ import pandas as pd
 pd.options.mode.chained_assignment = None  # default='warn'
 from collections import Counter
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
 from sklearn.feature_selection import SelectKBest, mutual_info_classif, f_classif, chi2
 from sklearn.feature_selection import GenericUnivariateSelect, SelectFromModel, VarianceThreshold
 from sklearn.linear_model import LogisticRegression
@@ -79,10 +79,11 @@ def LoadClincalData(MasterSheet):
                       'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN']
     category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
 
-    clinical_data = MasterSheet[numerical_cols] #pd.DataFrame()
+    numerical_data = MasterSheet[numerical_cols] #pd.DataFrame()
+    category_data =  MasterSheet[category_cols]
 
     #for categorical in category_cols:
     #    temp_col = pd.get_dummies(MasterSheet[categorical], prefix=categorical)
     #    clinical_data = clinical_data.join(temp_col)
 
-    return clinical_data
+    return numerical_data, category_data
