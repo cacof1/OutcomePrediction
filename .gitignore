@@ -2,3 +2,5 @@
 *.pyc
 .idea/
 Training/lightning_logs/
+Training/model_DeepSurv*.ckpt
+wandb/
