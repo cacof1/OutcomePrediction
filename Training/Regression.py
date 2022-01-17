@@ -29,8 +29,9 @@ train_transform = tio.Compose([
 ])
 
 val_transform = tio.Compose([
+    tio.transforms.ZNormalization(),
     #tio.RandomAffine(),
-    #tio.RescaleIntensity(out_min_max=(0, 1))
+    tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 callbacks = [
     ModelCheckpoint(
@@ -56,7 +57,7 @@ columns     = clinical_columns+RefColumns+Label
 MasterSheet = MasterSheet[columns]
 MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 MasterSheet = MasterSheet.dropna(subset=[label])
-trainer     = Trainer(gpus=1, max_epochs=20)
+trainer     = Trainer(gpus=1, max_epochs=300)
 
 ## This is where you change how the data is organized
 module_dict  = nn.ModuleDict({
