@@ -38,7 +38,7 @@ callbacks = [
         dirpath='./',
         monitor='val_loss',
         filename="model_DeepSurv",
-        save_top_k=1,
+        save_top_k=2,
         mode='min'),
 ]
 
@@ -57,7 +57,7 @@ columns     = clinical_columns+RefColumns+Label
 MasterSheet = MasterSheet[columns]
 MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 MasterSheet = MasterSheet.dropna(subset=[label])
-trainer     = Trainer(gpus=1, max_epochs=300)
+trainer     = Trainer(gpus=1, max_epochs=300, callbacks=[callbacks])
 
 ## This is where you change how the data is organized
 module_dict  = nn.ModuleDict({
