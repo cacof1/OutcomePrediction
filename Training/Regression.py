@@ -32,11 +32,13 @@ train_transform = tio.Compose([
     tio.RandomFlip(),
     tio.RandomNoise(),
     tio.RandomMotion(),
+    tio.transforms.Resize([40,40,40]),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
 val_transform = tio.Compose([
     tio.transforms.ZNormalization(),
+    tio.transforms.Resize([40,40,40]),
     #tio.RandomAffine(),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
@@ -58,9 +60,9 @@ MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
 label          = sys.argv[2]
 
 # For local test
-# existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
-# ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
-# MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
+existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
+ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
+MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
 
 
 
@@ -94,8 +96,8 @@ trainer     = Trainer(gpus=1, max_epochs=20, callbacks=callbacks)
 
 ## This is where you change how the data is organized
 module_dict  = nn.ModuleDict({
-    #"Anatomy": Classifier3D(),
-    "Dose": Classifier3D(),
+    "Anatomy": Classifier3D(),
+    #"Dose": Classifier3D(),
     "Clinical": Linear()
 })
 
@@ -109,6 +111,6 @@ X_train_enc = ohe.transform(category_data)
 
 model        = MixModel(module_dict)
 
-dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=5, numerical_norm = sc, category_norm = ohe, inference=False)
+dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=4, numerical_norm = sc, category_norm = ohe, inference=False)
 trainer.fit(model, dataloader)
 

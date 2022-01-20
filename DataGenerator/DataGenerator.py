@@ -16,6 +16,7 @@ from sklearn.model_selection import train_test_split
 import SimpleITK as sitk
 import scipy.ndimage as ndi
 from DataGenerator.DataProcessing import LoadClincalData
+from skimage.measure import regionprops
 from sklearn.preprocessing import StandardScaler
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, mastersheet, label, keys, inference=False, n_norm = None, c_norm = None, transform=None, target_transform = None):
@@ -40,17 +41,31 @@ class DataGenerator(torch.utils.data.Dataset):
         label    = self.mastersheet[self.label].iloc[id]
 
         if "Dose" in self.keys:
-            dose     = LoadImg(self.mastersheet["DosePath"].iloc[id])
-            maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
-            checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
-            datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
+            path = self.mastersheet["CTPath"].iloc[id]
+            mask = path[0:-16] + 'structs\PTV.nrrd'
+            mask_img = LoadImg(mask)
+            properties = regionprops(mask_img.astype(np.int8), mask_img)
+            cropbox = properties[0].bbox
+
+            dose = LoadImg(self.mastersheet["DosePath"].iloc[id])
+            #maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
+            #checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
+            #datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
+            datadict["Dose"] = np.expand_dims(MaskCrop(dose,cropbox),0)
             if self.transform:            
                 datadict["Dose"]  = self.transform(datadict["Dose"])
-
+            print('End')
                 
         if "Anatomy" in self.keys:
-            anatomy  = LoadImg(self.mastersheet["CTPath"].iloc[id])
-            datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
+            path = self.mastersheet["CTPath"].iloc[id]
+            mask = path[0:-16] + 'structs\PTV.nrrd'
+            mask_img = LoadImg(mask)
+            properties = regionprops(mask_img.astype(np.int8), mask_img)
+            cropbox = properties[0].bbox
+
+            anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
+            #datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
+            datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy,cropbox),0)
             if self.transform:            
                 datadict["Anatomy"]  = torch.from_numpy(self.transform(datadict["Anatomy"]))
 
@@ -92,6 +107,8 @@ def PatientQuery(mastersheet, **kwargs):
 def LoadImg(path):
     img = sitk.ReadImage(path)
     return sitk.GetArrayFromImage(img).astype(np.float32)
+def MaskCrop(img, bbox):
+    return img[bbox[0]:bbox[3],bbox[1]:bbox[4],bbox[2]:bbox[5]]
 
 def CropImg(img, center, delta): ## Crop image 
     return img[center[0]-delta[0]:center[0]+delta[0], center[1]-delta[1]:center[1]+delta[1], center[2]-delta[2]:center[2]+delta[2]]

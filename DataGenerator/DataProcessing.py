@@ -64,13 +64,13 @@ def LoadLabel(LabelName, FileName,):
 def LoadClincalData(MasterSheet):
     clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
                         'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
-                        'egfr_hscore_200', 'smoke_hx', 'rx_terminated_ae', 'rt_dose',
+                        # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician',
+                        'smoke_hx', 'rx_terminated_ae', 'rt_dose',
                         'volume_ptv', 'dmax_ptv', 'v100_ptv',
                         'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
                         'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
-                        'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN', 'rt_compliance_physician',
-                        'rt_compliance_ptv90', 'received_conc_chemo', 'received_conc_cetuximab',
-                        'received_cons_chemo', 'received_cons_cetuximab',
+                        'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
+                        'rt_compliance_ptv90', 'received_conc_chemo',
                         ]
 
     numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
