@@ -60,9 +60,9 @@ MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
 label          = sys.argv[2]
 
 # For local test
-existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
-ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
-MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
+#existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
+#ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
+#MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
 
 
 
