@@ -39,14 +39,15 @@ class DataGenerator(torch.utils.data.Dataset):
         roiSize = [10, 40, 40]
 
         label    = self.mastersheet[self.label].iloc[id]
-
-        if "Dose" in self.keys:
+        # Get the mask of PTV
+        if "Dose" in self.keys or "Anatomy" in self.keys:
             path = self.mastersheet["CTPath"].iloc[id]
             mask = path[0:-16] + 'structs\PTV.nrrd'
             mask_img = LoadImg(mask)
             properties = regionprops(mask_img.astype(np.int8), mask_img)
             cropbox = properties[0].bbox
 
+        if "Dose" in self.keys:
             dose = LoadImg(self.mastersheet["DosePath"].iloc[id])
             #maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             #checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
@@ -57,12 +58,6 @@ class DataGenerator(torch.utils.data.Dataset):
             print('End')
                 
         if "Anatomy" in self.keys:
-            path = self.mastersheet["CTPath"].iloc[id]
-            mask = path[0:-16] + 'structs\PTV.nrrd'
-            mask_img = LoadImg(mask)
-            properties = regionprops(mask_img.astype(np.int8), mask_img)
-            cropbox = properties[0].bbox
-
             anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
             #datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
             datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy,cropbox),0)
