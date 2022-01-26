@@ -72,8 +72,9 @@ class DataModule(LightningDataModule):
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=10)
     def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size)
 
-def PatientQuery(mastersheet, **kwargs):
-    for key,item in kwargs.items(): mastersheet = mastersheet[mastersheet[key]==item]
+def PatientQuery(config, **kwargs):
+    mastersheet = pd.read_csv(config['DATA']['Mastersheet'],index_col='patid')
+    for key,item in config['CRITERIA'].items(): mastersheet = mastersheet[mastersheet[key]==item]
     return mastersheet
 
 def LoadImg(path):
