@@ -69,7 +69,7 @@ class DataModule(LightningDataModule):
         self.val_data        = DataGenerator(val,   label, keys, transform = val_transform, **kwargs)
         self.test_data       = DataGenerator(test,  label, keys, transform = val_transform, **kwargs)
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,num_workers=10)
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=10)
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=10)
     def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size)
 
