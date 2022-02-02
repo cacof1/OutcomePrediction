@@ -21,31 +21,37 @@ from Models.Classifier3D import Classifier3D
 from Models.Linear import Linear
 from Models.MixModel import MixModel
 
+##Utils
+from pytorch_lightning.loggers import TensorBoardLogger
+import toml
+
+config   = toml.load(sys.argv[1])
+name     = config['MODEL']['BaseModel'] +"_"+ config['MODEL']['Backbone']+ "_wf" + str(config['MODEL']['wf']) + "_depth" + str(config['MODEL']['depth'])
+logger   = TensorBoardLogger('lightning_logs',name = name)
+checkpoint_callback = ModelCheckpoint(
+    dirpath     =logger.log_dir,
+    monitor     =config['CHECKPOINT']['monitor'],
+    filename    =name + '-epoch{epoch:02d}-' + config['CHECKPOINT']['monitor'] + '{' + config['CHECKPOINT']['monitor'] + ':.2f}',
+    save_top_k  =1,
+    mode        =config['CHECKPOINT']['mode'])
+
+seed_everything(config['MODEL']['RANDOM_SEED'], workers=True)
+
 ## Main
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
-    #tio.RandomAffine(),
+    tio.RandomAffine(),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
 val_transform = tio.Compose([
-    #tio.RandomAffine(),
-    #tio.RescaleIntensity(out_min_max=(0, 1))
+    tio.transforms.ZNormalization(),
+    tio.RandomAffine(),
+    tio.RescaleIntensity(out_min_max=(0, 1))
 ])
-callbacks = [
-    ModelCheckpoint(
-        dirpath='./',
-        monitor='val_loss',
-        filename="model_DeepSurv",
-        save_top_k=1,
-        mode='min'),
-]
 
-MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
-#analysis_inclusion=1,
-#analysis_inclusion_rt=1) ## Query specific values in tags
-label          = sys.argv[2]
-
+MasterSheet    = PatientQuery(config)
+label          = config["DATA"]["label"]
 
 clinical_columns = ["age","gender","race","ethnicity","zubrod","histology","nonsquam_squam","ajcc_stage_grp","pet_staging","rt_technique","has_egfr_hscore","egfr_hscore_200","smoke_hx","rx_terminated_ae","received_rt","rt_dose","overall_rt_review","fractionation_review","elapsed_days_review","tv_oar_review","gtv_review","ptv_review","ips_lung_review","contra_lung_review","spinal_cord_review","heart_review","esophagus_review","brachial_plexus_review","skin_review","dva_tv_review","dva_oar_review"]
 
@@ -55,11 +61,12 @@ Label       = [label]
 columns     = clinical_columns+RefColumns+Label
 MasterSheet = MasterSheet[columns]
 MasterSheet = MasterSheet.dropna(subset=["CTPath"])
-trainer     = Trainer(gpus=1, max_epochs=20)
+MasterSheet = MasterSheet.dropna(subset=[label])
+trainer     = Trainer(gpus=torch.cuda.device_count(), max_epochs=config['MODEL']['Max_Epochs'], precision=config['MODEL']['Precision'], callbacks=[checkpoint_callback], logger=logger)
 
 ## This is where you change how the data is organized
 module_dict  = nn.ModuleDict({
-    "Anatomy": Classifier3D(), 
+    "Anatomy": Classifier3D(),
     "Dose": Classifier3D(),
     #"Clinical":Linear()
 })

@@ -36,7 +36,7 @@ class MixModel(LightningModule):
         #for key in self.module_dict.keys():
             #data = self.module_dict[key](datadict[key])
             #print(key,data)
-            
+
         #print("features",features, features.shape)
         return self.classifier(features)
 
@@ -45,15 +45,22 @@ class MixModel(LightningModule):
         prediction  = self.forward(datadict)
         #print(prediction, label)
         loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
-        self.log("loss", loss)
-        return loss
+
+        logs={"train_loss": loss.detach()}
+        self.log("loss", loss.detach())
+
+        return {"loss":loss, "log":logs}
 
     def validation_step(self, batch,batch_idx):
         datadict, label = batch
         prediction  = self.forward(datadict)
         loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
-        return loss
-        
+
+        logs={"val_loss": loss.detach()}
+        self.log("val_loss", loss.detach())
+
+        return {"loss":loss, "log":logs}
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)

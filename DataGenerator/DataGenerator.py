@@ -40,17 +40,16 @@ class DataGenerator(torch.utils.data.Dataset):
             maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
-            if self.transform:            
+            if self.transform:
                 datadict["Dose"]  = self.transform(datadict["Dose"])
 
-                
         if "Anatomy" in self.keys:
             anatomy  = LoadImg(self.mastersheet["CTPath"].iloc[id])
             datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
-            if self.transform:            
+            if self.transform:
                 datadict["Anatomy"]  = torch.from_numpy(self.transform(datadict["Anatomy"]))
 
-        print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
+        #print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
             datadict["Clinical"] = LoadClinical(self.mastersheet.iloc[id])
 
@@ -73,8 +72,9 @@ class DataModule(LightningDataModule):
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=10)
     def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size)
 
-def PatientQuery(mastersheet, **kwargs):
-    for key,item in kwargs.items(): mastersheet = mastersheet[mastersheet[key]==item]
+def PatientQuery(config, **kwargs):
+    mastersheet = pd.read_csv(config['DATA']['Mastersheet'],index_col='patid')
+    for key,item in config['CRITERIA'].items(): mastersheet = mastersheet[mastersheet[key]==item]
     return mastersheet
 
 def LoadImg(path):

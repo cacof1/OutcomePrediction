@@ -40,20 +40,20 @@ class Classifier3D(LightningModule):
     def training_step(self, batch,batch_idx):
         image,label = batch
         prediction  = self.forward(image)
-        loss = self.loss_fcn(prediction.squeeze(), label)
-        return {"loss":loss,"prediction":prediction.squeeze(),"label":label}
+        loss = self.loss_fcn(prediction.flatten(), label.flatten())
+        return {"loss":loss,"prediction":prediction.squeeze().detach(),"label":label} # NOTE: squeeze or flatten?
 
     def validation_step(self, batch,batch_idx):
         image,label = batch
         prediction  = self.forward(image)
-        loss = self.loss_fcn(prediction.squeeze(), label)
-        return {"loss":loss,"prediction":prediction.squeeze(),"label":label}
-        
+        loss = self.loss_fcn(prediction.flatten(), label.flatten())
+        return {"loss":loss,"prediction":prediction.squeeze().detach(),"label":label} # NOTE: squeeze or flatten?
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
         return [optimizer], [scheduler]
-    
+
     def weights_init(self,m):
         if isinstance(m, nn.Conv3d) or isinstance(m, nn.Linear):
             nn.init.xavier_uniform_(m.weight.data)

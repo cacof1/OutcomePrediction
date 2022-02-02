@@ -14,9 +14,9 @@ class Encoder(nn.Module):
             in_channels = out_channels
 
         self.out_channels = in_channels
-    def forward(self, x):        
+    def forward(self, x):
         for i, down in enumerate(self.encoder):
-            print("encoder depth", i, down(x).size(),x.size(), type(x))
+            #print("encoder depth", i, down(x).size(),x.size(), type(x))
             x = down(x)
         return x
 
@@ -27,14 +27,14 @@ class Decoder(nn.Module):
         for i in reversed(range(depth)):
             out_channels = 2**(wf+i)
             self.decoder.append(UNetUpBlock(in_channels, out_channels,  padding, batch_norm))
-            in_channels  = out_channels            
+            in_channels  = out_channels
         self.last = nn.Conv2d(out_channels, n_classes, kernel_size=1,stride=1)
-        
+
     def forward(self,x):
         for i, up in enumerate(self.decoder):
             x = up(x)
-        return self.last(x)            
-                
+        return self.last(x)
+
 class UNet3D(nn.Module):
     def __init__(self, in_channels=1, n_classes=2, depth=6, wf=6, padding=True, batch_norm=True):
         """
@@ -62,13 +62,13 @@ class UNet3D(nn.Module):
         self.depth = depth
         self.encoder = Encoder(depth, wf, in_channels)
         self.decoder = Decoder(depth, wf, self.encoder.out_channels, n_classes)
-        
+
     ## Write the Modules
     def forward(self, x):
         x         = self.encoder(x)
         x         = self.decoder(x)
         return x
-    
+
 class UNetDownBlock(nn.Module):
     def __init__(self, in_size, out_size, padding, batch_norm):
         super(UNetDownBlock, self).__init__()
@@ -97,8 +97,8 @@ class UNetUpBlock(nn.Module):
             nn.BatchNorm3d(out_size),
             nn.Conv2d(out_size, out_size, kernel_size=3, padding="same"),
             nn.PReLU(),
-            nn.BatchNorm3d(out_size) ,           
+            nn.BatchNorm3d(out_size),
             )
-        
+
     def forward(self, x):
         return self.block(x)
