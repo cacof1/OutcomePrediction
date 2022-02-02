@@ -53,7 +53,6 @@ class MixModel(LightningModule):
         val_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         print('val_prediction:', prediction, label)
         print('val_loss:', val_loss)
-        self.log("val_loss", val_loss)
         return val_loss
         
     def configure_optimizers(self):

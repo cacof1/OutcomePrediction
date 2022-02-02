@@ -47,7 +47,7 @@ callbacks = [
         dirpath='./',
         monitor='loss',
         filename="model_DeepSurv",
-        save_top_k=3,
+        save_top_k=1,
         mode='min'),
     EarlyStopping(monitor='val_loss',
                   check_finite=True),
@@ -96,8 +96,8 @@ trainer     = Trainer(gpus=1, max_epochs=20, callbacks=callbacks)
 
 ## This is where you change how the data is organized
 module_dict  = nn.ModuleDict({
-    "Anatomy": Classifier3D(),
-    #"Dose": Classifier3D(),
+    #"Anatomy": Classifier3D(),
+    "Dose": Classifier3D(),
     "Clinical": Linear()
 })
 
