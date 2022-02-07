@@ -26,6 +26,7 @@ class Classifier3DTransformer(LightningModule):
         self.model = self.unet_model.encoder
         self.model.apply(self.weights_init)
         summary(self.model.to('cuda'), (4, 1, 64, 64, 64), col_names=["input_size", "output_size"], depth=5)
+        #summary(self.model.to('cpu'), (4, 1, 64, 64, 64), col_names=["input_size", "output_size"], depth=5)
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
