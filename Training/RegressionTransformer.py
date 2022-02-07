@@ -1,31 +1,19 @@
-from pytorch_lightning import LightningDataModule, LightningModule
-import numpy as np
 import torch
 from torch import nn
-import torchvision
-from torchvision import datasets, models, transforms
-from torchvision import transforms
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer,seed_everything
-from torchinfo import summary
 import sys
 import torchio as tio
-import torchmetrics
 import pandas as pd
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule, DataGenerator, PatientQuery
-from DataGenerator.DataProcessing import LoadLabel
 ## Module - Models
-from Models.Classifier2D import Classifier2D
-from Models.Classifier3D import Classifier3D
 from Models.Classifier3DTransformer import Classifier3DTransformer
-from Models.Linear import Linear
-from Models.MixModel import MixModel
 import os
 from DataGenerator.DataProcessing import LoadClincalData
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
-
+torch.cuda.empty_cache()
 ## Main
 from Models.MixModelTransformer import MixModelTransformer
 
@@ -112,7 +100,7 @@ ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
 patch_size = 4
-embed_dim = patch_size ** 3 # For 3D image
+embed_dim = patch_size ** 3 * 4# For 3D image
 in_channels = [32, 64, 128]
 model        = MixModelTransformer(module_dict, img_sizes=[32, 16, 8], patch_size=patch_size, embed_dim=embed_dim, in_channels=in_channels, depth=3, wf=5, num_layers=12)
 

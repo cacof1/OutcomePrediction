@@ -8,7 +8,7 @@ class PositionEncoding(nn.Module):
         super().__init__()
         self.img_size = img_size
         self.in_channel = in_channel
-        self.patch_embed = PatchEmbedding(img_size=img_size, patch_size=patch_size, in_channel=in_channel)
+        self.patch_embed = PatchEmbedding(img_size=img_size, patch_size=patch_size, embed_dim=embed_dim, in_channel=in_channel)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, self.patch_embed.num_patches + 1, embed_dim))
         self.pos_drop = nn.Dropout(dropout)
@@ -99,13 +99,14 @@ class EncoderBlock(nn.Module):
 
 
 class PatchEmbedding(nn.Module):
-    def __init__(self, img_size=64, patch_size=4, in_channel=1):
+    def __init__(self, img_size=64, patch_size=4, embed_dim = 64, in_channel=1):
         super().__init__()
         num_patches = (img_size // patch_size) ** 3 ## for 3D image
         self.img_size = img_size
         self.patch_size = patch_size
         self.num_patches = num_patches
-        embed_dim = patch_size ** 3 ## for 3D image
+        self.in_channel = in_channel
+        self.embed_dim = embed_dim
         self.proj = nn.Conv3d(in_channel, embed_dim, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, x):

@@ -79,6 +79,7 @@ class MixModelTransformer(LightningModule):
         datadict, label = batch
         prediction = self.forward(datadict)
         val_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
+        self.log("val_loss", val_loss)
         print('val_prediction:', prediction, label)
         print('val_loss:', val_loss)
         return val_loss

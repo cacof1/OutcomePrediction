@@ -60,9 +60,9 @@ MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
 label          = sys.argv[2]
 
 # For local test
-#existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
-#ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
-#MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
+existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
+ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
+MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
 
 
 
@@ -92,13 +92,13 @@ MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 MasterSheet = MasterSheet.dropna(subset=category_cols)
 MasterSheet = MasterSheet.dropna(subset=[label])
 MasterSheet = MasterSheet.fillna(MasterSheet.mean())
-trainer     = Trainer(gpus=1, max_epochs=20, callbacks=callbacks)
+trainer     = Trainer(gpus=1, max_epochs=20)
 
 ## This is where you change how the data is organized
 module_dict  = nn.ModuleDict({
-    #"Anatomy": Classifier3D(),
-    "Dose": Classifier3D(),
-    "Clinical": Linear()
+    "Anatomy": Classifier3D(),
+    #"Dose": Classifier3D(),
+    #"Clinical": Linear()
 })
 
 numerical_data, category_data = LoadClincalData(MasterSheet)
