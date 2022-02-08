@@ -23,14 +23,16 @@ from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, EncoderB
 
 
 class MixModelTransformer(LightningModule):
-    def __init__(self, module_dict, img_sizes, patch_size, embed_dim, in_channels, depth=3, wf=5, num_layers=12, loss_fcn=torch.nn.BCEWithLogitsLoss()):
+    def __init__(self, module_dict, img_sizes, patch_size, embed_dim, in_channels, depth=3, wf=5, num_layers=12,
+                 loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.module_dict = module_dict
         self.pe = nn.ModuleList(
-            [PositionEncoding(img_size=img_sizes[i], patch_size=patch_size, in_channel=2**(wf+i), embed_dim=embed_dim, dropout=0.8) for i in range(depth)]
+            [PositionEncoding(img_size=img_sizes[i], patch_size=patch_size, in_channel=2 ** (wf + i),
+                              embed_dim=embed_dim, dropout=0.8) for i in range(depth)]
         )
         self.layers = nn.ModuleList(
-            [EncoderBlock(num_heads=8, embed_dim=embed_dim, mlp_dim=128, dropout=0.0) for _ in range(num_layers)])
+            [EncoderBlock(num_heads=16, embed_dim=embed_dim, mlp_dim=128, dropout=0.0) for _ in range(num_layers)])
 
         self.classifier = nn.Sequential(
             nn.LazyLinear(128),
@@ -46,6 +48,7 @@ class MixModelTransformer(LightningModule):
         for key in self.module_dict.keys():
             if "Dose" == key or "Anatomy" == key:
                 x = datadict[key]
+
                 for i, down in enumerate(self.module_dict[key].model.encoder):
                     x = down(x)
                     if flg == 0:

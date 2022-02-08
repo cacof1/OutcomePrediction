@@ -100,7 +100,7 @@ ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
 patch_size = 4
-embed_dim = patch_size ** 3 * 4# For 3D image
+embed_dim = (patch_size ** 3) * 8# For 3D image
 in_channels = [32, 64, 128]
 model        = MixModelTransformer(module_dict, img_sizes=[32, 16, 8], patch_size=patch_size, embed_dim=embed_dim, in_channels=in_channels, depth=3, wf=5, num_layers=12)
 
