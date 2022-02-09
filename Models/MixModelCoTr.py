@@ -19,20 +19,20 @@ import torchmetrics
 from Models.Linear import Linear
 from Models.Classifier2D import Classifier2D
 from Models.Classifier3D import Classifier3D
-from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, EncoderBlock
+from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, TransformerBlock
 
 
-class MixModelTransformer(LightningModule):
-    def __init__(self, module_dict, img_sizes, patch_size, embed_dim, in_channels, depth=3, wf=5, num_layers=12,
+class MixModelCoTr(LightningModule):
+    def __init__(self, module_dict, img_sizes, patch_size, embed_dim, in_channels, depth=3, wf=5, num_layers=3,
                  loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.module_dict = module_dict
         self.pe = nn.ModuleList(
-            [PositionEncoding(img_size=img_sizes[i], patch_size=patch_size, in_channel=2 ** (wf + i),
-                              embed_dim=embed_dim, dropout=0.8) for i in range(depth)]
+            [PositionEncoding(img_size=[img_sizes[i]], patch_size=patch_size, in_channel=2 ** (wf + i),
+                              embed_dim=embed_dim, dropout=0.5) for i in range(depth)]
         )
-        self.layers = nn.ModuleList(
-            [EncoderBlock(num_heads=16, embed_dim=embed_dim, mlp_dim=128, dropout=0.0) for _ in range(num_layers)])
+        self.transformers = nn.ModuleList(
+            [TransformerBlock(num_heads=16, embed_dim=embed_dim, mlp_dim=128, dropout=0.5) for _ in range(num_layers)])
 
         self.classifier = nn.Sequential(
             nn.LazyLinear(128),
@@ -48,7 +48,6 @@ class MixModelTransformer(LightningModule):
         for key in self.module_dict.keys():
             if "Dose" == key or "Anatomy" == key:
                 x = datadict[key]
-
                 for i, down in enumerate(self.module_dict[key].model.encoder):
                     x = down(x)
                     if flg == 0:
@@ -58,8 +57,8 @@ class MixModelTransformer(LightningModule):
                         out_trans = self.pe[i](x)
                         feature = torch.cat((feature, out_trans), dim=1)
 
-                for layer in self.layers:
-                    x = layer(feature)
+                for transformer in self.transformers:
+                    x = transformer(feature)
                 features = x.flatten(start_dim=1)
             if "Clinical" == key:
                 if flg == 0:
@@ -86,6 +85,14 @@ class MixModelTransformer(LightningModule):
         print('val_prediction:', prediction, label)
         print('val_loss:', val_loss)
         return val_loss
+
+    def test_step(self, batch, batch_idx):
+        datadict, label = batch
+        prediction = self.forward(datadict)
+        test_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
+        print('test_prediction:', prediction, label)
+        print('test_loss:', test_loss)
+        return test_loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)

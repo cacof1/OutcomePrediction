@@ -19,13 +19,13 @@ import torchmetrics
 
 
 ## Model
-class Classifier3DTransformer(LightningModule):
+class CNNEncoderForTransformer(LightningModule):
     def __init__(self, n_classes=1, wf=5, depth=3):
         super().__init__()
         self.unet_model = UNet3D(in_channels=1, n_classes=n_classes, depth=depth, wf=wf)
         self.model = self.unet_model.encoder
         self.model.apply(self.weights_init)
-        summary(self.model.to('cuda'), (4, 1, 64, 64, 64), col_names=["input_size", "output_size"], depth=5)
+        summary(self.model.to('cuda'), (4, 1, 64, 64, 64), col_names=["input_size", "output_size"], depth=3)
         #summary(self.model.to('cpu'), (4, 1, 64, 64, 64), col_names=["input_size", "output_size"], depth=5)
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()

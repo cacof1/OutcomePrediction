@@ -8,14 +8,14 @@ import pandas as pd
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule, DataGenerator, PatientQuery
 ## Module - Models
-from Models.Classifier3DTransformer import Classifier3DTransformer
+from Models.CNNEncoderForTransformer import CNNEncoderForTransformer
 import os
 from DataGenerator.DataProcessing import LoadClincalData
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 torch.cuda.empty_cache()
 ## Main
-from Models.MixModelTransformer import MixModelTransformer
+from Models.MixModelCoTr import MixModelCoTr
 
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
@@ -37,10 +37,10 @@ callbacks = [
     ModelCheckpoint(
         dirpath='./',
         monitor='loss',
-        filename="model_DeepSurv",
+        filename="DeepSurv",
         save_top_k=1,
         mode='min'),
-    EarlyStopping(monitor='loss',
+    EarlyStopping(monitor='val_loss',
                   check_finite=True),
 ]
 
@@ -87,7 +87,7 @@ trainer     = Trainer(gpus=1, max_epochs=20, callbacks=callbacks)
 #trainer     =Trainer(accelerator="cpu", callbacks=callbacks)
 ## This is where you change how the data is organized
 module_dict  = nn.ModuleDict({
-    "Anatomy": Classifier3DTransformer(),
+    "Anatomy": CNNEncoderForTransformer(),
     #"Dose": Classifier3D(),
     #"Clinical": Linear()
 })
@@ -100,10 +100,21 @@ ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
 patch_size = 4
-embed_dim = (patch_size ** 3) * 8# For 3D image
+embed_dim = (patch_size ** 3) * 4# For 3D image
+#embed_dim = (patch_size ** 3)  # For 3D image flatten
+
 in_channels = [32, 64, 128]
-model        = MixModelTransformer(module_dict, img_sizes=[32, 16, 8], patch_size=patch_size, embed_dim=embed_dim, in_channels=in_channels, depth=3, wf=5, num_layers=12)
+model        = MixModelCoTr(module_dict, img_sizes=[32, 16, 8], patch_size=patch_size, embed_dim=embed_dim, in_channels=in_channels, depth=3, wf=5, num_layers=3)
 
 dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=4, numerical_norm = sc, category_norm = ohe, inference=False)
 trainer.fit(model, dataloader)
+
+with torch.no_grad():
+    for i, data in enumerate(dataloader.test_dataloader()):
+        truth = data[1]
+        x = data[0]
+        output = model(x)
+        aa = model.test_step(data, i)
+        print('output:', output, 'true:', truth)
+
 

@@ -33,7 +33,7 @@ class PositionEncoding(nn.Module):
         return attention_maps
 
 
-class EncoderBlock(nn.Module):
+class TransformerBlock(nn.Module):
 
     def __init__(self, num_heads, embed_dim, mlp_dim, dropout=0.0):
         """
@@ -101,7 +101,10 @@ class EncoderBlock(nn.Module):
 class PatchEmbedding(nn.Module):
     def __init__(self, img_size=64, patch_size=4, embed_dim = 64, in_channel=1):
         super().__init__()
-        num_patches = (img_size // patch_size) ** 3 ## for 3D image
+        if len(img_size) == 1:
+            num_patches = (img_size[0] // patch_size) ** 3 ## for 3D image
+        if len(img_size) == 3:
+            num_patches = (img_size[0] // patch_size) * (img_size[1] // patch_size) * (img_size[2] // patch_size)
         self.img_size = img_size
         self.patch_size = patch_size
         self.num_patches = num_patches
