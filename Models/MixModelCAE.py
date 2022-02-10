@@ -22,44 +22,57 @@ from Models.Classifier3D import Classifier3D
 from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, TransformerBlock
 
 
-class MixModelCoTr(LightningModule):
-    def __init__(self, module_dict, img_sizes, patch_size, embed_dim, in_channels, depth=3, wf=5, num_layers=3,
+class MixModelCAE(LightningModule):
+    def __init__(self, module_dict, img_sizes, patch_size, embed_dim, in_channels, num_layers=3,
                  loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.module_dict = module_dict
-        self.pe = nn.ModuleList(
-            [PositionEncoding(img_size=[img_sizes[i]], patch_size=patch_size, in_channel=2 ** (wf + i),
-                              embed_dim=embed_dim, img_dim=3, dropout=0.5, iftoken=True) for i in range(depth)]
-        )
+        ## define backbone
+        backbone = torchvision.models.resnet18(pretrained=True)
+        layers = list(backbone.children())[:-1]
+        self.feature_extractor = nn.Sequential(*layers)
+        self.feature_extractor.eval()
+        for param in self.feature_extractor.parameters():
+            param.requires_grad = False
+
+        self.linear1 = nn.LazyLinear(256)
+
+        self.pe = PositionEncoding(img_size=img_sizes, patch_size=patch_size, in_channel=in_channels, embed_dim=embed_dim, dropout=0.5, img_dim=2, iftoken=False)
+
         self.transformers = nn.ModuleList(
             [TransformerBlock(num_heads=16, embed_dim=embed_dim, mlp_dim=128, dropout=0.5) for _ in range(num_layers)])
+        self.pool_top = nn.MaxPool2d(4)
 
         self.classifier = nn.Sequential(
             nn.LazyLinear(128),
-            nn.LazyLinear(1)
+            nn.LazyLinear(1),
+            nn.ReLU()
         )
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.MSELoss()  # loss_fcn
 
+    def convert2D(self, x):
+        y = x.repeat(1, 3, 1, 1)
+        features = self.feature_extractor(y)
+        features = features.permute(2, 3, 0, 1)
+        features = self.linear1(features)
+        return features
+
     def forward(self, datadict):
         # features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
         # For transformer
-        flg = 0
         for key in self.module_dict.keys():
             if "Dose" == key or "Anatomy" == key:
                 x = datadict[key]
-                for i, down in enumerate(self.module_dict[key].model.encoder):
-                    x = down(x)
-                    if flg == 0:
-                        feature = self.pe[i](x)
-                        flg = 1
-                    else:
-                        out_trans = self.pe[i](x)
-                        feature = torch.cat((feature, out_trans), dim=1)
+                features = torch.cat([self.convert2D(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
+                features_pe = self.pe(features)
 
                 for transformer in self.transformers:
-                    x = transformer(feature)
+                    x = transformer(features_pe)
+
+                x = self.pool_top(x)
                 features = x.flatten(start_dim=1)
+
             if "Clinical" == key:
                 if flg == 0:
                     features = self.module_dict[key](datadict[key])

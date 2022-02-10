@@ -4,20 +4,25 @@ import torch.nn as nn
 
 class PositionEncoding(nn.Module):
 
-    def __init__(self, img_size, patch_size, in_channel,embed_dim,dropout=0.8):
+    def __init__(self, img_size, patch_size, in_channel, embed_dim, dropout=0.8, img_dim=3, iftoken=True):
         super().__init__()
         self.img_size = img_size
         self.in_channel = in_channel
-        self.patch_embed = PatchEmbedding(img_size=img_size, patch_size=patch_size, embed_dim=embed_dim, in_channel=in_channel)
+        self.iftoken = iftoken
+        self.patch_embed = PatchEmbedding(img_size=img_size, patch_size=patch_size, embed_dim=embed_dim, in_channel=in_channel, img_dim=img_dim)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pos_embed = nn.Parameter(torch.zeros(1, self.patch_embed.num_patches + 1, embed_dim))
+        if iftoken:
+            self.pos_embed = nn.Parameter(torch.zeros(1, self.patch_embed.num_patches + 1, embed_dim))
+        else:
+            self.pos_embed = nn.Parameter(torch.zeros(1, self.patch_embed.num_patches, embed_dim))
         self.pos_drop = nn.Dropout(dropout)
 
     def forward(self, x):
-        B, C, H, W, D = x.shape
+        B = x.shape[0]
         x = self.patch_embed(x)
-        cls_tokens = self.cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
+        if self.iftoken:
+            cls_tokens = self.cls_token.expand(B, -1, -1)
+            x = torch.cat((cls_tokens, x), dim=1)
         x = x + self.pos_embed
         x = self.pos_drop(x)
 
@@ -99,20 +104,26 @@ class TransformerBlock(nn.Module):
 
 
 class PatchEmbedding(nn.Module):
-    def __init__(self, img_size=64, patch_size=4, embed_dim = 64, in_channel=1):
+    def __init__(self, img_size=64, patch_size=4, embed_dim = 64, in_channel=1, img_dim=3):
         super().__init__()
         if len(img_size) == 1:
             num_patches = (img_size[0] // patch_size) ** 3 ## for 3D image
+        if len(img_size) == 2:
+            num_patches = (img_size[0] // patch_size) * (img_size[1] // patch_size)
         if len(img_size) == 3:
             num_patches = (img_size[0] // patch_size) * (img_size[1] // patch_size) * (img_size[2] // patch_size)
         self.img_size = img_size
+        self.img_dim = img_dim
         self.patch_size = patch_size
         self.num_patches = num_patches
         self.in_channel = in_channel
         self.embed_dim = embed_dim
-        self.proj = nn.Conv3d(in_channel, embed_dim, kernel_size=patch_size, stride=patch_size)
+        if img_dim == 3:
+            self.proj = nn.Conv3d(in_channel, embed_dim, kernel_size=patch_size, stride=patch_size)
+        else:
+            self.proj = nn.Conv2d(in_channel, embed_dim, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, x):
-        B, C, H, W, D = x.shape
+        #B, C, H, W, D = x.shape
         x = self.proj(x).flatten(2).transpose(1, 2)
         return x

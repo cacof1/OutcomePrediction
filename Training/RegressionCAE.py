@@ -8,11 +8,11 @@ import pandas as pd
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule, DataGenerator, PatientQuery
 ## Module - Models
-from Models.CNNEncoderForTransformer import CNNEncoderForTransformer
+from Models.MixModelCAE import MixModelCAE
 import os
 from DataGenerator.DataProcessing import LoadClincalData
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-
+from Models.CNNEncoderForTransformer import CNNEncoderForTransformer
 torch.cuda.empty_cache()
 ## Main
 from Models.MixModelCoTr import MixModelCoTr
@@ -100,11 +100,10 @@ ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
 patch_size = 4
-embed_dim = (patch_size ** 3) * 4# For 3D image
+embed_dim = 128# For 2D image
 #embed_dim = (patch_size ** 3)  # For 3D image flatten
 
-in_channels = [32, 64, 128]
-model        = MixModelCoTr(module_dict, img_sizes=[32, 16, 8], patch_size=patch_size, embed_dim=embed_dim, in_channels=in_channels, depth=3, wf=5, num_layers=3)
+model        = MixModelCAE(module_dict, img_sizes=[64, 256], patch_size=patch_size, embed_dim=embed_dim, in_channels=1, num_layers=3)
 
 dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=4, numerical_norm = sc, category_norm = ohe, inference=False)
 trainer.fit(model, dataloader)
@@ -119,3 +118,15 @@ with torch.no_grad():
 
 with torch.no_grad():
     output = trainer.validate(model, dataloader.test_dataloader())
+
+
+# patch_size = 4
+# embed_dim = (patch_size ** 3) * 4# For 3D image
+# in_channels = [32, 64, 128]
+# model2        = MixModelCoTr(module_dict, img_sizes=[32, 16, 8], patch_size=patch_size, embed_dim=embed_dim, in_channels=in_channels, depth=3, wf=5, num_layers=3)
+#
+# with torch.no_grad():
+#     output = trainer.validate(model2, dataloader.test_dataloader())
+
+#with torch.no_grad():
+#    output = trainer.validate(model2, dataloader.test_dataloader(), 'DeepSurv-v2.ckpt')
