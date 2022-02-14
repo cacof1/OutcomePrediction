@@ -15,6 +15,7 @@ import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 
+
 ## Models
 from Models.Linear import Linear
 from Models.Classifier2D import Classifier2D
@@ -45,13 +46,12 @@ class MixModelCAE(LightningModule):
 
         self.classifier = nn.Sequential(
             nn.LazyLinear(128),
-            nn.LazyLinear(1),
-            nn.ReLU()
+            nn.LazyLinear(1)
         )
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.MSELoss()  # loss_fcn
 
-    def convert2D(self, x):
+    def convert2d(self, x):
         y = x.repeat(1, 3, 1, 1)
         features = self.feature_extractor(y)
         features = features.permute(2, 3, 0, 1)
@@ -64,11 +64,11 @@ class MixModelCAE(LightningModule):
         for key in self.module_dict.keys():
             if "Dose" == key or "Anatomy" == key:
                 x = datadict[key]
-                features = torch.cat([self.convert2D(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
-                features_pe = self.pe(features)
-
+                features = torch.cat([self.convert2d(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
+                # features_pe = self.pe(features)
+                features = features.permute(0, 2, 3, 1).flatten(2)
                 for transformer in self.transformers:
-                    x = transformer(features_pe)
+                    x = transformer(features)
 
                 x = self.pool_top(x)
                 features = x.flatten(start_dim=1)
@@ -87,17 +87,35 @@ class MixModelCAE(LightningModule):
         prediction = self.forward(datadict)
         print(prediction, label)
         loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
-        self.log("loss", loss)
+        self.log("loss", loss, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         datadict, label = batch
         prediction = self.forward(datadict)
         val_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
-        self.log("val_loss", val_loss)
-        print('val_prediction:', prediction, label)
-        print('val_loss:', val_loss)
-        return val_loss
+        self.log("val_loss", val_loss, on_epoch=True)
+        MAE = torch.abs(prediction.flatten(0) - label)
+        out = {'MAE': MAE, 'img': datadict['Anatomy']}
+        return out
+
+    def generate_report(self, img):
+        # img_batch = batch[0]['Anatomy']
+        tensorboard = self.logger.experiment
+        img_batch = img.view(img.shape[0]*img.shape[1], *[1, img.shape[2], img.shape[3] ])
+        grid = torchvision.utils.make_grid(img_batch)
+        tensorboard.add_image('worst_case_img', grid, self.current_epoch)
+
+    def validation_epoch_end(self, validation_step_outputs):
+        worst_MAE = 0
+        for i, data in enumerate(validation_step_outputs):
+            loss = data['MAE']
+            idx = torch.argmax(loss)
+            if loss[idx] > worst_MAE:
+                worst_img = data['img'][idx]
+                worst_MAE = loss[idx]
+        self.log('worst_MAE', worst_MAE)
+        self.generate_report(worst_img)
 
     def test_step(self, batch, batch_idx):
         datadict, label = batch
