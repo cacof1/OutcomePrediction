@@ -51,9 +51,36 @@ class MixModel(LightningModule):
         datadict, label = batch
         prediction  = self.forward(datadict)
         val_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
-        print('val_prediction:', prediction, label)
-        print('val_loss:', val_loss)
-        return val_loss
+        self.log("val_loss", val_loss, on_epoch=True)
+        MAE = torch.abs(prediction.flatten(0) - label)
+        out = {'MAE': MAE, 'img': datadict['Anatomy']}
+        return out
+
+    def generate_report(self, img):
+        # img_batch = batch[0]['Anatomy']
+        tensorboard = self.logger.experiment
+        img_batch = img.view(img.shape[0]*img.shape[1], *[1, img.shape[2], img.shape[3] ])
+        grid = torchvision.utils.make_grid(img_batch)
+        tensorboard.add_image('worst_case_img', grid, self.current_epoch)
+
+    def validation_epoch_end(self, validation_step_outputs):
+        worst_MAE = 0
+        for i, data in enumerate(validation_step_outputs):
+            loss = data['MAE']
+            idx = torch.argmax(loss)
+            if loss[idx] > worst_MAE:
+                worst_img = data['img'][idx]
+                worst_MAE = loss[idx]
+        self.log('worst_MAE', worst_MAE)
+        self.generate_report(worst_img)
+
+    def test_step(self, batch, batch_idx):
+        datadict, label = batch
+        prediction = self.forward(datadict)
+        test_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
+        # print('test_prediction:', prediction, label)
+        self.log('test_loss', test_loss)
+        return test_loss
         
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)

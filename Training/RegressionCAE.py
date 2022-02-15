@@ -15,7 +15,10 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from Models.CNNEncoderForTransformer import CNNEncoderForTransformer
 torch.cuda.empty_cache()
 ## Main
-from Models.MixModelCoTr import MixModelCoTr
+
+from pytorch_lightning import loggers as pl_loggers
+from Script.GenerateSmoothLabel import get_smoothed_label_distribution
+tb_logger = pl_loggers.TensorBoardLogger(save_dir='lightning_logs', name='CAE')
 
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
@@ -37,7 +40,7 @@ callbacks = [
     ModelCheckpoint(
         dirpath='./',
         monitor='loss',
-        filename="DeepSurv",
+        filename="CAE_DeepSurv",
         save_top_k=1,
         mode='min'),
     EarlyStopping(monitor='val_loss',
@@ -51,9 +54,9 @@ MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
 label          = sys.argv[2]
 
 # For local test
-existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
-ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
-MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
+# existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
+# ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
+# MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
 
 
 
@@ -82,10 +85,14 @@ MasterSheet = MasterSheet[columns]
 MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 MasterSheet = MasterSheet.dropna(subset=category_cols)
 MasterSheet = MasterSheet.dropna(subset=[label])
-MasterSheet = MasterSheet.fillna(MasterSheet.mean())
-trainer     = Trainer(gpus=1, max_epochs=20, callbacks=callbacks)
+
+weights, label_range = get_smoothed_label_distribution(MasterSheet, label)
+
+# MasterSheet = MasterSheet.fillna(MasterSheet.mean())
+trainer     = Trainer(gpus=1, max_epochs=20, callbacks=callbacks, logger=tb_logger) #
 #trainer     =Trainer(accelerator="cpu", callbacks=callbacks)
 ## This is where you change how the data is organized
+
 module_dict  = nn.ModuleDict({
     "Anatomy": CNNEncoderForTransformer(),
     #"Dose": Classifier3D(),
@@ -100,33 +107,46 @@ ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
 patch_size = 4
-embed_dim = 128# For 2D image
+embed_dim = 256# For 2D image
 #embed_dim = (patch_size ** 3)  # For 3D image flatten
 
-model        = MixModelCAE(module_dict, img_sizes=[64, 256], patch_size=patch_size, embed_dim=embed_dim, in_channels=1, num_layers=3)
+model        = MixModelCAE(module_dict, img_sizes=[64, 256], patch_size=patch_size, embed_dim=embed_dim, in_channels=1, num_layers=3, weights=weights, label_range = label_range)
 
 dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=4, numerical_norm = sc, category_norm = ohe, inference=False)
 trainer.fit(model, dataloader)
 
+# worstCase = 0
+#
+# with torch.no_grad():
+#     for i, data in enumerate(dataloader.test_dataloader()):
+#         truth = data[1]
+#         x = data[0]
+#         output = model(x)
+#         diff = torch.abs(output.flatten(0) - truth)
+#         idx = torch.argmax(diff)
+#         if diff[idx] > worstCase:
+#             worst_img = x["Anatomy"][idx]
+#         # output = model.test_step(data, i)
+#         print('output:', output, 'true:', truth)
+#
+
+worstCase = 0
 with torch.no_grad():
     for i, data in enumerate(dataloader.test_dataloader()):
         truth = data[1]
         x = data[0]
-        output = model(x)
-        aa = model.test_step(data, i)
+        output = model(x, truth)
+        diff = torch.abs(output['prediction'].flatten(0) - truth)
+        idx = torch.argmax(diff)
+        if diff[idx] > worstCase:
+            worstCase = diff[idx]
+            worst_img = x["Anatomy"][idx]
+        # output = model.test_step(data, i)
         print('output:', output, 'true:', truth)
+    grid = model.generate_report(img=worst_img)
+    model.logger.experiment.add_image('test_worst_case_img', grid)
 
 with torch.no_grad():
-    output = trainer.validate(model, dataloader.test_dataloader())
+    output = trainer.test(model, dataloader.test_dataloader())
 
-
-# patch_size = 4
-# embed_dim = (patch_size ** 3) * 4# For 3D image
-# in_channels = [32, 64, 128]
-# model2        = MixModelCoTr(module_dict, img_sizes=[32, 16, 8], patch_size=patch_size, embed_dim=embed_dim, in_channels=in_channels, depth=3, wf=5, num_layers=3)
-#
-# with torch.no_grad():
-#     output = trainer.validate(model2, dataloader.test_dataloader())
-
-#with torch.no_grad():
-#    output = trainer.validate(model2, dataloader.test_dataloader(), 'DeepSurv-v2.ckpt')
+print(output)

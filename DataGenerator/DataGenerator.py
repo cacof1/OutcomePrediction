@@ -92,7 +92,7 @@ class DataModule(LightningDataModule):
         print('test')
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0)
-    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, shuffle=True, num_workers=0)
+    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0)
     def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size)
 
 def PatientQuery(mastersheet, **kwargs):
