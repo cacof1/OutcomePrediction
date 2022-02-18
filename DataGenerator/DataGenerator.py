@@ -12,11 +12,12 @@ import torch
 #import openslide
 import sys, glob
 import torch.nn.functional as F
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 import SimpleITK as sitk
 import scipy.ndimage as ndi
 from DataGenerator.DataProcessing import LoadClincalData
 from skimage.measure import regionprops
+from Script.GenerateSmoothLabel import get_smoothed_label_distribution
 from sklearn.preprocessing import StandardScaler
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, mastersheet, label, keys, inference=False, n_norm = None, c_norm = None, transform=None, target_transform = None):
@@ -83,8 +84,17 @@ class DataModule(LightningDataModule):
         self.batch_size      = batch_size
         self.numerical_norm = numerical_norm
         self.category_norm = category_norm
-        train, val_test       = train_test_split(mastersheet, train_size=0.7)
-        val, test             = train_test_split(val_test,test_size =0.66)
+        # Convert regression value to histogram class
+        regression_y = mastersheet[label].to_numpy()
+        bins = np.arange(np.min(regression_y), np.max(regression_y)-2, 3)
+        cls_label = np.digitize(regression_y, bins)
+        train, val_test       = train_test_split(mastersheet, train_size=0.7, stratify=cls_label)
+
+        regression_y = val_test[label].to_numpy()
+        bins = np.arange(np.min(regression_y), np.max(regression_y)-2, 6)
+        cls_label = np.digitize(regression_y, bins)
+
+        val, test             = train_test_split(val_test, test_size=0.66, stratify=cls_label)
 
         self.train_data  = DataGenerator(train, label, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = train_transform, **kwargs)
         self.val_data        = DataGenerator(val,   label, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
@@ -125,28 +135,28 @@ def checkCrop(center, delta, imgShape, fn):
         print("ERROR! Invalid crop for file %s" % (fn))
         exit()
 
-def LoadClinical(df): ## Not finished
-    all_cols  = ['arm','age','gender','race','ethnicity','zubrod',
-                 'histology','nonsquam_squam','ajcc_stage_grp','rt_technique',
-                 'egfr_hscore_200','smoke_hx','rx_terminated_ae','rt_dose',
-                 'volume_ptv','dmax_ptv','v100_ptv',
-                 'v95_ptv','v5_lung','v20_lung','dmean_lung','v5_heart',
-                 'v30_heart','v20_esophagus','v60_esophagus','Dmin_PTV_CTV_MARGIN',
-                 'Dmax_PTV_CTV_MARGIN','Dmean_PTV_CTV_MARGIN','rt_compliance_physician',
-                 'rt_compliance_ptv90','received_conc_chemo','received_conc_cetuximab',
-                 'received_cons_chemo','received_cons_cetuximab',
-    ]
-
-    numerical_cols = ['age','volume_ptv','dmax_ptv','v100_ptv',
-                      'v95_ptv','v5_lung','v20_lung','dmean_lung','v5_heart',
-                      'v30_heart','v20_esophagus','v60_esophagus','Dmin_PTV_CTV_MARGIN',
-                      'Dmax_PTV_CTV_MARGIN','Dmean_PTV_CTV_MARGIN']
-
-    category_cols = list(set(all_cols).difference(set(numerical_cols)))
-    for categorical in category_cols:
-        df.loc[df.index.str.startswith(categorical)]
-        temp_col = pd.get_dummies(df[categorical], prefix=categorical)
-
-    for numerical in numerical_cols:
-        X_test = X_test.join([outcome[numerical]])
-    return y_init
+# def LoadClinical(df): ## Not finished
+#     all_cols  = ['arm','age','gender','race','ethnicity','zubrod',
+#                  'histology','nonsquam_squam','ajcc_stage_grp','rt_technique',
+#                  'egfr_hscore_200','smoke_hx','rx_terminated_ae','rt_dose',
+#                  'volume_ptv','dmax_ptv','v100_ptv',
+#                  'v95_ptv','v5_lung','v20_lung','dmean_lung','v5_heart',
+#                  'v30_heart','v20_esophagus','v60_esophagus','Dmin_PTV_CTV_MARGIN',
+#                  'Dmax_PTV_CTV_MARGIN','Dmean_PTV_CTV_MARGIN','rt_compliance_physician',
+#                  'rt_compliance_ptv90','received_conc_chemo','received_conc_cetuximab',
+#                  'received_cons_chemo','received_cons_cetuximab',
+#     ]
+#
+#     numerical_cols = ['age','volume_ptv','dmax_ptv','v100_ptv',
+#                       'v95_ptv','v5_lung','v20_lung','dmean_lung','v5_heart',
+#                       'v30_heart','v20_esophagus','v60_esophagus','Dmin_PTV_CTV_MARGIN',
+#                       'Dmax_PTV_CTV_MARGIN','Dmean_PTV_CTV_MARGIN']
+#
+#     category_cols = list(set(all_cols).difference(set(numerical_cols)))
+#     for categorical in category_cols:
+#         df.loc[df.index.str.startswith(categorical)]
+#         temp_col = pd.get_dummies(df[categorical], prefix=categorical)
+#
+#     for numerical in numerical_cols:
+#         X_test = X_test.join([outcome[numerical]])
+#     return y_init

@@ -89,7 +89,7 @@ class MixModelCAE(LightningModule):
                 x = self.pool_top(x)
                 features = x.flatten(start_dim=1)
                 if self.training and self.current_epoch >= 1:
-                    smooth_features = self.FDS.smooth(features, labels, self.current_epoch)
+                    features = self.FDS.smooth(features, labels, self.current_epoch)
 
             if "Clinical" == key:
                 if flg == 0:
@@ -107,6 +107,7 @@ class MixModelCAE(LightningModule):
         forward_cal = self.forward(datadict, label)
         prediction = forward_cal['prediction']
         print(prediction, label)
+        # loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         loss = self.WeightedMSE(prediction.squeeze(dim=1), batch[-1])
         self.log("loss", loss, on_epoch=True)
         out = {'loss': loss, 'features': forward_cal['features'], 'label': label}

@@ -44,7 +44,7 @@ class MixModel(LightningModule):
         prediction  = self.forward(datadict)
         print(prediction, label)
         loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
-        self.log("loss", loss)
+        self.log("loss", loss, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):

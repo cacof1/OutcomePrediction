@@ -113,11 +113,32 @@ X_train_enc = ohe.transform(category_data)
 model = MixModel(module_dict)
 
 dataloader = DataModule(MasterSheet, label, module_dict.keys(), train_transform=train_transform,
-                        val_transform=val_transform, batch_size=12, numerical_norm=sc, category_norm=ohe,
+                        val_transform=val_transform, batch_size=4, numerical_norm=sc, category_norm=ohe,
                         inference=False)
 trainer.fit(model, dataloader)
+
+worstCase = 0
+with torch.no_grad():
+    for i, data in enumerate(dataloader.test_dataloader()):
+        truth = data[1]
+        x = data[0]
+        output = model(x)
+        diff = torch.abs(output['prediction'].flatten(0) - truth)
+        idx = torch.argmax(diff)
+        if diff[idx] > worstCase:
+            worstCase = diff[idx]
+            worst_img = x["Anatomy"][idx]
+        # output = model.test_step(data, i)
+        print('output:', output, 'true:', truth)
+    grid = model.generate_report(img=worst_img)
+    model.logger.experiment.add_image('test_worst_case_img', grid)
 
 with torch.no_grad():
     output = trainer.test(model, dataloader.test_dataloader())
 
 print(output)
+
+# with torch.no_grad():
+#     output = trainer.test(model, dataloader.test_dataloader())
+#
+# print(output)

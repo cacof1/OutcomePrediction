@@ -112,7 +112,7 @@ embed_dim = 256# For 2D image
 
 model        = MixModelCAE(module_dict, img_sizes=[64, 256], patch_size=patch_size, embed_dim=embed_dim, in_channels=1, num_layers=3, weights=weights, label_range = label_range)
 
-dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=4, numerical_norm = sc, category_norm = ohe, inference=False)
+dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=12, numerical_norm = sc, category_norm = ohe, inference=False)
 trainer.fit(model, dataloader)
 
 # worstCase = 0

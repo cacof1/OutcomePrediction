@@ -47,8 +47,8 @@ def get_smoothed_label_distribution(MasterSheet, label):
     mse = ((label_all - label_mean) ** 2).mean()
     print('MSE:', mse)
 
-    # _ = plt.hist(label_all, bins=label_range)
-    # plt.show()
+    _ = plt.hist(label_all, bins=label_range)
+    plt.show()
     #
     # plt.bar(label_range[0:-1], eff_label_dist)
     # plt.show()
