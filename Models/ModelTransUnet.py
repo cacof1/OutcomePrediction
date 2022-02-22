@@ -22,7 +22,7 @@ from Models.Classifier2D import Classifier2D
 from Models.Classifier3D import Classifier3D
 from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, TransformerBlock
 
-# Please refer to model CoTr: Efficiently Bridging CNN and Transformer for 3D Medical Image Segmentation.
+# Please refer to model TransUNet: Transformers Make Strong Encoders for Medical Image Segmentation
 
 
 class ModelTransUnet(LightningModule):
