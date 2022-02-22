@@ -21,16 +21,20 @@ from Models.Classifier2D import Classifier2D
 from Models.Classifier3D import Classifier3D
 from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, TransformerBlock
 
+# Please refer to model CoTr: Efficiently Bridging CNN and Transformer for 3D Medical Image Segmentation.
 
-class MixModelCoTr(LightningModule):
+
+class ModelCoTr(LightningModule):
     def __init__(self, module_dict, img_sizes, patch_size, embed_dim, in_channels, depth=3, wf=5, num_layers=3,
                  loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.module_dict = module_dict
-        self.pe = nn.ModuleList(
-            [PositionEncoding(img_size=[img_sizes[i]], patch_size=patch_size, in_channel=2 ** (wf + i),
-                              embed_dim=embed_dim, img_dim=3, dropout=0.5, iftoken=True) for i in range(depth)]
-        )
+        self.pe = PositionEncoding(img_size=[img_sizes[0]], patch_size=patch_size, in_channel=128,
+                                   embed_dim=8 * 128, img_dim=3, dropout=0.5, iftoken=True)
+        # self.pe = nn.ModuleList(
+        #     [PositionEncoding(img_size=[img_sizes[i]], patch_size=patch_size, in_channel=2 ** (wf + i),
+        #                       embed_dim=embed_dim, img_dim=3, dropout=0.5, iftoken=True) for i in range(depth)]
+        # )
         self.transformers = nn.ModuleList(
             [TransformerBlock(num_heads=16, embed_dim=embed_dim, mlp_dim=128, dropout=0.5) for _ in range(num_layers)])
 
@@ -41,7 +45,6 @@ class MixModelCoTr(LightningModule):
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.MSELoss()  # loss_fcn
 
-
     def forward(self, datadict):
         # features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
         # For transformer
@@ -51,12 +54,16 @@ class MixModelCoTr(LightningModule):
                 x = datadict[key]
                 for i, down in enumerate(self.module_dict[key].model.encoder):
                     x = down(x)
-                    if flg == 0:
-                        feature = self.pe[i](x)
-                        flg = 1
-                    else:
-                        out_trans = self.pe[i](x)
-                        feature = torch.cat((feature, out_trans), dim=1)
+
+                feature = self.pe(x)
+                # for i, down in enumerate(self.module_dict[key].model.encoder):
+                #     x = down(x)
+                #     if flg == 0:
+                #         feature = self.pe[i](x)
+                #         flg = 1
+                #     else:
+                #         out_trans = self.pe[i](x)
+                #         feature = torch.cat((feature, out_trans), dim=1)
 
                 for transformer in self.transformers:
                     x = transformer(feature)
@@ -90,7 +97,7 @@ class MixModelCoTr(LightningModule):
     def generate_report(self, img):
         # img_batch = batch[0]['Anatomy']
         # tensorboard = self.logger.experiment
-        img_batch = img.view(img.shape[0]*img.shape[1], *[1, img.shape[2], img.shape[3] ])
+        img_batch = img.view(img.shape[0] * img.shape[1], *[1, img.shape[2], img.shape[3]])
         grid = torchvision.utils.make_grid(img_batch)
         return grid
         # tensorboard.add_image('worst_case_img', grid, self.current_epoch)

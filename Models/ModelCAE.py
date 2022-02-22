@@ -23,14 +23,20 @@ from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, Transfor
 from Models.fds import FDS
 
 
-class MixModelCAE(LightningModule):
-    def __init__(self, module_dict, img_sizes, patch_size, embed_dim, in_channels, num_layers=3, weights=None, label_range=None,
+# Please refer paper CAE-TRANSFORMER: TRANSFORMER-BASED MODEL TO PREDICT INVASIVENESS
+# OF LUNG ADENOCARCINOMA SUBSOLID NODULES FROM NON-THIN SECTION 3D
+# CT SCANS
+
+
+class ModelCAE(LightningModule):
+    def __init__(self, config, img_sizes, patch_size, embed_dim, in_channels, num_layers=3, weights=None,
+                 label_range=None,
                  loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
-        self.module_dict = module_dict
         self.weights = weights
         self.label_range = label_range
         ## define backbone
+        self.config = config
         backbone = torchvision.models.resnet18(pretrained=True)
         layers = list(backbone.children())[:-1]
         self.feature_extractor = nn.Sequential(*layers)
@@ -64,7 +70,7 @@ class MixModelCAE(LightningModule):
                 loss = loss + (prediction[i] - label) ** 2 * self.weights[idx[0][0]]
             else:
                 loss = loss + (prediction[i] - label) ** 2 * self.weights[-1]
-        loss = loss / (i+1)
+        loss = loss / (i + 1)
         return loss
 
     def convert2d(self, x):
@@ -74,53 +80,36 @@ class MixModelCAE(LightningModule):
         features = self.linear1(features)
         return features
 
-    def forward(self, datadict, labels):
-        # features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
-        # For transformer
-        for key in self.module_dict.keys():
-            if "Dose" == key or "Anatomy" == key:
-                x = datadict[key]
-                features = torch.cat([self.convert2d(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
-                # features_pe = self.pe(features)
-                features = features.permute(0, 2, 3, 1).flatten(2)
-                for transformer in self.transformers:
-                    x = transformer(features)
-
-                x = self.pool_top(x)
-                features = x.flatten(start_dim=1)
-                if self.training and self.current_epoch >= 1:
-                    features = self.FDS.smooth(features, labels, self.current_epoch)
-
-            if "Clinical" == key:
-                if flg == 0:
-                    features = self.module_dict[key](datadict[key])
-                    flg = 1
-                else:
-                    features = torch.cat((features, self.module_dict[key](datadict[key])), dim=1)
-
-        out = {'features': features, 'prediction': self.classifier(features)}
-
-        return out
+    def forward(self, x):
+        features = torch.cat([self.convert2d(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
+        # features = self.pe(features)
+        features = features.permute(0, 2, 3, 1).flatten(2)
+        for transformer in self.transformers:
+            features = transformer(features)
+        x = self.pool_top(features)
+        features = x.flatten(start_dim=1)
+        return features
 
     def training_step(self, batch, batch_idx):
         datadict, label = batch
         forward_cal = self.forward(datadict, label)
         prediction = forward_cal['prediction']
         print(prediction, label)
-        # loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
-        loss = self.WeightedMSE(prediction.squeeze(dim=1), batch[-1])
+        if self.config['REGULARIZATION']['Label_smoothing']:
+            loss = self.WeightedMSE(prediction.squeeze(dim=1), batch[-1])
+        else:
+            loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         self.log("loss", loss, on_epoch=True)
         out = {'loss': loss, 'features': forward_cal['features'], 'label': label}
         return out
 
     def training_epoch_end(self, training_step_outputs):
-        # for i, out in enumerate(training_step_outputs):
-        #     print(out['features'])
-        training_features = torch.cat([out['features'] for i, out in enumerate(training_step_outputs)], dim=0)
-        training_labels = torch.cat([out['label'] for i, out in enumerate(training_step_outputs)], dim=0)
-        if self.current_epoch >= 0:
-            self.FDS.update_last_epoch_stats(self.current_epoch)
-            self.FDS.update_running_stats(training_features, training_labels, self.current_epoch)
+        if self.config['REGULARIZATION']['Feature_smoothing']:
+            training_features = torch.cat([out['features'] for i, out in enumerate(training_step_outputs)], dim=0)
+            training_labels = torch.cat([out['label'] for i, out in enumerate(training_step_outputs)], dim=0)
+            if self.current_epoch >= 0:
+                self.FDS.update_last_epoch_stats(self.current_epoch)
+                self.FDS.update_running_stats(training_features, training_labels, self.current_epoch)
 
     def validation_step(self, batch, batch_idx):
         datadict, label = batch
@@ -131,13 +120,6 @@ class MixModelCAE(LightningModule):
         MAE = torch.abs(prediction.flatten(0) - label)
         out = {'MAE': MAE, 'img': datadict['Anatomy']}
         return out
-
-    @staticmethod
-    def generate_report(img):
-        # img_batch = batch[0]['Anatomy']
-        img_batch = img.view(img.shape[0] * img.shape[1], *[1, img.shape[2], img.shape[3]])
-        grid = torchvision.utils.make_grid(img_batch)
-        return grid
 
     def validation_epoch_end(self, validation_step_outputs):
         worst_MAE = 0
@@ -157,7 +139,7 @@ class MixModelCAE(LightningModule):
         prediction = forward_cal['prediction']
         test_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         print('test_prediction:', prediction, label)
-        print('test_loss:', test_loss)
+        self.log('test_loss:', test_loss)
         return test_loss
 
     def configure_optimizers(self):

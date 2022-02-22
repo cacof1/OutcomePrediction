@@ -15,18 +15,21 @@ import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 from Utils.GenerateSmoothLabel import generate_report
-
+from Models.fds import FDS
 ## Models
 from Models.Linear import Linear
 from Models.Classifier2D import Classifier2D
 from Models.Classifier3D import Classifier3D
 
 
-class MixModel(LightningModule):
-    def __init__(self, module_dict, config, loss_fcn=torch.nn.BCEWithLogitsLoss()):
+class MixModelSmooth(LightningModule):
+    def __init__(self, module_dict, config, label_range, weights, loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.module_dict = module_dict
         self.config = config
+        self.label_range = label_range
+        self.weights = weights
+        self.FDS = FDS(feature_dim=1032, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
         self.classifier = nn.Sequential(
             nn.LazyLinear(128),
             nn.LazyLinear(1)
@@ -34,27 +37,51 @@ class MixModel(LightningModule):
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.MSELoss()  # loss_fcn
 
-    def forward(self, datadict):
-        # module_dict = nn.ModuleDict()
-        features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
-        # for key in self.module_dict.keys():
-        #     data = self.module_dict[key](datadict[key])
-        #     print(data.shape)
+    def WeightedMSE(self, prediction, labels):
+        loss = 0
+        for i, label in enumerate(labels):
+            idx = (self.label_range == int(label.cpu().numpy())).nonzero()
+            if (idx is not None) and (idx[0][0] < 60):
+                # print(idx[0][0])
+                loss = loss + (prediction[i] - label) ** 2 * self.weights[idx[0][0]]
+            else:
+                loss = loss + (prediction[i] - label) ** 2 * self.weights[-1]
+        loss = loss / (i + 1)
+        return loss
 
-        return self.classifier(features)
+    def forward(self, datadict, labels):
+        features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
+        if self.config['REGULARIZATION']['Feature_smoothing']:
+            if self.training and self.current_epoch >= 1:
+                features = self.FDS.smooth(features, labels, self.current_epoch)
+
+        return features
 
     def training_step(self, batch, batch_idx):
         datadict, label = batch
-        prediction = self.forward(datadict)
+        features = self.forward(datadict, label)
+        prediction = self.classifier(features)
         print(prediction, label)
-        loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
+        if self.config['REGULARIZATION']['Label_smoothing']:
+            loss = self.WeightedMSE(prediction.squeeze(dim=1), batch[-1])
+        else:
+            loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         self.log("loss", loss, on_epoch=True)
-        return loss
+        out = {'loss': loss, 'features': features, 'label': label}
+        return out
+
+    def training_epoch_end(self, training_step_outputs):
+        if self.config['REGULARIZATION']['Feature_smoothing']:
+            training_features = torch.cat([out['features'] for i, out in enumerate(training_step_outputs)], dim=0)
+            training_labels = torch.cat([out['label'] for i, out in enumerate(training_step_outputs)], dim=0)
+            if self.current_epoch >= 0:
+                self.FDS.update_last_epoch_stats(self.current_epoch)
+                self.FDS.update_running_stats(training_features, training_labels, self.current_epoch)
 
     def validation_step(self, batch, batch_idx):
         out = {}
         datadict, label = batch
-        prediction = self.forward(datadict)
+        prediction = self.classifier(self.forward(datadict, label))
         val_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         self.log("val_loss", val_loss, on_epoch=True)
         MAE = torch.abs(prediction.flatten(0) - label)
@@ -86,9 +113,8 @@ class MixModel(LightningModule):
 
     def test_step(self, batch, batch_idx):
         datadict, label = batch
-        prediction = self.forward(datadict)
+        prediction = self.classifier(self.forward(datadict, label))
         test_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
-        # print('test_prediction:', prediction, label)
         self.log('test_loss', test_loss)
         return test_loss
 
@@ -96,3 +122,4 @@ class MixModel(LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
         return [optimizer], [scheduler]
+

@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import convolve1d
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal.windows import triang
+import torchvision
 
 
 def get_lds_kernel_window(kernel, ks, sigma):
@@ -53,3 +54,11 @@ def get_smoothed_label_distribution(MasterSheet, label):
     # plt.bar(label_range[0:-1], eff_label_dist)
     # plt.show()
     return weights, bin_index_per_label[1]
+
+
+def generate_report(img):
+    # img_batch = batch[0]['Anatomy']
+    img_batch = img.view(img.shape[0] * img.shape[1], *[1, img.shape[2], img.shape[3]])
+    grid = torchvision.utils.make_grid(img_batch)
+    return grid
+

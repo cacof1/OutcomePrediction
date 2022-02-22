@@ -96,12 +96,13 @@ data1 = sc.fit_transform(numerical_data)
 ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
-patch_size = 4
-embed_dim = (patch_size ** 3) * 4  # For 3D image
+patch_size = 2
+embed_dim = (patch_size ** 3) * 128  # For 3D image
 # embed_dim = (patch_size ** 3)  # For 3D image flatten
 
 in_channels = [32, 64, 128]
-model = MixModelCoTr(module_dict, img_sizes=[32, 16, 8], patch_size=patch_size, embed_dim=embed_dim,
+# img_sizes=[32, 16, 8]
+model = MixModelCoTr(module_dict, img_sizes=[8], patch_size=patch_size, embed_dim=embed_dim,
                      in_channels=in_channels, depth=3, wf=5, num_layers=3)
 
 dataloader = DataModule(MasterSheet, label, module_dict.keys(), train_transform=train_transform,

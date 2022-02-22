@@ -8,17 +8,25 @@ import pandas as pd
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule, DataGenerator, PatientQuery
 ## Module - Models
-from Models.MixModelCAE import MixModelCAE
+from Models.ModelCAE import ModelCAE
 import os
 from DataGenerator.DataProcessing import LoadClincalData
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from Models.CNNEncoderForTransformer import CNNEncoderForTransformer
 torch.cuda.empty_cache()
 ## Main
-
+from Models.Classifier3D import Classifier3D
+from Models.Linear import Linear
+import toml
+from Models.MixModel import MixModel
+from Models.MixModelSmooth import MixModelSmooth
 from pytorch_lightning import loggers as pl_loggers
-from Script.GenerateSmoothLabel import get_smoothed_label_distribution
+from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
+from Utils.GenerateSmoothLabel import generate_report
 tb_logger = pl_loggers.TensorBoardLogger(save_dir='lightning_logs', name='CAE')
+
+config = toml.load('../Settings.ini')
+img_dim = config['DATA']['dim']
 
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
@@ -26,13 +34,13 @@ train_transform = tio.Compose([
     tio.RandomFlip(),
     tio.RandomNoise(),
     tio.RandomMotion(),
-    tio.transforms.Resize([64,64,64]),
+    tio.transforms.Resize(img_dim),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
 val_transform = tio.Compose([
     tio.transforms.ZNormalization(),
-    tio.transforms.Resize([64,64,64]),
+    tio.transforms.Resize(img_dim),
     #tio.RandomAffine(),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
@@ -48,10 +56,15 @@ callbacks = [
 ]
 
 
-MasterSheet    = pd.read_csv(sys.argv[1],index_col='patid')
+
+path = config['DATA']['Path']
+mastersheet = config['DATA']['Mastersheet']
+target = config['DATA']['target']
+
+MasterSheet    = pd.read_csv(path + mastersheet,index_col='patid')
 #analysis_inclusion=1,
 #analysis_inclusion_rt=1) ## Query specific values in tags
-label          = sys.argv[2]
+label          = target
 
 # For local test
 # existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
@@ -85,19 +98,18 @@ MasterSheet = MasterSheet[columns]
 MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 MasterSheet = MasterSheet.dropna(subset=category_cols)
 MasterSheet = MasterSheet.dropna(subset=[label])
+MasterSheet = MasterSheet.fillna(MasterSheet.mean())
 
-weights, label_range = get_smoothed_label_distribution(MasterSheet, label)
+if config['REGULARIZATION']['Label_smoothing']:
+    weights, label_range = get_smoothed_label_distribution(MasterSheet, label)
+else:
+    weights = None
+    label_range = None
 
-# MasterSheet = MasterSheet.fillna(MasterSheet.mean())
+
 trainer     = Trainer(gpus=1, max_epochs=20, callbacks=callbacks, logger=tb_logger) #
 #trainer     =Trainer(accelerator="cpu", callbacks=callbacks)
 ## This is where you change how the data is organized
-
-module_dict  = nn.ModuleDict({
-    "Anatomy": CNNEncoderForTransformer(),
-    #"Dose": Classifier3D(),
-    #"Clinical": Linear()
-})
 
 numerical_data, category_data = LoadClincalData(MasterSheet)
 sc = StandardScaler()
@@ -106,14 +118,33 @@ data1 = sc.fit_transform(numerical_data)
 ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
-patch_size = 4
-embed_dim = 256# For 2D image
-#embed_dim = (patch_size ** 3)  # For 3D image flatten
+patch_size = config['MODEL']['Patch_size']
+embed_dim = config['MODEL']['Transformer_embed_size']# For 2D image
+batch_size = config['MODEL']['Batch_size']
+num_layers = config['MODEL']['Transformer_layer']
 
-model        = MixModelCAE(module_dict, img_sizes=[64, 256], patch_size=patch_size, embed_dim=embed_dim, in_channels=1, num_layers=3, weights=weights, label_range = label_range)
+module_selected = config['DATA']['module']
+module_dict = nn.ModuleDict()
 
-dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=12, numerical_norm = sc, category_norm = ohe, inference=False)
-trainer.fit(model, dataloader)
+if config['MODEL']['3D_MODEL'] == 'CAE':
+    Backbone = ModelCAE(config, img_sizes=img_dim, patch_size=patch_size, embed_dim=embed_dim, in_channels=1, num_layers=num_layers, weights=weights, label_range = label_range)
+if config['MODEL']['Clinical_Backbone']:
+    Clinical_backbone = Linear()
+
+for i, module in enumerate(module_selected):
+    if module == 'Anatomy' or module == 'Dose':
+        module_dict[module] = Backbone
+    else:
+        module_dict[module] = Clinical_backbone
+if config['REGULARIZATION']['smoothing']:
+    model = MixModelSmooth(module_dict, config, label_range=label_range, weights=weights)
+else:
+    model = MixModel(module_dict, config)
+dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_transform=train_transform,
+                        val_transform=val_transform, batch_size=batch_size, numerical_norm=sc, category_norm=ohe,
+                        inference=False)
+
+# trainer.fit(model, dataloader)
 
 # worstCase = 0
 #
@@ -129,24 +160,34 @@ trainer.fit(model, dataloader)
 #         # output = model.test_step(data, i)
 #         print('output:', output, 'true:', truth)
 #
-
 worstCase = 0
 with torch.no_grad():
     for i, data in enumerate(dataloader.test_dataloader()):
         truth = data[1]
         x = data[0]
-        output = model(x, truth)
-        diff = torch.abs(output['prediction'].flatten(0) - truth)
+        if config['REGULARIZATION']['smoothing']:
+            features = model(x, truth)
+            output = model.classifier(features)
+        else:
+            output = model(x)
+        diff = torch.abs(output.flatten(0) - truth)
         idx = torch.argmax(diff)
         if diff[idx] > worstCase:
-            worstCase = diff[idx]
-            worst_img = x["Anatomy"][idx]
-        # output = model.test_step(data, i)
-        print('output:', output, 'true:', truth)
-    grid = model.generate_report(img=worst_img)
-    model.logger.experiment.add_image('test_worst_case_img', grid)
+            if 'Anatomy' in config['DATA']['module']:
+                worst_img = data['Anatomy'][idx]
+            if 'Dose' in config['DATA']['module']:
+                worst_dose = data['Dose'][idx]
+            worst_MAE = diff[idx]
 
-with torch.no_grad():
-    output = trainer.test(model, dataloader.test_dataloader())
+        model.log('worst_MAE', worst_MAE)
+        if 'Anatomy' in config['DATA']['module']:
+            grid_img = generate_report(worst_img)
+            model.logger.experiment.add_image('test_worst_case_img', grid_img, i)
+        if 'Dose' in config['DATA']['module']:
+            grid_dose = generate_report(worst_dose)
+            model.logger.experiment.add_image('test_worst_case_dose', grid_dose, i)
 
-print(output)
+# with torch.no_grad():
+#     output = trainer.test(model, dataloader.test_dataloader())
+#
+# print(output)

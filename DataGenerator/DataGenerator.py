@@ -17,10 +17,10 @@ import SimpleITK as sitk
 import scipy.ndimage as ndi
 from DataGenerator.DataProcessing import LoadClincalData
 from skimage.measure import regionprops
-from Script.GenerateSmoothLabel import get_smoothed_label_distribution
+from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
 from sklearn.preprocessing import StandardScaler
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, mastersheet, label, keys, inference=False, n_norm = None, c_norm = None, transform=None, target_transform = None):
+    def __init__(self, mastersheet, label, config, keys, inference=False, n_norm = None, c_norm = None, transform=None, target_transform = None):
         super().__init__()
         self.keys             = list(keys)
         self.transform        = transform
@@ -30,6 +30,7 @@ class DataGenerator(torch.utils.data.Dataset):
         self.mastersheet      = mastersheet
         self.n_norm = n_norm
         self.c_norm = c_norm
+        self.config = config
 
     def __len__(self):
         return int(self.mastersheet.shape[0])
@@ -42,26 +43,34 @@ class DataGenerator(torch.utils.data.Dataset):
         label    = self.mastersheet[self.label].iloc[id]
         # Get the mask of PTV
         if "Dose" in self.keys or "Anatomy" in self.keys:
-            path = self.mastersheet["CTPath"].iloc[id]
-            mask = path[0:-16] + 'structs\PTV.nrrd'
-            mask_img = LoadImg(mask)
-            properties = regionprops(mask_img.astype(np.int8), mask_img)
-            cropbox = properties[0].bbox
+            if self.config['DATA']['Use_mask']:
+                path = self.mastersheet["CTPath"].iloc[id]
+                mask = path[0:-16] + 'structs\PTV.nrrd'
+                mask_img = LoadImg(mask)
+                properties = regionprops(mask_img.astype(np.int8), mask_img)
+                cropbox = properties[0].bbox
 
         if "Dose" in self.keys:
             dose = LoadImg(self.mastersheet["DosePath"].iloc[id])
             #maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             #checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             #datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
-            datadict["Dose"] = np.expand_dims(MaskCrop(dose,cropbox),0)
+            if self.config['DATA']['Use_mask']:
+                datadict["Dose"] = np.expand_dims(MaskCrop(dose,cropbox), 0)
+            else:
+                datadict["Dose"] = np.expand_dims(dose, 0)
+
             if self.transform:            
                 datadict["Dose"]  = self.transform(datadict["Dose"])
-            print('End')
                 
         if "Anatomy" in self.keys:
             anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
             #datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
-            datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy,cropbox),0)
+            if self.config['DATA']['Use_mask']:
+                datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy,cropbox), 0)
+            else:
+                datadict["Anatomy"] = np.expand_dims(anatomy, 0)
+
             if self.transform:            
                 datadict["Anatomy"]  = torch.from_numpy(self.transform(datadict["Anatomy"]))
 
@@ -71,7 +80,7 @@ class DataGenerator(torch.utils.data.Dataset):
             #data = clinical_data.iloc[id].to_numpy()
             num_data = self.n_norm.transform([numerical_data.iloc[id]])
             cat_data = self.c_norm.transform([category_data.iloc[id]]).toarray()
-            data = np.concatenate((num_data,cat_data),axis =1)
+            data = np.concatenate((num_data, cat_data), axis=1)
             datadict["Clinical"] = data.flatten()
 
         if(self.inference): return datadict
@@ -79,11 +88,12 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, mastersheet, label, keys, train_transform = None, val_transform = None, batch_size = 64, numerical_norm = None, category_norm = None, **kwargs):
+    def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64, numerical_norm = None, category_norm = None, **kwargs):
         super().__init__()
         self.batch_size      = batch_size
         self.numerical_norm = numerical_norm
         self.category_norm = category_norm
+        self.config = config
         # Convert regression value to histogram class
         regression_y = mastersheet[label].to_numpy()
         bins = np.arange(np.min(regression_y), np.max(regression_y)-2, 3)
@@ -91,14 +101,15 @@ class DataModule(LightningDataModule):
         train, val_test       = train_test_split(mastersheet, train_size=0.7, stratify=cls_label)
 
         regression_y = val_test[label].to_numpy()
-        bins = np.arange(np.min(regression_y), np.max(regression_y)-2, 6)
+        bins = np.arange(np.min(regression_y), np.max(regression_y)-6, 7)
         cls_label = np.digitize(regression_y, bins)
 
         val, test             = train_test_split(val_test, test_size=0.66, stratify=cls_label)
+        _, _ = get_smoothed_label_distribution(test, label)
 
-        self.train_data  = DataGenerator(train, label, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = train_transform, **kwargs)
-        self.val_data        = DataGenerator(val,   label, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
-        self.test_data       = DataGenerator(test,  label, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
+        self.train_data  = DataGenerator(train, label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = train_transform, **kwargs)
+        self.val_data        = DataGenerator(val,   label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
+        self.test_data       = DataGenerator(test,  label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
         print('test')
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0)
