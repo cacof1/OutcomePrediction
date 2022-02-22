@@ -15,6 +15,7 @@ import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 from Models.unet3d import UNet3D
+from torchinfo import summary
 ## Models
 from Models.Linear import Linear
 from Models.Classifier2D import Classifier2D
@@ -24,31 +25,30 @@ from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, Transfor
 # Please refer to model CoTr: Efficiently Bridging CNN and Transformer for 3D Medical Image Segmentation.
 
 
-class ModelCoTr(LightningModule):
-    def __init__(self, n_classes=1, wf=5, depth=3, img_sizes=256, patch_size=4, embed_dim=256,
-                 in_channels=1, num_layers=3, num_heads=8, dropout=0.5, mlp_dim=128):
+class ModelTransUnet(LightningModule):
+    def __init__(self,  n_classes=1, wf=5, depth=3, img_sizes=256, patch_size=4, embed_dim=256, in_channels=1,
+                 num_layers=3, num_heads=8, dropout=0.5, mlp_dim=128):
         super().__init__()
+
         self.model = UNet3D(in_channels=1, n_classes=n_classes, depth=depth, wf=wf).encoder
-        self.pe = nn.ModuleList(
-            [PositionEncoding(img_size=img_sizes[i], patch_size=patch_size, in_channel=2 ** (wf + i),
-                              embed_dim=embed_dim, img_dim=3, dropout=dropout, iftoken=True) for i in range(depth)]
-        )
+        self.model.apply(self.weights_init)
+        summary(self.model.to('cuda'), (3, 1, 32, 128, 128), col_names=["input_size", "output_size"], depth=5)
+
+        self.pe = PositionEncoding(img_size=img_sizes, patch_size=patch_size, in_channel=in_channels,
+                                   embed_dim=embed_dim, img_dim=3, dropout=dropout, iftoken=True)
         self.transformers = nn.ModuleList(
             [TransformerBlock(num_heads=num_heads, embed_dim=embed_dim, mlp_dim=mlp_dim, dropout=dropout) for _ in range(num_layers)])
 
     def forward(self, x):
-        flg = 0
         for i, down in enumerate(self.model.encoder):
             x = down(x)
-            if flg == 0:
-                feature = self.pe[i](x)
-                flg = 1
-            else:
-                out_trans = self.pe[i](x)
-                feature = torch.cat((feature, out_trans), dim=1)
-
+        feature = self.pe(x)
         for transformer in self.transformers:
             feature = transformer(feature)
         features = feature.flatten(start_dim=1)
 
         return features
+
+    def weights_init(self, m):
+        if isinstance(m, nn.Conv3d) or isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight.data)

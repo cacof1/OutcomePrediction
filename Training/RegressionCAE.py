@@ -9,10 +9,11 @@ import pandas as pd
 from DataGenerator.DataGenerator import DataModule, DataGenerator, PatientQuery
 ## Module - Models
 from Models.ModelCAE import ModelCAE
+from Models.ModelTransUnet import ModelTransUnet
+from Models.ModelCoTr import ModelCoTr
 import os
 from DataGenerator.DataProcessing import LoadClincalData
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from Models.CNNEncoderForTransformer import CNNEncoderForTransformer
 torch.cuda.empty_cache()
 ## Main
 from Models.Classifier3D import Classifier3D
@@ -62,16 +63,7 @@ mastersheet = config['DATA']['Mastersheet']
 target = config['DATA']['target']
 
 MasterSheet    = pd.read_csv(path + mastersheet,index_col='patid')
-#analysis_inclusion=1,
-#analysis_inclusion_rt=1) ## Query specific values in tags
 label          = target
-
-# For local test
-# existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
-# ids_common = set.intersection(set(MasterSheet.index.values), set(existPatient))
-# MasterSheet = MasterSheet[MasterSheet.index.isin(ids_common)]
-
-
 
 clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique', # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician',
@@ -107,7 +99,7 @@ else:
     label_range = None
 
 
-trainer     = Trainer(gpus=1, max_epochs=20, callbacks=callbacks, logger=tb_logger) #
+trainer     = Trainer(gpus=1, max_epochs=1, callbacks=callbacks, logger=tb_logger) #
 #trainer     =Trainer(accelerator="cpu", callbacks=callbacks)
 ## This is where you change how the data is organized
 
@@ -122,12 +114,30 @@ patch_size = config['MODEL']['Patch_size']
 embed_dim = config['MODEL']['Transformer_embed_size']# For 2D image
 batch_size = config['MODEL']['Batch_size']
 num_layers = config['MODEL']['Transformer_layer']
-
+dropout = config['MODEL']['Drop_rate']
+mlp_dim = config['MODEL']['Transformer_mlp_dim']
 module_selected = config['DATA']['module']
 module_dict = nn.ModuleDict()
+num_heads = config['MODEL']['Transformer_head']
 
 if config['MODEL']['3D_MODEL'] == 'CAE':
-    Backbone = ModelCAE(config, img_sizes=img_dim, patch_size=patch_size, embed_dim=embed_dim, in_channels=1, num_layers=num_layers, weights=weights, label_range = label_range)
+    Backbone = ModelCAE(img_sizes=img_dim, patch_size=patch_size, embed_dim=embed_dim, in_channels=1,
+                        num_layers=num_layers, num_heads=num_heads, dropout=dropout, mlp_dim=mlp_dim)
+
+if config['MODEL']['3D_MODEL'] == 'TransUnet':
+    embed_dim = patch_size**3 * 128
+    img_size = [4, 16, 16]
+    Backbone = ModelTransUnet(img_sizes=img_size, patch_size=patch_size, embed_dim=embed_dim, in_channels=128,
+                              num_layers=num_layers, num_heads=num_heads, dropout=dropout, mlp_dim=mlp_dim)
+
+if config['MODEL']['3D_MODEL'] == 'CoTr':
+    default_depth = 3
+    img_sizes = []
+    for i in range(default_depth):
+        tmp = [x / 2**(i+1) for x in img_dim]
+        img_sizes.append(tmp)
+    Backbone = ModelCoTr(img_sizes=img_sizes, patch_size=patch_size, embed_dim=embed_dim, in_channels=1,
+                         num_layers=num_layers, num_heads=num_heads, dropout=dropout, mlp_dim=mlp_dim)
 if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
 
@@ -144,22 +154,8 @@ dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_tr
                         val_transform=val_transform, batch_size=batch_size, numerical_norm=sc, category_norm=ohe,
                         inference=False)
 
-# trainer.fit(model, dataloader)
+trainer.fit(model, dataloader)
 
-# worstCase = 0
-#
-# with torch.no_grad():
-#     for i, data in enumerate(dataloader.test_dataloader()):
-#         truth = data[1]
-#         x = data[0]
-#         output = model(x)
-#         diff = torch.abs(output.flatten(0) - truth)
-#         idx = torch.argmax(diff)
-#         if diff[idx] > worstCase:
-#             worst_img = x["Anatomy"][idx]
-#         # output = model.test_step(data, i)
-#         print('output:', output, 'true:', truth)
-#
 worstCase = 0
 with torch.no_grad():
     for i, data in enumerate(dataloader.test_dataloader()):
@@ -174,20 +170,18 @@ with torch.no_grad():
         idx = torch.argmax(diff)
         if diff[idx] > worstCase:
             if 'Anatomy' in config['DATA']['module']:
-                worst_img = data['Anatomy'][idx]
+                worst_img = x['Anatomy'][idx]
             if 'Dose' in config['DATA']['module']:
-                worst_dose = data['Dose'][idx]
+                worst_dose = x['Dose'][idx]
             worst_MAE = diff[idx]
 
-        model.log('worst_MAE', worst_MAE)
-        if 'Anatomy' in config['DATA']['module']:
-            grid_img = generate_report(worst_img)
-            model.logger.experiment.add_image('test_worst_case_img', grid_img, i)
-        if 'Dose' in config['DATA']['module']:
-            grid_dose = generate_report(worst_dose)
-            model.logger.experiment.add_image('test_worst_case_dose', grid_dose, i)
+    if 'Anatomy' in config['DATA']['module']:
+        grid_img = generate_report(worst_img)
+        model.logger.experiment.add_image('test_worst_case_img', grid_img, i)
+    if 'Dose' in config['DATA']['module']:
+        grid_dose = generate_report(worst_dose)
+        model.logger.experiment.add_image('test_worst_case_dose', grid_dose, i)
 
-# with torch.no_grad():
-#     output = trainer.test(model, dataloader.test_dataloader())
-#
-# print(output)
+with torch.no_grad():
+    output = trainer.test(model, dataloader.test_dataloader())
+print(output)

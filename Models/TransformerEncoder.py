@@ -25,8 +25,6 @@ class PositionEncoding(nn.Module):
             x = torch.cat((cls_tokens, x), dim=1)
         x = x + self.pos_embed
         x = self.pos_drop(x)
-
-
         return x
 
     def get_attention_maps(self, x):
@@ -115,7 +113,7 @@ class PatchEmbedding(nn.Module):
         self.img_size = img_size
         self.img_dim = img_dim
         self.patch_size = patch_size
-        self.num_patches = num_patches
+        self.num_patches = int(num_patches)
         self.in_channel = in_channel
         self.embed_dim = embed_dim
         if img_dim == 3:
