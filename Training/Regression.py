@@ -51,17 +51,17 @@ val_transform = tio.Compose([
 ])
 
 MasterSheet    = PatientQuery(config)
-label          = config["DATA"]["label"]
+target          = config["DATA"]["target"]
 
 clinical_columns = ["age","gender","race","ethnicity","zubrod","histology","nonsquam_squam","ajcc_stage_grp","pet_staging","rt_technique","has_egfr_hscore","egfr_hscore_200","smoke_hx","rx_terminated_ae","received_rt","rt_dose","overall_rt_review","fractionation_review","elapsed_days_review","tv_oar_review","gtv_review","ptv_review","ips_lung_review","contra_lung_review","spinal_cord_review","heart_review","esophagus_review","brachial_plexus_review","skin_review","dva_tv_review","dva_oar_review"]
 
 RefColumns  = ["CTPath","DosePath"]
-Label       = [label]
+Label       = [target]
 
 columns     = clinical_columns+RefColumns+Label
 MasterSheet = MasterSheet[columns]
 MasterSheet = MasterSheet.dropna(subset=["CTPath"])
-MasterSheet = MasterSheet.dropna(subset=[label])
+MasterSheet = MasterSheet.dropna(subset=[target])
 trainer     = Trainer(gpus=torch.cuda.device_count(), max_epochs=config['MODEL']['Max_Epochs'], precision=config['MODEL']['Precision'], callbacks=[checkpoint_callback], logger=logger)
 
 ## This is where you change how the data is organized
@@ -72,6 +72,6 @@ module_dict  = nn.ModuleDict({
 })
 
 model        = MixModel(module_dict)
-dataloader   = DataModule(MasterSheet, label, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=4, inference=False)
+dataloader   = DataModule(MasterSheet, target, module_dict.keys(), train_transform = train_transform, val_transform = val_transform, batch_size=4, inference=False)
 trainer.fit(model, dataloader)
 
