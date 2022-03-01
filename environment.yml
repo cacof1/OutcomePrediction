@@ -114,7 +114,9 @@ dependencies:
     - tensorboard-data-server==0.6.1
     - tensorboard-plugin-wit==1.8.0
     - threadpoolctl==3.0.0
+    - toml==0.10.2
     - tomli==1.2.2
+    - torchinfo==1.6.3
     - torchio==0.18.70
     - torchmetrics==0.6.0
     - torchsummary==1.5.1
