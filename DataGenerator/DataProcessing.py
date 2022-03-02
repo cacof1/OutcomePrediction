@@ -2,7 +2,7 @@ import pandas as pd
 pd.options.mode.chained_assignment = None  # default='warn'
 from collections import Counter
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
 from sklearn.feature_selection import SelectKBest, mutual_info_classif, f_classif, chi2
 from sklearn.feature_selection import GenericUnivariateSelect, SelectFromModel, VarianceThreshold
 from sklearn.linear_model import LogisticRegression
@@ -59,3 +59,31 @@ def LoadLabel(LabelName, FileName,):
     if(np.max(label)== 2.0): label[label ==2.0] = 0.0 ## Local Failure and Distant Failure
     if(np.any(label > 3)):   label = (label>24).astype('int16')  ## Months/Survival at 2 years as a boolean
     return outcome['patid'], label
+
+
+def LoadClincalData(MasterSheet):
+    clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
+                        'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
+                        # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician',
+                        'smoke_hx', 'rx_terminated_ae', 'rt_dose',
+                        'volume_ptv', 'dmax_ptv', 'v100_ptv',
+                        'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
+                        'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
+                        'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
+                        'rt_compliance_ptv90', 'received_conc_chemo',
+                        ]
+
+    numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
+                      'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
+                      'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
+                      'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN']
+    category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
+
+    numerical_data = MasterSheet[numerical_cols] #pd.DataFrame()
+    category_data =  MasterSheet[category_cols]
+
+    #for categorical in category_cols:
+    #    temp_col = pd.get_dummies(MasterSheet[categorical], prefix=categorical)
+    #    clinical_data = clinical_data.join(temp_col)
+
+    return numerical_data, category_data
