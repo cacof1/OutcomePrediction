@@ -25,11 +25,13 @@ def SoftDiceLoss(output, target):
 
 
 def WeightedMSE(prediction, labels, weights=None, label_range=None):
-    if labels is not None:
-        for label in labels:
-            idx = np.where(label_range > label)
-        loss = (prediction - label) ** 2
-        if weights is not None:
-            loss *= weights.expand_as(loss)
-        loss = torch.mean(loss)
-        return loss
+    loss = 0
+    for i, label in enumerate(labels):
+        idx = (label_range == int(label.cpu().numpy())).nonzero()
+        if (idx is not None) and (idx[0][0] < 60):
+            # print(idx[0][0])
+            loss = loss + (prediction[i] - label) ** 2 * weights[idx[0][0]]
+        else:
+            loss = loss + (prediction[i] - label) ** 2 * weights[-1]
+    loss = loss / (i + 1)
+    return loss

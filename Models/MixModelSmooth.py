@@ -16,6 +16,7 @@ from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 from Utils.GenerateSmoothLabel import generate_report
 from Models.fds import FDS
+from Losses.loss import WeightedMSE
 ## Models
 from Models.Linear import Linear
 from Models.Classifier2D import Classifier2D
@@ -37,17 +38,17 @@ class MixModelSmooth(LightningModule):
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.MSELoss()  # loss_fcn
 
-    def WeightedMSE(self, prediction, labels):
-        loss = 0
-        for i, label in enumerate(labels):
-            idx = (self.label_range == int(label.cpu().numpy())).nonzero()
-            if (idx is not None) and (idx[0][0] < 60):
-                # print(idx[0][0])
-                loss = loss + (prediction[i] - label) ** 2 * self.weights[idx[0][0]]
-            else:
-                loss = loss + (prediction[i] - label) ** 2 * self.weights[-1]
-        loss = loss / (i + 1)
-        return loss
+    # def WeightedMSE(self, prediction, labels, label_range):
+    #     loss = 0
+    #     for i, label in enumerate(labels):
+    #         idx = (self.label_range == int(label.cpu().numpy())).nonzero()
+    #         if (idx is not None) and (idx[0][0] < 60):
+    #             # print(idx[0][0])
+    #             loss = loss + (prediction[i] - label) ** 2 * self.weights[idx[0][0]]
+    #         else:
+    #             loss = loss + (prediction[i] - label) ** 2 * self.weights[-1]
+    #     loss = loss / (i + 1)
+    #     return loss
 
     def forward(self, datadict, labels):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
@@ -63,7 +64,7 @@ class MixModelSmooth(LightningModule):
         prediction = self.classifier(features)
         print(prediction, label)
         if self.config['REGULARIZATION']['Label_smoothing']:
-            loss = self.WeightedMSE(prediction.squeeze(dim=1), batch[-1])
+            loss = WeightedMSE(prediction.squeeze(dim=1), batch[-1], weights=self.weights, label_range=self.label_range)
         else:
             loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         self.log("loss", loss, on_epoch=True)

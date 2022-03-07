@@ -104,10 +104,6 @@ class DataModule(LightningDataModule):
         bins = np.arange(np.min(regression_y), np.max(regression_y)-6, 7)
         cls_label = np.digitize(regression_y, bins)
 
-<<<<<<< HEAD
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=10)
-    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=10)
-=======
         val, test             = train_test_split(val_test, test_size=0.66, stratify=cls_label)
         _, _ = get_smoothed_label_distribution(test, label)
 
@@ -118,7 +114,6 @@ class DataModule(LightningDataModule):
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0)
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0)
->>>>>>> Ying_test2
     def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size)
 
 def PatientQuery(config, **kwargs):
