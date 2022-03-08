@@ -16,19 +16,20 @@ from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 
 ## Model
+from torchinfo import summary
 class Linear(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.model = nn.Sequential(
-            nn.LazyLinear(100),
-            nn.BatchNorm1d(100),
-            nn.LazyLinear(100),
+            nn.LazyLinear(64),
+            nn.BatchNorm1d(64),
+            nn.LazyLinear(8),
             nn.ReLU()
         )
         self.loss_fcn = nn.CrossEntropyLoss()
 
     def forward(self, x):
-        return self.model(x)
+        return self.model(x.float())
 
     def training_step(self, batch,batch_idx):
         image,label = batch

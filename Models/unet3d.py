@@ -1,4 +1,5 @@
 # Adapted from https://discuss.pytorch.org/t/unet-implementation/426
+# Adapted from https://discuss.pytorch.org/t/unet-implementation/426
 
 import torch
 from torch import nn
@@ -74,7 +75,7 @@ class UNetDownBlock(nn.Module):
         super(UNetDownBlock, self).__init__()
         self.block = nn.Sequential(
             nn.Conv3d(in_size, out_size,stride=2, kernel_size=3, padding=1),
-            #nn.BatchNorm3d(out_size),
+            nn.BatchNorm3d(out_size),
             #nn.ReLU(),
             #nn.Conv3d(out_size, out_size, kernel_size=3, padding=int(padding)),
             #nn.PReLU(),
