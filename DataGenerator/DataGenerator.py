@@ -41,13 +41,21 @@ class DataGenerator(torch.utils.data.Dataset):
             checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
             if self.transform:
-                datadict["Dose"]  = self.transform(datadict["Dose"])
+                transformed_data = self.transform(datadict["Dose"])
+                if transformed_data is None:
+                    datadict["Dose"]  = None
+                else:
+                    datadict["Dose"]  = torch.from_numpy(transformed_data)
 
         if "Anatomy" in self.keys:
             anatomy  = LoadImg(self.mastersheet["CTPath"].iloc[id])
             datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
             if self.transform:
-                datadict["Anatomy"]  = torch.from_numpy(self.transform(datadict["Anatomy"]))
+                transformed_data = self.transform(datadict["Anatomy"])
+                if transformed_data is None:
+                    datadict["Anatomy"]  = None
+                else:
+                    datadict["Anatomy"]  = torch.from_numpy(transformed_data)
 
         #print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
@@ -68,9 +76,9 @@ class DataModule(LightningDataModule):
         self.val_data        = DataGenerator(val,   label, keys, transform = val_transform, **kwargs)
         self.test_data       = DataGenerator(test,  label, keys, transform = val_transform, **kwargs)
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=10)
-    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=10)
-    def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size)
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=custom_collate)
+    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size,num_workers=0, collate_fn=custom_collate)
+    def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size, collate_fn=custom_collate)
 
 def PatientQuery(config, **kwargs):
     mastersheet = pd.read_csv(config['DATA']['Mastersheet'],index_col='patid')
@@ -126,3 +134,24 @@ def LoadClinical(df): ## Not finished
     for numerical in numerical_cols:
         X_test = X_test.join([outcome[numerical]])
     return y_init
+
+def custom_collate(original_batch):
+
+    filtered_data = []
+    filtered_target = []
+
+    for patient in original_batch:
+        none_found = False
+        if "Anatomy" in patient[0].keys():
+            if patient[0]["Anatomy"] is None:
+                none_found = True
+        if "Dose" in patient[0].keys():
+            if patient[0]["Dose"] is None:
+                none_found = True
+
+        if not none_found:
+            filtered_data.append(patient[0])
+            filtered_target.append(patient[1])
+
+    return filtered_data, filtered_target
+

@@ -25,6 +25,14 @@ from Models.MixModel import MixModel
 from pytorch_lightning.loggers import TensorBoardLogger
 import toml
 
+class SanityCheck(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, img):
+        return img
+
 config   = toml.load(sys.argv[1])
 name     = config['MODEL']['BaseModel'] +"_"+ config['MODEL']['Backbone']+ "_wf" + str(config['MODEL']['wf']) + "_depth" + str(config['MODEL']['depth'])
 logger   = TensorBoardLogger('lightning_logs',name = name)
@@ -41,13 +49,15 @@ seed_everything(config['MODEL']['RANDOM_SEED'], workers=True)
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
     tio.RandomAffine(),
-    tio.RescaleIntensity(out_min_max=(0, 1))
+    tio.RescaleIntensity(out_min_max=(0, 1)),
+    SanityCheck()
 ])
 
 val_transform = tio.Compose([
     tio.transforms.ZNormalization(),
     tio.RandomAffine(),
-    tio.RescaleIntensity(out_min_max=(0, 1))
+    tio.RescaleIntensity(out_min_max=(0, 1)),
+    SanityCheck()
 ])
 
 MasterSheet    = PatientQuery(config)
