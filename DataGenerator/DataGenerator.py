@@ -155,7 +155,6 @@ def checkCrop(center, delta, imgShape, fn):
         print("ERROR! Invalid crop for file %s" % (fn))
         exit()
 
-<<<<<<< HEAD
 def LoadClinical(df): ## Not finished
     all_cols  = ['arm','age','gender','race','ethnicity','zubrod',
                  'histology','nonsquam_squam','ajcc_stage_grp','rt_technique',
