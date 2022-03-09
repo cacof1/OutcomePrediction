@@ -22,7 +22,6 @@ from Models.Classifier3D import Classifier3D
 from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, TransformerBlock
 from Models.fds import FDS
 
-
 # Please refer paper CAE-TRANSFORMER: TRANSFORMER-BASED MODEL TO PREDICT INVASIVENESS
 # OF LUNG ADENOCARCINOMA SUBSOLID NODULES FROM NON-THIN SECTION 3D
 # CT SCANS
@@ -33,6 +32,7 @@ class ModelCAE(LightningModule):
         super().__init__()
         ## define backbone
         backbone = torchvision.models.resnet18(pretrained=True)
+        # backbone = torch.hub.load('pytorch/vision:v0.10.0', 'densenet121', pretrained=True)
         layers = list(backbone.children())[:-1]
         self.feature_extractor = nn.Sequential(*layers)
         self.feature_extractor.eval()
