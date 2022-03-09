@@ -51,7 +51,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 cropbox = properties[0].bbox
 
         if "Dose" in self.keys:
-            dose = LoadImg(self.mastersheet["DosePath"].iloc[id])
+            dose     = LoadImg(self.mastersheet["DosePath"].iloc[id])
             #maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             #checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             #datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
@@ -60,9 +60,13 @@ class DataGenerator(torch.utils.data.Dataset):
             else:
                 datadict["Dose"] = np.expand_dims(dose, 0)
 
-            if self.transform:            
-                datadict["Dose"]  = self.transform(datadict["Dose"])
-                
+            if self.transform:
+                transformed_data = self.transform(datadict["Dose"])
+                if transformed_data is None:
+                    datadict["Dose"]  = None
+                else:
+                    datadict["Dose"]  = torch.from_numpy(transformed_data)
+
         if "Anatomy" in self.keys:
             anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
             #datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
@@ -71,8 +75,12 @@ class DataGenerator(torch.utils.data.Dataset):
             else:
                 datadict["Anatomy"] = np.expand_dims(anatomy, 0)
 
-            if self.transform:            
-                datadict["Anatomy"]  = torch.from_numpy(self.transform(datadict["Anatomy"]))
+            if self.transform:
+                transformed_data = self.transform(datadict["Anatomy"])
+                if transformed_data is None:
+                    datadict["Anatomy"]  = None
+                else:
+                    datadict["Anatomy"]  = torch.from_numpy(transformed_data)
 
             #print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
@@ -113,9 +121,9 @@ class DataModule(LightningDataModule):
         self.test_data       = DataGenerator(test,  label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
         print('test')
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0)
-    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0)
-    def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size)
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=custom_collate)
+    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0, collate_fn=custom_collate)
+    def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size, collate_fn=custom_collate)
 
 def PatientQuery(config, **kwargs):
     mastersheet = pd.read_csv(config['DATA']['Mastersheet'],index_col='patid')
@@ -147,6 +155,52 @@ def checkCrop(center, delta, imgShape, fn):
 
         print("ERROR! Invalid crop for file %s" % (fn))
         exit()
+
+def LoadClinical(df): ## Not finished
+    all_cols  = ['arm','age','gender','race','ethnicity','zubrod',
+                 'histology','nonsquam_squam','ajcc_stage_grp','rt_technique',
+                 'egfr_hscore_200','smoke_hx','rx_terminated_ae','rt_dose',
+                 'volume_ptv','dmax_ptv','v100_ptv',
+                 'v95_ptv','v5_lung','v20_lung','dmean_lung','v5_heart',
+                 'v30_heart','v20_esophagus','v60_esophagus','Dmin_PTV_CTV_MARGIN',
+                 'Dmax_PTV_CTV_MARGIN','Dmean_PTV_CTV_MARGIN','rt_compliance_physician',
+                 'rt_compliance_ptv90','received_conc_chemo','received_conc_cetuximab',
+                 'received_cons_chemo','received_cons_cetuximab',
+    ]
+
+    numerical_cols = ['age','volume_ptv','dmax_ptv','v100_ptv',
+                      'v95_ptv','v5_lung','v20_lung','dmean_lung','v5_heart',
+                      'v30_heart','v20_esophagus','v60_esophagus','Dmin_PTV_CTV_MARGIN',
+                      'Dmax_PTV_CTV_MARGIN','Dmean_PTV_CTV_MARGIN']
+
+    category_cols = list(set(all_cols).difference(set(numerical_cols)))
+    for categorical in category_cols:
+        df.loc[:, df.columns.str.startswith(categorical)]
+        temp_col = pd.get_dummies(outcome[categorical], prefix=categorical)
+
+    for numerical in numerical_cols:
+        X_test = X_test.join([outcome[numerical]])
+    return y_init
+
+def custom_collate(original_batch):
+
+    filtered_data = []
+    filtered_target = []
+
+    for patient in original_batch:
+        none_found = False
+        if "Anatomy" in patient[0].keys():
+            if patient[0]["Anatomy"] is None:
+                none_found = True
+        if "Dose" in patient[0].keys():
+            if patient[0]["Dose"] is None:
+                none_found = True
+
+        if not none_found:
+            filtered_data.append(patient[0])
+            filtered_target.append(patient[1])
+
+    return filtered_data, filtered_target
 
 # def LoadClinical(df): ## Not finished
 #     all_cols  = ['arm','age','gender','race','ethnicity','zubrod',

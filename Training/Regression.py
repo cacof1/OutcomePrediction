@@ -31,6 +31,14 @@ tb_logger = pl_loggers.TensorBoardLogger(save_dir='lightning_logs', name='orig_m
 from pytorch_lightning.loggers import TensorBoardLogger
 import toml
 
+class SanityCheck(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, img):
+        return img
+
 config   = toml.load(sys.argv[1])
 name     = config['MODEL']['BaseModel'] +"_"+ config['MODEL']['Backbone']+ "_wf" + str(config['MODEL']['wf']) + "_depth" + str(config['MODEL']['depth'])
 logger   = TensorBoardLogger('lightning_logs',name = name)
@@ -51,14 +59,16 @@ train_transform = tio.Compose([
     tio.RandomNoise(),
     tio.RandomMotion(),
     tio.transforms.Resize([40, 40, 40]),
-    tio.RescaleIntensity(out_min_max=(0, 1))
+    tio.RescaleIntensity(out_min_max=(0, 1)),
+    SanityCheck()
 ])
 
 val_transform = tio.Compose([
     tio.transforms.ZNormalization(),
     tio.transforms.Resize([40, 40, 40]),
     # tio.RandomAffine(),
-    tio.RescaleIntensity(out_min_max=(0, 1))
+    tio.RescaleIntensity(out_min_max=(0, 1)),
+    SanityCheck()
 ])
 callbacks = [
     ModelCheckpoint(
@@ -71,10 +81,10 @@ callbacks = [
                   check_finite=True),
 ]
 
-MasterSheet = pd.read_csv(sys.argv[1], index_col='patid')
+MasterSheet = pd.read_csv(config['DATA']['Mastersheet'], index_col='patid')
 # analysis_inclusion=1,
 # analysis_inclusion_rt=1) ## Query specific values in tags
-label = sys.argv[2]
+label = config['DATA']['target']
 
 # For local test
 # existPatient = os.listdir('C:/Users/clara/Documents/RTOG0617/nrrd_volumes')
@@ -126,9 +136,9 @@ ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
 
-model = MixModel(module_dict)
+model = MixModel(module_dict, config)
 
-dataloader = DataModule(MasterSheet, label, module_dict.keys(), train_transform=train_transform,
+dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_transform=train_transform,
                         val_transform=val_transform, batch_size=12, numerical_norm=sc, category_norm=ohe,
                         inference=False)
 trainer.fit(model, dataloader)
