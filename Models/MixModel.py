@@ -20,10 +20,10 @@ from Utils.GenerateSmoothLabel import generate_report
 from Models.Linear import Linear
 from Models.Classifier2D import Classifier2D
 from Models.Classifier3D import Classifier3D
-
-
+from Utils.GenerateSmoothLabel import generate_cumulative_dynamic_auc
+from sksurv.metrics import concordance_index_censored
 class MixModel(LightningModule):
-    def __init__(self, module_dict, config, loss_fcn=torch.nn.BCEWithLogitsLoss()):
+    def __init__(self, module_dict, train_label, config, loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.module_dict = module_dict
         self.config = config
@@ -31,6 +31,7 @@ class MixModel(LightningModule):
             nn.LazyLinear(128),
             nn.LazyLinear(1)
         )
+        self.train_label = train_label
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.MSELoss()  # loss_fcn
 
@@ -48,6 +49,16 @@ class MixModel(LightningModule):
         prediction = self.forward(datadict)
         print(prediction, label)
         loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
+
+        SSres = loss * batch[-1].shape[0]
+        SStotal = torch.sum(torch.square(batch[-1] - torch.mean(batch[-1])))
+        r2 = 1 - SSres / SStotal
+
+        event_indicator = torch.ones(batch[-1].shape, dtype=torch.bool)
+        risk = 1 / prediction.squeeze(dim=1)
+        cindex = concordance_index_censored(event_indicator.cpu().detach().numpy(), event_time=batch[-1].cpu().detach().numpy(), estimate=risk.cpu().detach().numpy())
+        self.log('cindex', cindex[0], on_epoch=True)
+        self.log('r2', r2, on_epoch=True)
         self.log("loss", loss, on_epoch=True)
         return loss
 
@@ -56,9 +67,22 @@ class MixModel(LightningModule):
         datadict, label = batch
         prediction = self.forward(datadict)
         val_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
+        SSres = val_loss * batch[-1].shape[0]
+        SStotal = torch.sum(torch.square(batch[-1] - torch.mean(batch[-1])))
+        r2 = 1 - SSres / SStotal
+
+        event_indicator = torch.ones(batch[-1].shape, dtype=torch.bool)
+        risk = 1 / prediction.squeeze(dim=1)
+        cindex = concordance_index_censored(event_indicator.cpu(), event_time=batch[-1].cpu(), estimate=risk.cpu())
+        self.log('cindex', cindex[0], on_epoch=True)
+
         self.log("val_loss", val_loss, on_epoch=True)
+        self.log('r2', r2, on_epoch=True)
+
         MAE = torch.abs(prediction.flatten(0) - label)
         out['MAE'] = MAE
+        out['prediction'] = prediction.squeeze(dim=1)
+        out['label'] = batch[-1]
         if 'Dose' in self.config['DATA']['module']:
             out['dose'] = datadict['Dose']
         if 'Anatomy' in self.config['DATA']['module']:
@@ -66,6 +90,12 @@ class MixModel(LightningModule):
         return out
 
     def validation_epoch_end(self, validation_step_outputs):
+
+        validation_labels = torch.cat([out['label'] for i, out in enumerate(validation_step_outputs)], dim=0)
+        risk_score = 1 / torch.cat([out['prediction'] for i, out in enumerate(validation_step_outputs)], dim=0)
+        fig = generate_cumulative_dynamic_auc(self.train_label, validation_labels, risk_score)
+        self.logger.experiment.add_figure("AUC", fig, self.current_epoch)
+
         worst_MAE = 0
         for i, data in enumerate(validation_step_outputs):
             loss = data['MAE']

@@ -7,7 +7,7 @@ from scipy.ndimage import convolve1d
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal.windows import triang
 import torchvision
-
+from sksurv.metrics import cumulative_dynamic_auc
 
 def get_lds_kernel_window(kernel, ks, sigma):
     assert kernel in ['gaussian', 'triang', 'laplace']
@@ -48,8 +48,8 @@ def get_smoothed_label_distribution(MasterSheet, label):
     mse = ((label_all - label_mean) ** 2).mean()
     print('MSE:', mse)
 
-    _ = plt.hist(label_all, bins=label_range)
-    plt.show()
+    # _ = plt.hist(label_all, bins=label_range)
+    # plt.show()
     #
     # plt.bar(label_range[0:-1], eff_label_dist)
     # plt.show()
@@ -61,4 +61,30 @@ def generate_report(img):
     img_batch = img.view(img.shape[0] * img.shape[1], *[1, img.shape[2], img.shape[3]])
     grid = torchvision.utils.make_grid(img_batch)
     return grid
+
+
+def generate_cumulative_dynamic_auc(y_train, y_test, risk_score):
+    # va_times = label_range
+    va_times = np.arange(int(y_test.cpu().min())+1, y_test.cpu().max(),1)
+    dtypes = np.dtype([('event', np.bool_), ('time', np.float)])
+    construct_test = np.ndarray(shape=(len(y_test),), dtype=dtypes)
+    for i in range(len(y_test)):
+        construct_test[i] = (True, y_test[i].cpu().numpy())
+    # construct_test = {'death': torch.ones(y_test.shape, dtype=torch.bool), 'time': y_test}
+    construct_train = np.ndarray(shape=(len(y_train),), dtype=dtypes)
+    for i in range(len(y_train)):
+        construct_train[i] = (True, y_train.to_numpy()[i])
+
+    cph_auc, cph_mean_auc = cumulative_dynamic_auc(
+        construct_train, construct_test, risk_score.cpu(), va_times
+    )
+    fig = plt.figure()
+    plt.plot(va_times, cph_auc, marker="o")
+    plt.axhline(cph_mean_auc, linestyle="--")
+    plt.xlabel("days from enrollment")
+    plt.ylabel("time-dependent AUC")
+    plt.grid(True)
+    plt.show()
+    return fig
+
 

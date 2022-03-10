@@ -21,14 +21,14 @@ class FDS(nn.Module):
         self.start_update = start_update
         self.start_smooth = start_smooth
 
-        self.register_buffer('epoch', torch.zeros(1).fill_(start_update))
-        self.register_buffer('running_mean', torch.zeros(bucket_num - bucket_start, feature_dim))
-        self.register_buffer('running_var', torch.ones(bucket_num - bucket_start, feature_dim))
-        self.register_buffer('running_mean_last_epoch', torch.zeros(bucket_num - bucket_start, feature_dim))
-        self.register_buffer('running_var_last_epoch', torch.ones(bucket_num - bucket_start, feature_dim))
-        self.register_buffer('smoothed_mean_last_epoch', torch.zeros(bucket_num - bucket_start, feature_dim))
-        self.register_buffer('smoothed_var_last_epoch', torch.ones(bucket_num - bucket_start, feature_dim))
-        self.register_buffer('num_samples_tracked', torch.zeros(bucket_num - bucket_start))
+        self.register_buffer('epoch', torch.zeros(1).fill_(start_update).cuda())
+        self.register_buffer('running_mean', torch.zeros(bucket_num - bucket_start, feature_dim).cuda())
+        self.register_buffer('running_var', torch.ones(bucket_num - bucket_start, feature_dim).cuda())
+        self.register_buffer('running_mean_last_epoch', torch.zeros(bucket_num - bucket_start, feature_dim).cuda())
+        self.register_buffer('running_var_last_epoch', torch.ones(bucket_num - bucket_start, feature_dim).cuda())
+        self.register_buffer('smoothed_mean_last_epoch', torch.zeros(bucket_num - bucket_start, feature_dim).cuda())
+        self.register_buffer('smoothed_var_last_epoch', torch.ones(bucket_num - bucket_start, feature_dim).cuda())
+        self.register_buffer('num_samples_tracked', torch.zeros(bucket_num - bucket_start).cuda())
 
     @staticmethod
     def _get_kernel_window(kernel, ks, sigma):
@@ -146,10 +146,10 @@ class FDS(nn.Module):
                     self.smoothed_mean_last_epoch[int(label - self.bucket_start)],
                     self.smoothed_var_last_epoch[int(label - self.bucket_start)])
             else:
-                features[labels == label] = self.calibrate_mean_var(
-                    features[labels == label],
-                    self.running_mean_last_epoch[int(label - self.bucket_start)],
-                    self.running_var_last_epoch[int(label - self.bucket_start)],
-                    self.smoothed_mean_last_epoch[int(label - self.bucket_start)],
-                    self.smoothed_var_last_epoch[int(label - self.bucket_start)])
+                features.cuda()[labels == label] = self.calibrate_mean_var(
+                    features.cuda()[labels == label].cuda(),
+                    self.running_mean_last_epoch[int(label - self.bucket_start)].cuda(),
+                    self.running_var_last_epoch[int(label - self.bucket_start)].cuda(),
+                    self.smoothed_mean_last_epoch[int(label - self.bucket_start)].cuda(),
+                    self.smoothed_var_last_epoch[int(label - self.bucket_start)].cuda()).cuda()
         return features
