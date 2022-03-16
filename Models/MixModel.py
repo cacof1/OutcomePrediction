@@ -23,7 +23,7 @@ from Models.Classifier3D import Classifier3D
 from Utils.GenerateSmoothLabel import generate_cumulative_dynamic_auc
 from sksurv.metrics import concordance_index_censored
 class MixModel(LightningModule):
-    def __init__(self, module_dict, train_label, config, loss_fcn=torch.nn.BCEWithLogitsLoss()):
+    def __init__(self, module_dict, config, loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.module_dict = module_dict
         self.config = config
@@ -31,7 +31,6 @@ class MixModel(LightningModule):
             nn.LazyLinear(128),
             nn.LazyLinear(1)
         )
-        self.train_label = train_label
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.MSELoss()  # loss_fcn
 
@@ -45,9 +44,11 @@ class MixModel(LightningModule):
         return self.classifier(features)
 
     def training_step(self, batch, batch_idx):
+        self.train_label = []
         datadict, label = batch
         prediction = self.forward(datadict)
         print(prediction, label)
+        self.train_label.extend([float(i) for i in label])
         loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
 
         SSres = loss * batch[-1].shape[0]
@@ -82,7 +83,7 @@ class MixModel(LightningModule):
         MAE = torch.abs(prediction.flatten(0) - label)
         out['MAE'] = MAE
         out['prediction'] = prediction.squeeze(dim=1)
-        out['label'] = batch[-1]
+        out['label'] = label 
         if 'Dose' in self.config['DATA']['module']:
             out['dose'] = datadict['Dose']
         if 'Anatomy' in self.config['DATA']['module']:
@@ -93,7 +94,7 @@ class MixModel(LightningModule):
 
         validation_labels = torch.cat([out['label'] for i, out in enumerate(validation_step_outputs)], dim=0)
         risk_score = 1 / torch.cat([out['prediction'] for i, out in enumerate(validation_step_outputs)], dim=0)
-        fig = generate_cumulative_dynamic_auc(self.train_label, validation_labels, risk_score)
+        fig = generate_cumulative_dynamic_auc(torch.FloatTensor(self.train_label), validation_labels, risk_score)
         self.logger.experiment.add_figure("AUC", fig, self.current_epoch)
 
         worst_MAE = 0

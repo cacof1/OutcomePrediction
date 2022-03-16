@@ -126,7 +126,7 @@ MasterSheet = MasterSheet.dropna(subset=category_cols)
 MasterSheet = MasterSheet.dropna(subset=[label])
 # MasterSheet = MasterSheet.fillna(MasterSheet.mean())
 # trainer     = Trainer(gpus=1, max_epochs=20)
-trainer = Trainer(gpus=1, max_epochs=20, callbacks=callbacks, logger=tb_logger)
+trainer = Trainer(gpus=1, max_epochs=20, callbacks=callbacks, logger=tb_logger, num_sanity_val_steps=0)
 
 ## This is where you change how the data is organized
 module_dict = nn.ModuleDict({
