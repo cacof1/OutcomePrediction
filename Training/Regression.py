@@ -37,7 +37,14 @@ class SanityCheck(torch.nn.Module):
         super().__init__()
 
     def forward(self, img):
-        return img
+
+        img_mean = float(img.mean())
+        img_sum = float(img.sum())
+
+        if img_sum == 0 or img_mean == -1000.0: # Empty images
+            return None
+        else:
+            return img
 
 config   = toml.load(sys.argv[1])
 name     = config['MODEL']['BaseModel'] +"_"+ config['MODEL']['Backbone']+ "_wf" + str(config['MODEL']['wf']) + "_depth" + str(config['MODEL']['depth'])
