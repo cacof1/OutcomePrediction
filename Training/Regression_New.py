@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
@@ -25,6 +26,8 @@ from Models.MixModelSmooth import MixModelSmooth
 from pytorch_lightning import loggers as pl_loggers
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
 from Utils.GenerateSmoothLabel import generate_report
+
+# def main():
 
 config = toml.load('../Settings.ini')
 
@@ -158,8 +161,7 @@ train_label = dataloader.train_label
 if config['REGULARIZATION']['smoothing']:
     model = MixModelSmooth(module_dict, config, train_label, label_range=label_range, weights=weights)
 else:
-    model = MixModel(module_dict, train_label, config)
-
+    model = MixModel(module_dict, config, train_label)
 trainer.fit(model, dataloader)
 
 worstCase = 0
@@ -168,10 +170,12 @@ with torch.no_grad():
         truth = data[1]
         x = data[0]
         if config['REGULARIZATION']['smoothing']:
-            features = model(x, truth)
-            output = model.classifier(features)
+            # features = model(x, truth)
+            # output = model.classifier(features)
+            output = model.test_step(data, i)
         else:
-            output = model(x)
+            # output = model(x)
+            output = model.test_step(data, i)
         diff = torch.abs(output.flatten(0) - truth)
         idx = torch.argmax(diff)
         if diff[idx] > worstCase:
@@ -191,3 +195,8 @@ with torch.no_grad():
 with torch.no_grad():
     output = trainer.test(model, dataloader.test_dataloader())
 print(output)
+
+
+
+# if __name__ ==  '__main__':
+#     main()

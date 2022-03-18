@@ -9,6 +9,7 @@ from scipy.signal.windows import triang
 import torchvision
 from sksurv.metrics import cumulative_dynamic_auc
 
+
 def get_lds_kernel_window(kernel, ks, sigma):
     assert kernel in ['gaussian', 'triang', 'laplace']
     half_ks = (ks - 1) // 2
@@ -65,7 +66,7 @@ def generate_report(img):
 
 def generate_cumulative_dynamic_auc(y_train, y_test, risk_score):
     # va_times = label_range
-    va_times = np.arange(int(y_test.cpu().min())+1, y_test.cpu().max(),1)
+    va_times = np.arange(int(y_test.cpu().min()) + 1, y_test.cpu().max(), 1)
     dtypes = np.dtype([('event', np.bool_), ('time', np.float)])
     construct_test = np.ndarray(shape=(len(y_test),), dtype=dtypes)
     for i in range(len(y_test)):
@@ -88,3 +89,14 @@ def generate_cumulative_dynamic_auc(y_train, y_test, risk_score):
     return fig
 
 
+def plot_AUROC(tpr, fpr):
+    fig = plt.figure()
+    lw = 2
+    plt.plot(fpr.cpu(), tpr.cpu(), color='darkorange', lw=lw)
+    plt.title('ROC curve')
+    # x label
+    plt.xlabel('False Positive Rate')
+    # y label
+    plt.ylabel('True Positive rate')
+    plt.show()
+    return fig
