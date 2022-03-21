@@ -22,14 +22,13 @@ from Models.Classifier3D import Classifier3D
 from Models.Linear import Linear
 import toml
 from Models.MixModel import MixModel
-from Models.MixModelSmooth import MixModelSmooth
 from pytorch_lightning import loggers as pl_loggers
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
 from Utils.GenerateSmoothLabel import generate_report
 
 # def main():
 
-config = toml.load('../Settings.ini')
+config = toml.load('../SettingsCAE.ini')
 
 tb_logger = pl_loggers.TensorBoardLogger(save_dir='lightning_logs', name=config['MODEL']['3D_MODEL'])
 img_dim = config['DATA']['dim']
@@ -158,10 +157,9 @@ dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_tr
                         inference=False)
 train_label = dataloader.train_label
 
-if config['REGULARIZATION']['smoothing']:
-    model = MixModelSmooth(module_dict, config, train_label, label_range=label_range, weights=weights)
-else:
-    model = MixModel(module_dict, config, train_label)
+model = MixModel(module_dict, config, train_label, label_range=label_range, weights=weights)
+
+
 trainer.fit(model, dataloader)
 
 worstCase = 0
@@ -169,13 +167,7 @@ with torch.no_grad():
     for i, data in enumerate(dataloader.test_dataloader()):
         truth = data[1]
         x = data[0]
-        if config['REGULARIZATION']['smoothing']:
-            # features = model(x, truth)
-            # output = model.classifier(features)
-            output = model.test_step(data, i)
-        else:
-            # output = model(x)
-            output = model.test_step(data, i)
+        output = model.test_step(data, i)
         diff = torch.abs(output.flatten(0) - truth)
         idx = torch.argmax(diff)
         if diff[idx] > worstCase:

@@ -31,12 +31,15 @@ class ModelCAE(LightningModule):
     def __init__(self, img_sizes, patch_size, embed_dim, in_channels, num_layers=3, num_heads=8, dropout=0.5, mlp_dim=128):
         super().__init__()
         ## define backbone
-        backbone = torchvision.models.resnet18(pretrained=True)
-        # backbone = torch.hub.load('pytorch/vision:v0.10.0', 'densenet121', pretrained=True)
+        # backbone = torchvision.models.resnet18(pretrained=True)
+        backbone = torch.hub.load('pytorch/vision:v0.10.0', 'densenet121', pretrained=True)
         layers = list(backbone.children())[:-1]
         self.feature_extractor = nn.Sequential(*layers)
         self.feature_extractor.eval()
-        for param in self.feature_extractor.parameters():
+
+        # for param in self.feature_extractor.parameters():
+        #     param.requires_grad = False
+        for param in self.feature_extractor[0][0:10].parameters():
             param.requires_grad = False
 
         self.linear1 = nn.LazyLinear(embed_dim)
@@ -64,7 +67,10 @@ class ModelCAE(LightningModule):
     def convert2d(self, x):
         y = x.repeat(1, 3, 1, 1)
         features = self.feature_extractor(y)
-        features = features.permute(2, 3, 0, 1)
+        features = features.flatten(1)
+        features = features.unsqueeze(0)
+        features = features.unsqueeze(1)
+        # features = features.permute(2, 3, 0, 1)
         features = self.linear1(features)
         return features
 
