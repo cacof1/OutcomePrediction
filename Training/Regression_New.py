@@ -13,7 +13,7 @@ from Models.ModelCAE import ModelCAE
 from Models.ModelTransUnet import ModelTransUnet
 from Models.ModelCoTr import ModelCoTr
 import os
-from DataGenerator.DataProcessing import LoadClincalData
+from DataGenerator.DataGenerator import LoadClincalData
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 torch.cuda.empty_cache()
