@@ -24,7 +24,7 @@ import toml
 from Models.MixModel import MixModel
 from pytorch_lightning import loggers as pl_loggers
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
-from Utils.GenerateSmoothLabel import generate_report
+from Utils.PredictionReport import generate_report
 
 # def main():
 
@@ -95,6 +95,7 @@ MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 MasterSheet = MasterSheet.dropna(subset=category_cols)
 MasterSheet = MasterSheet.dropna(subset=[label])
 MasterSheet = MasterSheet.fillna(MasterSheet.mean())
+MasterSheet[label] = (MasterSheet[label] > 24).astype(int)
 
 if config['REGULARIZATION']['Label_smoothing']:
     weights, label_range = get_smoothed_label_distribution(MasterSheet, label)
@@ -102,7 +103,7 @@ else:
     weights = None
     label_range = None
 
-trainer = Trainer(gpus=1, max_epochs=20, callbacks=callbacks, logger=tb_logger)  #
+trainer = Trainer(gpus=1, max_epochs=2, callbacks=callbacks, logger=tb_logger)  #
 # trainer     =Trainer(accelerator="cpu", callbacks=callbacks)
 ## This is where you change how the data is organized
 

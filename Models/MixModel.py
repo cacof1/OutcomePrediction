@@ -13,11 +13,11 @@ import sys
 import torchio as tio
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
-from Utils.GenerateSmoothLabel import generate_report, plot_AUROC
+# from Utils.GenerateSmoothLabel import generate_report, plot_AUROC
 from Models.fds import FDS
 from Losses.loss import WeightedMSE, CrossEntropy
 from sksurv.metrics import concordance_index_censored
-from Utils.GenerateSmoothLabel import generate_cumulative_dynamic_auc
+from Utils.PredictionReport import generate_cumulative_dynamic_auc, generate_report, plot_AUROC
 
 
 class MixModel(LightningModule):
@@ -59,12 +59,11 @@ class MixModel(LightningModule):
         return features
 
     def training_step(self, batch, batch_idx):
-        self.train_label = []
         datadict, label = batch
         features = self.forward(datadict, label)
         prediction = self.classifier(features)
         print(prediction, label)
-
+        # self.train_label = []
         #self.train_label.extend([float(i) for i in label])
         loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         self.log("loss", loss, on_epoch=True)
@@ -85,7 +84,7 @@ class MixModel(LightningModule):
                 loss = WeightedMSE(prediction.squeeze(dim=1), batch[-1], weights=self.weights,
                                    label_range=self.label_range)
 
-        out = {'loss': loss, 'features': features, 'label': label}
+        out = {'loss': loss, 'features': features.detach(), 'label': label}
 
         return out
 
