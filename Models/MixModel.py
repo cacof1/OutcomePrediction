@@ -48,7 +48,7 @@ class MixModel(LightningModule):
             )
             self.loss_fcn = torch.nn.MSELoss()
 
-        #self.train_label = train_label
+        self.train_label = train_label
 
     def forward(self, datadict, labels):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
