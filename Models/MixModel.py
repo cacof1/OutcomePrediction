@@ -48,8 +48,7 @@ class MixModel(LightningModule):
             )
             self.loss_fcn = torch.nn.MSELoss()
 
-        self.train_label = train_label
-
+        #self.train_label = train_label
 
     def forward(self, datadict, labels):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
@@ -60,11 +59,13 @@ class MixModel(LightningModule):
         return features
 
     def training_step(self, batch, batch_idx):
+        self.train_label = []
         datadict, label = batch
         features = self.forward(datadict, label)
         prediction = self.classifier(features)
         print(prediction, label)
 
+        #self.train_label.extend([float(i) for i in label])
         loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         self.log("loss", loss, on_epoch=True)
         if self.config['MODEL']['Prediction_type'] == 'Regression':
@@ -119,7 +120,7 @@ class MixModel(LightningModule):
             out['MAE'] = MAE
 
         out['prediction'] = prediction.squeeze(dim=1)
-        out['label'] = batch[-1]
+        out['label'] = label 
         if 'Dose' in self.config['DATA']['module']:
             out['dose'] = datadict['Dose']
         if 'Anatomy' in self.config['DATA']['module']:

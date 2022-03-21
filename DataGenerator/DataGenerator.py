@@ -184,9 +184,14 @@ def LoadClinical(df): ## Not finished
 
 def custom_collate(original_batch):
 
-    filtered_data = []
+    filtered_data = {}
     filtered_target = []
 
+    # Init the dict
+    for key in original_batch[0][0].keys():
+        filtered_data[key]=None
+
+    i=0
     for patient in original_batch:
         none_found = False
         if "Anatomy" in patient[0].keys():
@@ -197,10 +202,20 @@ def custom_collate(original_batch):
                 none_found = True
 
         if not none_found:
-            filtered_data.append(patient[0])
-            filtered_target.append(patient[1])
+            if i == 0:
+                for key in patient[0].keys():
+                    t_shape = (1, patient[0][key].shape[0], patient[0][key].shape[1],patient[0][key].shape[2], patient[0][key].shape[3])
+                    filtered_data[key] = torch.reshape(patient[0][key], t_shape)
+            else:
+                for key in patient[0].keys():
+                    t_shape = (1, patient[0][key].shape[0], patient[0][key].shape[1],patient[0][key].shape[2], patient[0][key].shape[3])
+                    filtered_data[key] = torch.vstack((filtered_data[key], torch.reshape(patient[0][key], t_shape)))
 
-    return filtered_data, filtered_target
+            # TODO: check if torch vstack does its job from top or bottom to match the target
+            filtered_target.append(patient[1])
+            i+=1
+
+    return filtered_data, torch.FloatTensor(filtered_target)
 
 # def LoadClinical(df): ## Not finished
 #     all_cols  = ['arm','age','gender','race','ethnicity','zubrod',
