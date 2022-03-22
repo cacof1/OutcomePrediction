@@ -24,7 +24,7 @@ import toml
 from Models.MixModel import MixModel
 from pytorch_lightning import loggers as pl_loggers
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
-
+from Utils.PredictionReport import PredictionReport
 # def main():
 
 config = toml.load('../SettingsCAE.ini')
@@ -88,7 +88,8 @@ MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 # MasterSheet = MasterSheet.dropna(subset=category_cols)
 MasterSheet = MasterSheet.dropna(subset=[label])
 MasterSheet = MasterSheet.fillna(MasterSheet.mean())
-MasterSheet[label] = (MasterSheet[label] > 24).astype(int)
+
+# MasterSheet[label] = (MasterSheet[label] > 24).astype(int)
 
 if config['REGULARIZATION']['Label_smoothing']:
     weights, label_range = get_smoothed_label_distribution(MasterSheet, label)
@@ -158,31 +159,30 @@ trainer.fit(model, dataloader)
 
 worstCase = 0
 with torch.no_grad():
+    outs = []
     for i, data in enumerate(dataloader.test_dataloader()):
         truth = data[1]
         x = data[0]
         output = model.test_step(data, i)
-        diff = torch.abs(output.flatten(0) - truth)
-        idx = torch.argmax(diff)
-        if diff[idx] > worstCase:
-            if 'Anatomy' in config['DATA']['module']:
-                worst_img = x['Anatomy'][idx]
-            if 'Dose' in config['DATA']['module']:
-                worst_dose = x['Dose'][idx]
-            worst_MAE = diff[idx]
+        outs.append(output)
 
-    if 'Anatomy' in config['DATA']['module']:
-        grid_img = model.report.generate_report(worst_img)
-        model.logger.experiment.add_image('test_worst_case_img', grid_img, i)
-    if 'Dose' in config['DATA']['module']:
-        grid_dose = model.report.generate_report(worst_dose)
-        model.logger.experiment.add_image('test_worst_case_dose', grid_dose, i)
+    validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
+    prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
+    report = PredictionReport(prediction_labels, validation_labels)
 
-with torch.no_grad():
-    output = trainer.test(model, dataloader.test_dataloader())
-print(output)
+    if config['MODEL']['Prediction_type'] == 'Regression':
+        fig = report.generate_cumulative_dynamic_auc(train_label)
+        model.logger.experiment.add_figure("AUC", fig)
+        worst_record = report.worst_case_show(config, outs)
+        print('worst_AE', worst_record['worst_AE'])
+        if 'Anatomy' in config['DATA']['module']:
+            grid_img = report.generate_report(worst_record['worst_img'])
+            model.logger.experiment.add_image('validate_worst_case_img', grid_img)
+        if 'Dose' in config['DATA']['module']:
+            grid_dose = report.generate_report(worst_record['worst_dose'])
+            model.logger.experiment.add_image('validate_worst_case_dose', grid_dose)
 
+# with torch.no_grad():
+#     output = trainer.test(model, dataloader.test_dataloader())
+# print(output)
 
-
-# if __name__ ==  '__main__':
-#     main()
