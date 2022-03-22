@@ -17,7 +17,7 @@ import torchmetrics
 from Models.fds import FDS
 from Losses.loss import WeightedMSE, CrossEntropy
 from sksurv.metrics import concordance_index_censored
-from Utils.PredictionReport import generate_cumulative_dynamic_auc, generate_report, plot_AUROC
+from Utils.PredictionReport import PredictionReport
 
 
 class MixModel(LightningModule):
@@ -49,6 +49,7 @@ class MixModel(LightningModule):
             self.loss_fcn = torch.nn.MSELoss()
 
         self.train_label = train_label
+        self.report = PredictionReport()
 
     def forward(self, datadict, labels):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
@@ -131,7 +132,7 @@ class MixModel(LightningModule):
         prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(validation_step_outputs)], dim=0)
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             risk_score = 1 / prediction_labels
-            fig = generate_cumulative_dynamic_auc(self.train_label, validation_labels, risk_score)
+            fig = self.report.generate_cumulative_dynamic_auc(self.train_label, validation_labels, risk_score)
             self.logger.experiment.add_figure("AUC", fig, self.current_epoch)
             worst_MAE = 0
             for i, data in enumerate(validation_step_outputs):
@@ -146,16 +147,16 @@ class MixModel(LightningModule):
             self.log('worst_AE', worst_MAE)
             self.log('worst_AE', worst_MAE)
             if 'Anatomy' in self.config['DATA']['module']:
-                grid_img = generate_report(worst_img)
+                grid_img = self.report.generate_report(worst_img)
                 self.logger.experiment.add_image('validate_worst_case_img', grid_img, self.current_epoch)
             if 'Dose' in self.config['DATA']['module']:
-                grid_dose = generate_report(worst_dose)
+                grid_dose = self.report.generate_report(worst_dose)
                 self.logger.experiment.add_image('validate_worst_case_dose', grid_dose, self.current_epoch)
         else:
             fpr, tpr, _ = self.roc(prediction_labels, validation_labels)
             AUROC = self.accuracy(prediction_labels, validation_labels.int())
             specificity = self.specificity(prediction_labels, validation_labels.int())
-            fig = plot_AUROC(tpr, fpr)
+            fig = self.report.plot_AUROC(tpr, fpr)
             self.logger.experiment.add_figure("AUC", fig, self.current_epoch)
             #
             self.log('Specificity', specificity)

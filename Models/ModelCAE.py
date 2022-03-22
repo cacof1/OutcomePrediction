@@ -37,10 +37,10 @@ class ModelCAE(LightningModule):
         self.feature_extractor = nn.Sequential(*layers)
         self.feature_extractor.eval()
 
-        # for param in self.feature_extractor.parameters():
-        #     param.requires_grad = False
-        for param in self.feature_extractor[0][0:10].parameters():
+        for param in self.feature_extractor.parameters():
             param.requires_grad = False
+        # for param in self.feature_extractor[0][0:10].parameters():
+        #     param.requires_grad = False
 
         self.linear1 = nn.LazyLinear(embed_dim)
         # self.FDS = FDS(feature_dim=1024, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
