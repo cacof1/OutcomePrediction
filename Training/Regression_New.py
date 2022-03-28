@@ -24,12 +24,17 @@ import toml
 from Models.MixModel import MixModel
 from pytorch_lightning import loggers as pl_loggers
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
-from Utils.PredictionReport import PredictionReport
+from Utils.PredictionReport import generate_cumulative_dynamic_auc, classification_matrix, generate_report, plot_AUROC
+
 # def main():
 
 config = toml.load('../SettingsCAE.ini')
 
 tb_logger = pl_loggers.TensorBoardLogger(save_dir='lightning_logs', name=config['MODEL']['3D_MODEL'])
+
+configurations = 'The img_dim is ' + str(config['DATA']['dim']) + ' and the modules included are ' + str(config['DATA']['module'])
+tb_logger.experiment.add_text('configurations:', configurations)
+
 img_dim = config['DATA']['dim']
 
 train_transform = tio.Compose([
@@ -68,13 +73,13 @@ MasterSheet = pd.read_csv(path + mastersheet, index_col='patid')
 label = target
 
 clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
-                    #'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
-                    'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician',
+                    # 'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
+                    'egfr_hscore_200', 'received_conc_cetuximab', 'rt_compliance_physician',
                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
                     'volume_ptv', 'rt_compliance_ptv90', 'received_conc_chemo',
                     ]
 numerical_cols = ['age', 'volume_ptv']
-#, 'dmax_ptv', 'v100_ptv','v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart','v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN','Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN'
+# , 'dmax_ptv', 'v100_ptv','v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart','v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN','Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN'
 category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
 
 # ["age","gender","race","ethnicity","zubrod","histology","nonsquam_squam","ajcc_stage_grp","pet_staging","rt_technique","has_egfr_hscore","egfr_hscore_200","smoke_hx","rx_terminated_ae","received_rt","rt_dose","overall_rt_review","fractionation_review","elapsed_days_review","tv_oar_review","gtv_review","ptv_review","ips_lung_review","contra_lung_review","spinal_cord_review","heart_review","esophagus_review","brachial_plexus_review","skin_review","dva_tv_review","dva_oar_review"]
@@ -89,7 +94,7 @@ MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 MasterSheet = MasterSheet.dropna(subset=[label])
 MasterSheet = MasterSheet.fillna(MasterSheet.mean())
 
-# MasterSheet[label] = (MasterSheet[label] > 24).astype(int)
+MasterSheet[label] = (MasterSheet[label] > 24).astype(int)
 
 if config['REGULARIZATION']['Label_smoothing']:
     weights, label_range = get_smoothed_label_distribution(MasterSheet, label)
@@ -151,9 +156,8 @@ dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_tr
                         inference=False)
 train_label = dataloader.train_label
 
-trainer = Trainer(gpus=1, max_epochs=20, logger=tb_logger) #callbacks=callbacks,
+trainer = Trainer(gpus=1, max_epochs=20, logger=tb_logger)  # callbacks=callbacks,
 model = MixModel(module_dict, config, train_label, label_range=label_range, weights=weights)
-
 
 trainer.fit(model, dataloader)
 
@@ -168,21 +172,29 @@ with torch.no_grad():
 
     validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
     prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
-    report = PredictionReport(prediction_labels, validation_labels)
 
     if config['MODEL']['Prediction_type'] == 'Regression':
-        fig = report.generate_cumulative_dynamic_auc(train_label)
-        model.logger.experiment.add_figure("AUC", fig)
-        worst_record = report.worst_case_show(config, outs)
-        print('worst_AE', worst_record['worst_AE'])
-        if 'Anatomy' in config['DATA']['module']:
-            grid_img = report.generate_report(worst_record['worst_img'])
-            model.logger.experiment.add_image('validate_worst_case_img', grid_img)
-        if 'Dose' in config['DATA']['module']:
-            grid_dose = report.generate_report(worst_record['worst_dose'])
-            model.logger.experiment.add_image('validate_worst_case_dose', grid_dose)
+        print('loss', model.loss_fcn(prediction_labels, validation_labels))
+        if 'WorstCase' in config['REPORT']['matrix']:
+            worst_record = model.report.worst_case_show(outs)
+            print('worst_AE', worst_record['worst_AE'])
+            if 'Anatomy' in config['DATA']['module']:
+                grid_img = generate_report(worst_record['worst_img'])
+                model.logger.experiment.add_image('test_worst_case_img', grid_img)
+            if 'Dose' in config['DATA']['module']:
+                grid_dose = generate_report(worst_record['worst_dose'])
+                model.logger.experiment.add_image('test_worst_case_dose', grid_dose)
+
+    if config['MODEL']['Prediction_type'] == 'Classification':
+        classification_out = classification_matrix(prediction_labels.squeeze(), validation_labels)
+        if 'AUC' in config['REPORT']['matrix']:
+            fig = plot_AUROC(classification_out['tpr'], classification_out['fpr'])
+            model.logger.experiment.add_figure("AUC", fig)
+        if 'Specificity' in config['REPORT']['matrix']:
+            print('Specificity:', classification_out['specificity'])
+        if 'AUROC' in config['REPORT']['matrix']:
+            print('AUROC:', classification_out['accuracy'])
 
 # with torch.no_grad():
 #     output = trainer.test(model, dataloader.test_dataloader())
 # print(output)
-
