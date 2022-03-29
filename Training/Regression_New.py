@@ -24,17 +24,20 @@ import toml
 from Models.MixModel import MixModel
 from pytorch_lightning import loggers as pl_loggers
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
-from Utils.PredictionReport import generate_cumulative_dynamic_auc, classification_matrix, generate_report, plot_AUROC
+from Utils.PredictionReports import PredictionReports
+
+# from Utils.PredictionReport import generate_cumulative_dynamic_auc, classification_matrix, generate_report, plot_AUROC
 
 # def main():
 
 config = toml.load('../SettingsCAE.ini')
 
-tb_logger = pl_loggers.TensorBoardLogger(save_dir='lightning_logs', name=config['MODEL']['3D_MODEL'])
+# tb_logger = pl_loggers.TensorBoardLogger(save_dir='lightning_logs', name=config['MODEL']['3D_MODEL'])
+# configurations = 'The img_dim is ' + str(config['DATA']['dim']) + ' and the modules included are ' + str(config['DATA']['module'])
+# tb_logger.experiment.add_text('configurations:', configurations)
 
-configurations = 'The img_dim is ' + str(config['DATA']['dim']) + ' and the modules included are ' + str(config['DATA']['module'])
-tb_logger.experiment.add_text('configurations:', configurations)
-
+tb_logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['3D_MODEL'])
+tb_logger.log_text()
 img_dim = config['DATA']['dim']
 
 train_transform = tio.Compose([
@@ -94,7 +97,7 @@ MasterSheet = MasterSheet.dropna(subset=["CTPath"])
 MasterSheet = MasterSheet.dropna(subset=[label])
 MasterSheet = MasterSheet.fillna(MasterSheet.mean())
 
-MasterSheet[label] = (MasterSheet[label] > 24).astype(int)
+# MasterSheet[label] = (MasterSheet[label] > 24).astype(int)
 
 if config['REGULARIZATION']['Label_smoothing']:
     weights, label_range = get_smoothed_label_distribution(MasterSheet, label)
@@ -156,7 +159,7 @@ dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_tr
                         inference=False)
 train_label = dataloader.train_label
 
-trainer = Trainer(gpus=1, max_epochs=20, logger=tb_logger)  # callbacks=callbacks,
+trainer = Trainer(gpus=1, max_epochs=3, logger=tb_logger)  # callbacks=callbacks,
 model = MixModel(module_dict, config, train_label, label_range=label_range, weights=weights)
 
 trainer.fit(model, dataloader)
@@ -172,28 +175,27 @@ with torch.no_grad():
 
     validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
     prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
-
+    prefix = 'test_'
     if config['MODEL']['Prediction_type'] == 'Regression':
         print('loss', model.loss_fcn(prediction_labels, validation_labels))
         if 'WorstCase' in config['REPORT']['matrix']:
-            worst_record = model.report.worst_case_show(outs)
-            print('worst_AE', worst_record['worst_AE'])
+            worst_record = tb_logger.worst_case_show(outs, prefix)
+            print('worst_AE', worst_record[prefix+'worst_AE'])
             if 'Anatomy' in config['DATA']['module']:
-                grid_img = generate_report(worst_record['worst_img'])
-                model.logger.experiment.add_image('test_worst_case_img', grid_img)
+                text = 'test_worst_case_img'
+                tb_logger.log_image(worst_record[prefix+'worst_img'],text)
             if 'Dose' in config['DATA']['module']:
-                grid_dose = generate_report(worst_record['worst_dose'])
-                model.logger.experiment.add_image('test_worst_case_dose', grid_dose)
+                text = 'test_worst_case_dose'
+                tb_logger.generate_report(worst_record[prefix+'worst_dose'],text)
 
     if config['MODEL']['Prediction_type'] == 'Classification':
-        classification_out = classification_matrix(prediction_labels.squeeze(), validation_labels)
-        if 'AUC' in config['REPORT']['matrix']:
-            fig = plot_AUROC(classification_out['tpr'], classification_out['fpr'])
-            model.logger.experiment.add_figure("AUC", fig)
+        classification_out = tb_logger.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
+        if 'ROC' in config['REPORT']['matrix']:
+            tb_logger.plot_AUROC(prediction_labels, validation_labels, prefix)
+            print('AUROC:', classification_out[prefix + 'roc'])
         if 'Specificity' in config['REPORT']['matrix']:
-            print('Specificity:', classification_out['specificity'])
-        if 'AUROC' in config['REPORT']['matrix']:
-            print('AUROC:', classification_out['accuracy'])
+            print('Specificity:', classification_out[prefix+'specificity'])
+
 
 # with torch.no_grad():
 #     output = trainer.test(model, dataloader.test_dataloader())
