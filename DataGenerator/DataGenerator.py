@@ -106,7 +106,6 @@ class DataModule(LightningDataModule):
         regression_y = mastersheet[label].to_numpy()
         bins = np.arange(np.min(regression_y), np.max(regression_y)-2, 3)
         cls_label = np.digitize(regression_y, bins)
-        import pdb; pdb.set_trace()
         train, val_test       = train_test_split(mastersheet, train_size=0.7, stratify=cls_label)
         self.train_label = train[label]
 
@@ -122,8 +121,8 @@ class DataModule(LightningDataModule):
         self.test_data       = DataGenerator(test,  label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
         print('test')
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=24, collate_fn=custom_collate)
-    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=24, collate_fn=custom_collate)
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=custom_collate)
+    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0, collate_fn=custom_collate)
     def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size, collate_fn=custom_collate)
 
 def PatientQuery(config, **kwargs):
@@ -186,7 +185,6 @@ def custom_collate(original_batch):
                     t_shape = (1, patient[0][key].shape[0], patient[0][key].shape[1],patient[0][key].shape[2], patient[0][key].shape[3])
                     filtered_data[key] = torch.vstack((filtered_data[key], torch.reshape(patient[0][key], t_shape)))
 
-            # TODO: check if torch vstack does its job from top or bottom to match the target
             filtered_target.append(patient[1])
             i+=1
 
