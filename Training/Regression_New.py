@@ -27,7 +27,8 @@ from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
 from Utils.PredictionReport import PredictionReport
 # def main():
 
-config = toml.load('../SettingsCAE.ini')
+#config = toml.load('../SettingsCAE.ini')
+config = toml.load(sys.argv[1])
 
 tb_logger = pl_loggers.TensorBoardLogger(save_dir='lightning_logs', name=config['MODEL']['3D_MODEL'])
 img_dim = config['DATA']['dim']

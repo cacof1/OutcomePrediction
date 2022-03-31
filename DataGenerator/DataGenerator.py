@@ -106,6 +106,7 @@ class DataModule(LightningDataModule):
         regression_y = mastersheet[label].to_numpy()
         bins = np.arange(np.min(regression_y), np.max(regression_y)-2, 3)
         cls_label = np.digitize(regression_y, bins)
+        import pdb; pdb.set_trace()
         train, val_test       = train_test_split(mastersheet, train_size=0.7, stratify=cls_label)
         self.train_label = train[label]
 
@@ -121,8 +122,8 @@ class DataModule(LightningDataModule):
         self.test_data       = DataGenerator(test,  label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
         print('test')
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=custom_collate)
-    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0, collate_fn=custom_collate)
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=24, collate_fn=custom_collate)
+    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=24, collate_fn=custom_collate)
     def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size, collate_fn=custom_collate)
 
 def PatientQuery(config, **kwargs):
@@ -207,7 +208,11 @@ def LoadClincalData(MasterSheet):
                       'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
                       'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
                       'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN']
+
     category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
+
+    numerical_cols = list(set(numerical_cols).intersection(set(MasterSheet.keys())))
+    category_cols = list(set(category_cols).intersection(set(MasterSheet.keys())))
 
     numerical_data = MasterSheet[numerical_cols] #pd.DataFrame()
     category_data = MasterSheet[category_cols]
