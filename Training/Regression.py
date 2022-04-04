@@ -16,7 +16,6 @@ import os
 from DataGenerator.DataGenerator import LoadClincalData
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
-torch.cuda.empty_cache()
 ## Main
 from Models.Classifier3D import Classifier3D
 from Models.Linear import Linear
@@ -28,15 +27,8 @@ from Utils.PredictionReports import PredictionReports
 
 # from Utils.PredictionReport import generate_cumulative_dynamic_auc, classification_matrix, generate_report, plot_AUROC
 
-# def main():
 
-#config = toml.load('../SettingsCAE.ini')
 config = toml.load(sys.argv[1])
-
-# tb_logger = pl_loggers.TensorBoardLogger(save_dir='lightning_logs', name=config['MODEL']['3D_MODEL'])
-# configurations = 'The img_dim is ' + str(config['DATA']['dim']) + ' and the modules included are ' + str(config['DATA']['module'])
-# tb_logger.experiment.add_text('configurations:', configurations)
-
 tb_logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['3D_MODEL'])
 tb_logger.log_text()
 img_dim = config['DATA']['dim']
@@ -69,7 +61,7 @@ callbacks = [
                   check_finite=True),
 ]
 
-path = config['DATA']['Path']
+path   = config['DATA']['Path']
 mastersheet = config['DATA']['Mastersheet']
 target = config['DATA']['target']
 
@@ -92,12 +84,6 @@ RefColumns = ["CTPath", "DosePath"]
 Label = [label]
 
 columns = clinical_columns + RefColumns + Label
-MasterSheet = MasterSheet[columns]
-MasterSheet = MasterSheet.dropna(subset=["CTPath"])
-# MasterSheet = MasterSheet.dropna(subset=category_cols)
-MasterSheet = MasterSheet.dropna(subset=[label])
-MasterSheet = MasterSheet.fillna(MasterSheet.mean())
-
 # MasterSheet[label] = (MasterSheet[label] > 24).astype(int)
 
 if config['REGULARIZATION']['Label_smoothing']:
@@ -196,8 +182,3 @@ with torch.no_grad():
             print('AUROC:', classification_out[prefix + 'roc'])
         if 'Specificity' in config['REPORT']['matrix']:
             print('Specificity:', classification_out[prefix+'specificity'])
-
-
-# with torch.no_grad():
-#     output = trainer.test(model, dataloader.test_dataloader())
-# print(output)

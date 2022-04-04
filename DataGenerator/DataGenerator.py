@@ -130,6 +130,11 @@ def PatientQuery(config, **kwargs):
     for key,item in config['CRITERIA'].items(): mastersheet = mastersheet[mastersheet[key]==item]
     return mastersheet
 
+def QueryFromServer(config, **kwargs):
+    session = xnat.connect('http://128.16.11.124:8080/xnat/', user='yzhan', password='yzhan')
+    project = session.projects["RTOG_test"]
+    subjects = project.subjects.filter(config['CRITERIA'])
+    return subjects
 def LoadImg(path):
     img = sitk.ReadImage(path)
     return sitk.GetArrayFromImage(img).astype(np.float32)
