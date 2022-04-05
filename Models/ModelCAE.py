@@ -15,6 +15,7 @@ import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 from Losses.loss import WeightedMSE
+
 ## Models
 from Models.Linear import Linear
 from Models.Classifier2D import Classifier2D
@@ -23,8 +24,8 @@ from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, Transfor
 from Models.fds import FDS
 
 # Please refer paper CAE-TRANSFORMER: TRANSFORMER-BASED MODEL TO PREDICT INVASIVENESS
-# OF LUNG ADENOCARCINOMA SUBSOLID NODULES FROM NON-THIN SECTION 3D
-# CT SCANS
+#                    OF LUNG ADENOCARCINOMA SUBSOLID NODULES FROM NON-THIN SECTION 3D
+#                    CT SCANS
 
 
 class ModelCAE(LightningModule):

@@ -3,34 +3,33 @@ import torch
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
-import sys
+import sys, os
 import torchio as tio
 import pandas as pd
+
 ## Module - Dataloaders
-from DataGenerator.DataGenerator import DataModule, DataGenerator, PatientQuery
+from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer
+
 ## Module - Models
 from Models.ModelCAE import ModelCAE
 from Models.ModelTransUnet import ModelTransUnet
 from Models.ModelCoTr import ModelCoTr
-import os
-from DataGenerator.DataGenerator import LoadClincalData
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-
-## Main
 from Models.Classifier3D import Classifier3D
 from Models.Linear import Linear
-import toml
 from Models.MixModel import MixModel
-from pytorch_lightning import loggers as pl_loggers
+
+## Main
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+import toml
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
 from Utils.PredictionReports import PredictionReports
 
 # from Utils.PredictionReport import generate_cumulative_dynamic_auc, classification_matrix, generate_report, plot_AUROC
 
-
 config = toml.load(sys.argv[1])
-tb_logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['3D_MODEL'])
-tb_logger.log_text()
+
+logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['BaseModel'])
+logger.log_text()
 img_dim = config['DATA']['dim']
 
 train_transform = tio.Compose([
@@ -46,27 +45,27 @@ train_transform = tio.Compose([
 val_transform = tio.Compose([
     tio.transforms.ZNormalization(),
     tio.transforms.Resize(img_dim),
-    # tio.RandomAffine(),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
-filename = config['MODEL']['3D_MODEL'] + '_DeepSurv'
+
+filename = config['MODEL']['BaseModel'] + '_DeepSurv'
+
+
 callbacks = [
-    ModelCheckpoint(
-        dirpath='./',
-        monitor='loss',
-        filename=filename,
-        save_top_k=1,
-        mode='min'),
+    ModelCheckpoint(dirpath='./',
+                    monitor='loss',
+                    filename=filename,
+                    save_top_k=1,
+                    mode='min'),
+    
     EarlyStopping(monitor='val_loss',
                   check_finite=True),
 ]
 
-path   = config['DATA']['Path']
-mastersheet = config['DATA']['Mastersheet']
-target = config['DATA']['target']
+label = config['DATA']['target']
 
-MasterSheet = pd.read_csv(path + mastersheet, index_col='patid')
-label = target
+PatientList = QueryFromServer(config)
+
 
 clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
                     # 'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
@@ -74,7 +73,7 @@ clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
                     'volume_ptv', 'rt_compliance_ptv90', 'received_conc_chemo',
                     ]
-numerical_cols = ['age', 'volume_ptv']
+numerical_cols  = ['age', 'volume_ptv']
 # , 'dmax_ptv', 'v100_ptv','v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart','v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN','Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN'
 category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
 
@@ -95,7 +94,7 @@ else:
 # trainer     =Trainer(accelerator="cpu", callbacks=callbacks)
 ## This is where you change how the data is organized
 
-numerical_data, category_data = LoadClincalData(MasterSheet)
+numerical_data, category_data = LoadClinicalData(MasterSheet)
 sc = StandardScaler()
 data1 = sc.fit_transform(numerical_data)
 
@@ -146,9 +145,8 @@ dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_tr
                         inference=False)
 train_label = dataloader.train_label
 
-trainer = Trainer(gpus=1, max_epochs=3, logger=tb_logger)  # callbacks=callbacks,
+trainer = Trainer(gpus=1, max_epochs=3, logger=logger)  # callbacks=callbacks,
 model = MixModel(module_dict, config, train_label, label_range=label_range, weights=weights)
-
 trainer.fit(model, dataloader)
 
 worstCase = 0
@@ -166,19 +164,19 @@ with torch.no_grad():
     if config['MODEL']['Prediction_type'] == 'Regression':
         print('loss', model.loss_fcn(prediction_labels, validation_labels))
         if 'WorstCase' in config['REPORT']['matrix']:
-            worst_record = tb_logger.worst_case_show(outs, prefix)
+            worst_record = logger.worst_case_show(outs, prefix)
             print('worst_AE', worst_record[prefix+'worst_AE'])
             if 'Anatomy' in config['DATA']['module']:
                 text = 'test_worst_case_img'
-                tb_logger.log_image(worst_record[prefix+'worst_img'],text)
+                logger.log_image(worst_record[prefix+'worst_img'],text)
             if 'Dose' in config['DATA']['module']:
                 text = 'test_worst_case_dose'
-                tb_logger.generate_report(worst_record[prefix+'worst_dose'],text)
+                logger.generate_report(worst_record[prefix+'worst_dose'],text)
 
     if config['MODEL']['Prediction_type'] == 'Classification':
-        classification_out = tb_logger.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
+        classification_out = logger.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
         if 'ROC' in config['REPORT']['matrix']:
-            tb_logger.plot_AUROC(prediction_labels, validation_labels, prefix)
+            logger.plot_AUROC(prediction_labels, validation_labels, prefix)
             print('AUROC:', classification_out[prefix + 'roc'])
         if 'Specificity' in config['REPORT']['matrix']:
             print('Specificity:', classification_out[prefix+'specificity'])
