@@ -6,6 +6,7 @@ from pytorch_lightning import LightningDataModule, LightningModule, Trainer, see
 import sys, os
 import torchio as tio
 import pandas as pd
+print('Great success!')
 
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer
