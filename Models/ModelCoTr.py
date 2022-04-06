@@ -25,16 +25,17 @@ from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, Transfor
 
 
 class ModelCoTr(LightningModule):
-    def __init__(self, n_classes=1, wf=5, depth=3, img_sizes=256, patch_size=4, embed_dim=256,
-                 in_channels=1, num_layers=3, num_heads=8, dropout=0.5, mlp_dim=128):
+    def __init__(self, n_classes=1, wf=5, depth=3, img_sizes=256, patch_size=4, transformer_embed_dim=256,
+                 in_channels=1, transformer_layer=3, transformer_head=8, dropout=0.5, transformer_mlp_dim=128):
         super().__init__()
         self.model = UNet3D(in_channels=1, n_classes=n_classes, depth=depth, wf=wf).encoder
         self.pe = nn.ModuleList(
             [PositionEncoding(img_size=img_sizes[i], patch_size=patch_size, in_channel=2 ** (wf + i),
-                              embed_dim=embed_dim, img_dim=3, dropout=dropout, iftoken=True) for i in range(depth)]
+                              embed_dim=transformer_embed_dim, img_dim=3, dropout=dropout, iftoken=True) for i in range(depth)]
         )
         self.transformers = nn.ModuleList(
-            [TransformerBlock(num_heads=num_heads, embed_dim=embed_dim, mlp_dim=mlp_dim, dropout=dropout) for _ in range(num_layers)])
+            [TransformerBlock(num_heads=transformer_head, embed_dim=transformer_embed_dim,
+                              mlp_dim=transformer_mlp_dim, dropout=dropout) for _ in range(transformer_layer)])
 
     def forward(self, x):
         flg = 0

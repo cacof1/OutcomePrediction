@@ -29,7 +29,8 @@ from Models.fds import FDS
 
 
 class ModelCAE(LightningModule):
-    def __init__(self, img_sizes, patch_size, embed_dim, in_channels, num_layers=3, num_heads=8, dropout=0.5, mlp_dim=128):
+    def __init__(self, img_sizes, patch_size, transformer_embed_dim, in_channels, transformer_layer =3,
+                 transformer_head =8, dropout=0.5, transformer_mlp_dim=128):
         super().__init__()
         ## define backbone
         # backbone = torchvision.models.resnet18(pretrained=True)
@@ -43,27 +44,16 @@ class ModelCAE(LightningModule):
         # for param in self.feature_extractor[0][0:10].parameters():
         #     param.requires_grad = False
 
-        self.linear1 = nn.LazyLinear(embed_dim)
+        self.linear1 = nn.LazyLinear(transformer_embed_dim)
         # self.FDS = FDS(feature_dim=1024, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
 
         self.pe = PositionEncoding(img_size=img_sizes, patch_size=patch_size, in_channel=in_channels,
-                                   embed_dim=embed_dim, dropout=dropout, img_dim=2, iftoken=False)
+                                   embed_dim=transformer_embed_dim, dropout=dropout, img_dim=2, iftoken=False)
 
         self.transformers = nn.ModuleList(
-            [TransformerBlock(num_heads=num_heads, embed_dim=embed_dim, mlp_dim=mlp_dim, dropout=dropout) for _ in range(num_layers)])
+            [TransformerBlock(num_heads=transformer_head, embed_dim=transformer_embed_dim,
+                              mlp_dim=transformer_mlp_dim, dropout=dropout) for _ in range(transformer_layer )])
         self.pool_top = nn.MaxPool2d(4)
-
-    # def WeightedMSE(self, prediction, labels):
-    #     loss = 0
-    #     for i, label in enumerate(labels):
-    #         idx = (self.label_range == int(label.cpu().numpy())).nonzero()
-    #         if (idx is not None) and (idx[0][0] < 60):
-    #             # print(idx[0][0])
-    #             loss = loss + (prediction[i] - label) ** 2 * self.weights[idx[0][0]]
-    #         else:
-    #             loss = loss + (prediction[i] - label) ** 2 * self.weights[-1]
-    #     loss = loss / (i + 1)
-    #     return loss
 
     def convert2d(self, x):
         y = x.repeat(1, 3, 1, 1)

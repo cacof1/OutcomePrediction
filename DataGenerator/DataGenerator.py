@@ -105,7 +105,7 @@ class DataModule(LightningDataModule):
 
         # Convert regression value to histogram class
         regression_y = mastersheet[label].to_numpy()
-        bins = np.arange(np.min(regression_y), np.max(regression_y)-2, 3)
+        bins = np.arange(np.nanmin(regression_y), np.nanmax(regression_y)-2, 3)
         cls_label = np.digitize(regression_y, bins)
         train, val_test       = train_test_split(mastersheet, train_size=0.7, stratify=cls_label)
         self.train_label = train[label]
