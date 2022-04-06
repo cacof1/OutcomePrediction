@@ -49,7 +49,7 @@ class PredictionReports(TensorBoardLogger):
         return grid
 
     def log_text(self) -> None:
-        configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' + str(
+        configurations = 'The img_dim is ' + str(self.config['MODEL']['img_sizes']) + ' and the modules included are ' + str(
             self.config['DATA']['module'])
         self.experiment.add_text('configurations:', configurations)
 

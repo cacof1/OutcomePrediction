@@ -99,10 +99,18 @@ class DataModule(LightningDataModule):
     def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64, **kwargs):
         super().__init__()
         self.batch_size      = batch_size
+        self.numerical_norm = numerical_norm
+        self.category_norm = category_norm
+        self.config = config
 
-        self.train_data  = DataGenerator(train, label, keys,  transform = train_transform, **kwargs)
-        self.val_data        = DataGenerator(val,   label, keys, transform = val_transform, **kwargs)
-        self.test_data       = DataGenerator(test,  label, keys, transform = val_transform, **kwargs)
+        # Convert regression value to histogram class
+        train, val_test       = train_test_split(mastersheet, train_size=0.7)
+        self.train_label = train[label]
+        val, test             = train_test_split(val_test, test_size=0.66)
+        
+        self.train_data  = DataGenerator(train, label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = train_transform, **kwargs)
+        self.val_data        = DataGenerator(val,   label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
+        self.test_data       = DataGenerator(test,  label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=custom_collate)
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0, collate_fn=custom_collate)

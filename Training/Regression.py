@@ -30,7 +30,8 @@ config = toml.load(sys.argv[1])
 
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['BaseModel'])
 logger.log_text()
-img_dim = config['DATA']['dim']
+img_dim = config['MODEL']['img_sizes']
+MasterSheet = pd.read_csv(config['DATA']['Path'] + config['DATA']['Mastersheet'], index_col='patid')
 
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
@@ -102,36 +103,26 @@ ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
 
-
-patch_size = config['MODEL']['Patch_size']
-embed_dim = config['MODEL']['Transformer_embed_size']  # For 2D image
-batch_size = config['MODEL']['Batch_size']
-num_layers = config['MODEL']['Transformer_layer']
-dropout = config['MODEL']['Drop_rate']
-mlp_dim = config['MODEL']['Transformer_mlp_dim']
-module_selected = config['DATA']['module']
 module_dict = nn.ModuleDict()
-num_heads = config['MODEL']['Transformer_head']
+module_selected = config['DATA']['module']
 
-if config['MODEL']['3D_MODEL'] == 'CAE':
-    Backbone = ModelCAE(img_sizes=img_dim, patch_size=patch_size, embed_dim=embed_dim, in_channels=1,
-                        num_layers=num_layers, num_heads=num_heads, dropout=dropout, mlp_dim=mlp_dim)
+if config['MODEL']['BaseModel'] == 'CAE':
+    Backbone = ModelCAE(config['MODEL'])
 
-if config['MODEL']['3D_MODEL'] == 'TransUnet':
-    embed_dim = patch_size ** 3 * 128
-    img_size = [4, 16, 16]
-    Backbone = ModelTransUnet(img_sizes=img_size, patch_size=patch_size, embed_dim=embed_dim, in_channels=128,
-                              num_layers=num_layers, num_heads=num_heads, dropout=dropout, mlp_dim=mlp_dim)
+if config['MODEL']['BaseModel'] == 'TransUnet':
+    Backbone = ModelTransUnet(config['MODEL'])
 
-if config['MODEL']['3D_MODEL'] == 'CoTr':
+if config['MODEL']['BaseModel'] == 'CoTr':
     default_depth = 3
     img_sizes = []
     for i in range(default_depth):
         tmp = [x / 2 ** (i + 1) for x in img_dim]
         img_sizes.append(tmp)
-    Backbone = ModelCoTr(img_sizes=img_sizes, patch_size=patch_size, embed_dim=embed_dim, in_channels=1,
-                         num_layers=num_layers, num_heads=num_heads, dropout=dropout, mlp_dim=mlp_dim)
-if config['MODEL']['3D_MODEL'] == 'Unet':
+    config['MODEL']['img_sizes'] = img_sizes
+    Backbone = ModelCoTr(config['MODEL'])
+
+
+if config['MODEL']['BaseModel'] == 'Unet':
     Backbone = Classifier3D()
 if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
@@ -143,7 +134,7 @@ for i, module in enumerate(module_selected):
         module_dict[module] = Clinical_backbone
 
 dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_transform=train_transform,
-                        val_transform=val_transform, batch_size=batch_size, numerical_norm=sc, category_norm=ohe,
+                        val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=sc, category_norm=ohe,
                         inference=False)
 train_label = dataloader.train_label
 
