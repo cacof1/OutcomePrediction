@@ -29,7 +29,7 @@ from Models.fds import FDS
 
 
 class ModelCAE(LightningModule):
-    def __init__(self, img_sizes, patch_size, embed_dim, in_channels, num_layers=3, num_heads=8, dropout=0.5, mlp_dim=128):
+    def __init__(self, config):
         super().__init__()
         ## define backbone
         # backbone = torchvision.models.resnet18(pretrained=True)
@@ -43,14 +43,17 @@ class ModelCAE(LightningModule):
         # for param in self.feature_extractor[0][0:10].parameters():
         #     param.requires_grad = False
 
-        self.linear1 = nn.LazyLinear(embed_dim)
+        self.linear1 = nn.LazyLinear(config['transformer_embed_dim'])
         # self.FDS = FDS(feature_dim=1024, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
 
-        self.pe = PositionEncoding(img_size=img_sizes, patch_size=patch_size, in_channel=in_channels,
-                                   embed_dim=embed_dim, dropout=dropout, img_dim=2, iftoken=False)
+        self.pe = PositionEncoding(img_size=config['img_sizes'], patch_size=config['patch_size'],
+                                   in_channel=config['in_channels'],
+                                   embed_dim=config['transformer_embed_dim'], dropout=config['dropout'], img_dim=2, iftoken=False)
 
         self.transformers = nn.ModuleList(
-            [TransformerBlock(num_heads=num_heads, embed_dim=embed_dim, mlp_dim=mlp_dim, dropout=dropout) for _ in range(num_layers)])
+            [TransformerBlock(num_heads=config['transformer_head'], embed_dim=config['transformer_embed_dim'],
+                              mlp_dim=config['transformer_mlp_dim'],
+                              dropout=config['dropout']) for _ in range(config['transformer_layer'])])
         self.pool_top = nn.MaxPool2d(4)
 
     # def WeightedMSE(self, prediction, labels):

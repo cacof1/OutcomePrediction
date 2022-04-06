@@ -104,18 +104,10 @@ class DataModule(LightningDataModule):
         self.config = config
 
         # Convert regression value to histogram class
-        regression_y = mastersheet[label].to_numpy()
-        bins = np.arange(np.min(regression_y), np.max(regression_y)-2, 3)
-        cls_label = np.digitize(regression_y, bins)
-        train, val_test       = train_test_split(mastersheet, train_size=0.7, stratify=cls_label)
+        train, val_test       = train_test_split(mastersheet, train_size=0.7)
         self.train_label = train[label]
 
-        regression_y = val_test[label].to_numpy()
-        bins = np.arange(np.min(regression_y), np.max(regression_y)-6, 7)
-        cls_label = np.digitize(regression_y, bins)
-
-        val, test             = train_test_split(val_test, test_size=0.66, stratify=cls_label)
-        _, _ = get_smoothed_label_distribution(test, label)
+        val, test             = train_test_split(val_test, test_size=0.66)
 
         self.train_data  = DataGenerator(train, label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = train_transform, **kwargs)
         self.val_data        = DataGenerator(val,   label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
