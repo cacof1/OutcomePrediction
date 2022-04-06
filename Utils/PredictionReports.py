@@ -36,6 +36,20 @@ class PredictionReports(TensorBoardLogger):
     def log_hyperparams(self, params: argparse.Namespace, *args, **kwargs):
         pass
 
+    @property
+    def version(self):
+        description = ''
+        for i, param in enumerate(self.config['CRITERIA'].keys()):
+            clinical_criteria = str(self.config['CRITERIA'][param])
+            if i > 0:
+                description = description + '_'
+            description = description + param + '+' + '+'.join(clinical_criteria)
+        # Return the experiment version, int or str.
+        modules = self.config['DATA']['module']
+        description = description + '_' + 'modalities' + '+' + '+'.join(modules)
+
+        return description
+
     def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None):
         for k, v in metrics.items():
             if isinstance(v, torch.Tensor):
