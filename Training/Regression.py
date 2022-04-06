@@ -6,10 +6,9 @@ from pytorch_lightning import LightningDataModule, LightningModule, Trainer, see
 import sys, os
 import torchio as tio
 import pandas as pd
-print('Great success!')
 
 ## Module - Dataloaders
-from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer
+from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
 
 ## Module - Models
 from Models.ModelCAE import ModelCAE
@@ -67,7 +66,7 @@ callbacks = [
 label = config['DATA']['target']
 
 PatientList = QueryFromServer(config)
-
+SynchronizeData(config, PatientList)
 
 clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
                     # 'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
@@ -103,6 +102,7 @@ data1 = sc.fit_transform(numerical_data)
 ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
+
 module_dict = nn.ModuleDict()
 module_selected = config['DATA']['module']
 
