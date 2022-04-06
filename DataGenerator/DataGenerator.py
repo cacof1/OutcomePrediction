@@ -96,30 +96,13 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64, numerical_norm = None, category_norm = None, **kwargs):
+    def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64, **kwargs):
         super().__init__()
         self.batch_size      = batch_size
-        self.numerical_norm = numerical_norm
-        self.category_norm = category_norm
-        self.config = config
 
-        # Convert regression value to histogram class
-        regression_y = mastersheet[label].to_numpy()
-        bins = np.arange(np.min(regression_y), np.max(regression_y)-2, 3)
-        cls_label = np.digitize(regression_y, bins)
-        train, val_test       = train_test_split(mastersheet, train_size=0.7, stratify=cls_label)
-        self.train_label = train[label]
-
-        regression_y = val_test[label].to_numpy()
-        bins = np.arange(np.min(regression_y), np.max(regression_y)-6, 7)
-        cls_label = np.digitize(regression_y, bins)
-
-        val, test             = train_test_split(val_test, test_size=0.66, stratify=cls_label)
-        _, _ = get_smoothed_label_distribution(test, label)
-
-        self.train_data  = DataGenerator(train, label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = train_transform, **kwargs)
-        self.val_data        = DataGenerator(val,   label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
-        self.test_data       = DataGenerator(test,  label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
+        self.train_data  = DataGenerator(train, label, keys,  transform = train_transform, **kwargs)
+        self.val_data        = DataGenerator(val,   label, keys, transform = val_transform, **kwargs)
+        self.test_data       = DataGenerator(test,  label, keys, transform = val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=custom_collate)
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0, collate_fn=custom_collate)
@@ -127,30 +110,43 @@ class DataModule(LightningDataModule):
 
 def QueryFromServer(config, **kwargs):
     print("Querying from Server")
-
     ## Get List of Patients
-    session  = xnat.connect('http://128.16.11.124:8080/xnat/', user='yzhan', password='yzhan')
-    project  = session.projects[config["DATA"]["Project"]]    
+    session  = xnat.connect('http://128.16.11.124:8080/xnat/', user=config["SERVER"]["User"], password='yzhan')
+    project  = session.projects[config["SERVER"]["Project"]]    
     
     ## Verify fit with clinical criteria
     subject_list = []
     clinical_keys = list(config['CRITERIA'].keys())
-    for subject in project.subjects.values():
-        subject_dict = subject.fields.key_map
-        subject_keys = list(subject_dict.keys())
-        if set(clinical_keys).issubset(subject_keys):
-            if(all( subject_dict[k] == str(v) for k,v in config['CRITERIA'].items())):  subject_list.append(subject)
+    for nb,subject in enumerate(project.subjects.values()):
+        print(subject, nb)
+        subject_keys = subject.fields.keys()#.key_map
+        #print(set(subject_dict))
+        #subject_keys = list(subject_dict.keys())
+        if set(clinical_keys).issubset(subject_keys): 
+            if(all( subject.fields[k] == str(v) for k,v in config['CRITERIA'].items())):  subject_list.append(subject)
 
     ## Verify availability of images
-    for keys, values in config['MODALITY'].items():
-        for subject in subject_list:
+    for k, v in config['MODALITY'].items():
+        for nb,subject in enumerate(subject_list):
+            print(subject, nb)
             for experiment in subject.experiments.values():
                 scan_dict = experiment.scans.key_map
-                if(values not in scan_dict.keys()):
+                if(v not in scan_dict.keys()):
                     subject_list.remove(subject)                    
                     break
-
+    print("Queried from Server")
     return subject_list
+
+def SynchronizeData(config, subject_list):
+    ## Data Storage Format --> Idem as XNAT
+    
+    ## Verify if data exists in data folder
+    for subject in subject_list:
+        if(not Path(config['DATA']['DataFolder'], subject.label).is_dir()):
+            print("Synchronizing ", subject.id, subject.label)
+            subject.download_dir(config['DATA']['DataFolder'])
+
+    ## Download data
 
 def LoadImg(path):
     img = sitk.ReadImage(path)
