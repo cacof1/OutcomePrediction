@@ -35,13 +35,11 @@ MasterSheet = pd.read_csv(config['DATA']['Path'] + config['DATA']['Mastersheet']
 
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
-    tio.RandomAffine(),
-    tio.RandomFlip(),
-    tio.RandomNoise(),
-    tio.RandomMotion(),
     tio.transforms.Resize(img_dim),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
+
+aug_transform = [tio.RandomAffine(), tio.RandomFlip(), tio.RandomNoise(), tio.RandomMotion()]
 
 val_transform = tio.Compose([
     tio.transforms.ZNormalization(),
@@ -134,8 +132,8 @@ for i, module in enumerate(module_selected):
         module_dict[module] = Clinical_backbone
 
 dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_transform=train_transform,
-                        val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=sc, category_norm=ohe,
-                        inference=False)
+                        val_transform=val_transform, batch_size=config['MODEL']['batch_size'],
+                        aug_transform=aug_transform, numerical_norm=sc, category_norm=ohe, inference=False)
 train_label = dataloader.train_label
 
 trainer = Trainer(gpus=1, max_epochs=3, logger=logger)  # callbacks=callbacks,

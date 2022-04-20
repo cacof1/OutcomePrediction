@@ -18,6 +18,7 @@ from skimage.measure import regionprops
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
 from sklearn.preprocessing import StandardScaler
 import xnat
+import copy
 
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, mastersheet, label, config, keys, inference=False, n_norm = None, c_norm = None, transform=None, target_transform = None):
@@ -96,7 +97,8 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64, **kwargs):
+    def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64,
+                 aug_transform=None, **kwargs):
         super().__init__()
         self.batch_size      = batch_size
         self.numerical_norm = numerical_norm
@@ -108,7 +110,10 @@ class DataModule(LightningDataModule):
         self.train_label = train[label]
         val, test             = train_test_split(val_test, test_size=0.66)
         
-        self.train_data  = DataGenerator(train, label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = train_transform, **kwargs)
+        train_data = DataGenerator(train, label, self.config, keys, n_norm = self.numerical_norm,
+                                         c_norm = self.category_norm, transform = train_transform, **kwargs)
+        self.train_data = DataAugmentation(train_data, aug_transform)
+
         self.val_data        = DataGenerator(val,   label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
         self.test_data       = DataGenerator(test,  label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
 
@@ -155,6 +160,22 @@ def SynchronizeData(config, subject_list):
             subject.download_dir(config['DATA']['DataFolder'])
 
     ## Download data
+
+
+def DataAugmentation(train_data, aug_transform):
+
+    aug_data = copy.deepcopy(train_data)
+
+    for transform in aug_transform:
+        aug_data_t = copy.deepcopy(train_data)
+        for data in aug_data_t:
+            for key in data[0].keys():
+                if key == 'Anatomy' or key == 'Dose':
+                    data[0][key] = transform(data[0][key])
+
+        aug_data = torch.utils.data.ConcatDataset([aug_data, aug_data_t])
+
+    return aug_data
 
 def LoadImg(path):
     img = sitk.ReadImage(path)
