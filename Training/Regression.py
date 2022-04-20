@@ -31,7 +31,7 @@ config = toml.load(sys.argv[1])
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['BaseModel'])
 logger.log_text()
 img_dim = config['MODEL']['img_sizes']
-MasterSheet = pd.read_csv(config['DATA']['Path'] + config['DATA']['Mastersheet'], index_col='patid')
+MasterSheet = pd.read_csv(config['DATA']['DataFolder'] + config['DATA']['Mastersheet'], index_col='patid')
 
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
