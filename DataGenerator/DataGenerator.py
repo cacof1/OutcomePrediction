@@ -20,15 +20,15 @@ from sklearn.preprocessing import StandardScaler
 import xnat
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, mastersheet, label, config, keys, inference=False, n_norm = None, c_norm = None, transform=None):
+    def __init__(self, mastersheet, label, config, keys, transform=None, **kwargs):
         super().__init__()
         self.keys             = list(keys)
         self.transform        = transform
         self.label            = label
-        self.inference        = inference
+        self.inference        = kwargs['inference']
         self.mastersheet      = mastersheet
-        self.n_norm = n_norm
-        self.c_norm = c_norm
+        self.n_norm = kwargs['numerical_norm']
+        self.c_norm = kwargs['category_norm']
         self.config = config
 
     def __len__(self):
@@ -95,12 +95,9 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64,
-                 numerical_norm=None, category_norm=None,**kwargs):
+    def __init__(self, mastersheet, label, config, keys, train_transform=None, val_transform=None, batch_size=64,**kwargs):
         super().__init__()
         self.batch_size      = batch_size
-        self.numerical_norm = numerical_norm
-        self.category_norm = category_norm
         self.config = config
 
         # Convert regression value to histogram class
@@ -108,9 +105,9 @@ class DataModule(LightningDataModule):
         self.train_label = train[label]
         val, test             = train_test_split(val_test, test_size=0.66)
         
-        self.train_data  = DataGenerator(train, label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = train_transform, **kwargs)
-        self.val_data        = DataGenerator(val,   label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
-        self.test_data       = DataGenerator(test,  label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
+        self.train_data  = DataGenerator(train, label, self.config, keys, transform = train_transform, **kwargs)
+        self.val_data        = DataGenerator(val,   label, self.config, keys, transform = val_transform, **kwargs)
+        self.test_data       = DataGenerator(test,  label, self.config, keys, transform = val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=custom_collate)
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0, collate_fn=custom_collate)
