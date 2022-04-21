@@ -30,7 +30,7 @@ config = toml.load(sys.argv[1])
 
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['BaseModel'])
 logger.log_text()
-img_dim = config['MODEL']['img_sizes']
+img_dim = config['DATA']['dim']
 MasterSheet = pd.read_csv(config['DATA']['Path'] + config['DATA']['Mastersheet'], index_col='patid')
 
 train_transform = tio.Compose([
@@ -118,7 +118,7 @@ if config['MODEL']['BaseModel'] == 'CoTr':
     for i in range(default_depth):
         tmp = [x / 2 ** (i + 1) for x in img_dim]
         img_sizes.append(tmp)
-    config['MODEL']['img_sizes'] = img_sizes
+    config['DATA']['dim'] = img_sizes
     Backbone = ModelCoTr(config['MODEL'])
 
 
