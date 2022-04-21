@@ -20,11 +20,10 @@ from sklearn.preprocessing import StandardScaler
 import xnat
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, mastersheet, label, config, keys, inference=False, n_norm = None, c_norm = None, transform=None, target_transform = None):
+    def __init__(self, mastersheet, label, config, keys, inference=False, n_norm = None, c_norm = None, transform=None):
         super().__init__()
         self.keys             = list(keys)
         self.transform        = transform
-        self.target_transform = target_transform
         self.label            = label
         self.inference        = inference
         self.mastersheet      = mastersheet
