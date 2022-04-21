@@ -96,7 +96,8 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64, **kwargs):
+    def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64,
+                 numerical_norm=None, category_norm=None,**kwargs):
         super().__init__()
         self.batch_size      = batch_size
         self.numerical_norm = numerical_norm
