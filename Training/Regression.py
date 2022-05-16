@@ -112,7 +112,7 @@ if config['MODEL']['BaseModel'] == 'CoTr':
     for i in range(default_depth):
         tmp = [x / 2 ** (i + 1) for x in img_dim]
         img_sizes.append(tmp)
-    config['MODEL']['img_sizes'] = img_sizes
+    config['DATA']['dim'] = img_sizes
     Backbone = ModelCoTr(config['MODEL'])
 
 
