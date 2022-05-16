@@ -31,7 +31,6 @@ config = toml.load(sys.argv[1])
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['BaseModel'])
 logger.log_text()
 img_dim = config['MODEL']['img_sizes']
-MasterSheet = pd.read_csv(config['DATA']['Path'] + config['DATA']['Mastersheet'], index_col='patid')
 
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
@@ -67,7 +66,9 @@ label = config['DATA']['target']
 
 PatientList = QueryFromServer(config)
 SynchronizeData(config, PatientList)
+print(PatientList)
 
+"""
 clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
                     # 'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
                     'egfr_hscore_200', 'received_conc_cetuximab', 'rt_compliance_physician',
@@ -82,19 +83,12 @@ category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
 
 RefColumns = ["CTPath", "DosePath"]
 Label = [label]
-
-columns = clinical_columns + RefColumns + Label
-# MasterSheet[label] = (MasterSheet[label] > 24).astype(int)
-
-if config['REGULARIZATION']['Label_smoothing']:
-    weights, label_range = get_smoothed_label_distribution(MasterSheet, label)
-else:
-    weights = None
-    label_range = None
+"""
+#columns = clinical_columns + RefColumns + Label
 
 # trainer     =Trainer(accelerator="cpu", callbacks=callbacks)
 ## This is where you change how the data is organized
-
+"""
 numerical_data, category_data = LoadClinicalData(MasterSheet)
 sc = StandardScaler()
 data1 = sc.fit_transform(numerical_data)
@@ -102,7 +96,7 @@ data1 = sc.fit_transform(numerical_data)
 ohe = OneHotEncoder()
 ohe.fit(category_data)
 X_train_enc = ohe.transform(category_data)
-
+"""
 module_dict = nn.ModuleDict()
 module_selected = config['DATA']['module']
 
@@ -133,7 +127,7 @@ for i, module in enumerate(module_selected):
     else:
         module_dict[module] = Clinical_backbone
 
-dataloader = DataModule(MasterSheet, label, config, module_dict.keys(), train_transform=train_transform,
+dataloader = DataModule(PatientList, label, config, module_dict.keys(), train_transform=train_transform,
                         val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=sc, category_norm=ohe,
                         inference=False)
 train_label = dataloader.train_label

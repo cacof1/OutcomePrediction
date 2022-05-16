@@ -9,7 +9,6 @@ from scipy.signal.windows import triang
 import torchvision
 from sksurv.metrics import cumulative_dynamic_auc
 
-
 def get_lds_kernel_window(kernel, ks, sigma):
     assert kernel in ['gaussian', 'triang', 'laplace']
     half_ks = (ks - 1) // 2

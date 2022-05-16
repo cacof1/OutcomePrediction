@@ -20,14 +20,14 @@ from sklearn.preprocessing import StandardScaler
 import xnat
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, mastersheet, label, config, keys, inference=False, n_norm = None, c_norm = None, transform=None, target_transform = None):
+    def __init__(self, PatientList, label, config, keys, inference=False, n_norm = None, c_norm = None, transform=None, target_transform = None):
         super().__init__()
         self.keys             = list(keys)
         self.transform        = transform
         self.target_transform = target_transform
         self.label            = label
         self.inference        = inference
-        self.mastersheet      = mastersheet
+        self.PatientList      = PatientList
         self.n_norm = n_norm
         self.c_norm = c_norm
         self.config = config
@@ -39,8 +39,9 @@ class DataGenerator(torch.utils.data.Dataset):
 
         datadict = {}
         roiSize = [10, 40, 40]
-
-        label    = self.mastersheet[self.label].iloc[id]
+        AnatomyPath = PatientList[i].scan.experiment['CT'].path()
+        
+        #label    = self.mastersheet[self.label].iloc[id]
         # Get the mask of PTV
         if "Dose" in self.keys or "Anatomy" in self.keys:
             if self.config['DATA']['Use_mask']:
@@ -96,21 +97,17 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, mastersheet, label, config, keys, train_transform = None, val_transform = None, batch_size = 64, **kwargs):
+    def __init__(self, PatientList, label, keys, train_transform = None, val_transform = None, batch_size = 64, **kwargs):
         super().__init__()
         self.batch_size      = batch_size
-        self.numerical_norm = numerical_norm
-        self.category_norm = category_norm
-        self.config = config
 
         # Convert regression value to histogram class
-        train, val_test       = train_test_split(mastersheet, train_size=0.7)
-        self.train_label = train[label]
-        val, test             = train_test_split(val_test, test_size=0.66)
+        train, val_test       = train_test_split(PatientList, train_size=0.7)
+        test, val             = train_test_split(val_test, test_size=0.66)
         
-        self.train_data  = DataGenerator(train, label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = train_transform, **kwargs)
-        self.val_data        = DataGenerator(val,   label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
-        self.test_data       = DataGenerator(test,  label, self.config, keys, n_norm = self.numerical_norm, c_norm = self.category_norm, transform = val_transform, **kwargs)
+        self.train_data  = DataGenerator(train, transform = train_transform, **kwargs)
+        self.val_data    = DataGenerator(val, transform = val_transform, **kwargs)
+        self.test_data   = DataGenerator(test, transform = val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=custom_collate)
     def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0, collate_fn=custom_collate)
@@ -121,12 +118,12 @@ def QueryFromServer(config, **kwargs):
     ## Get List of Patients
     session  = xnat.connect('http://128.16.11.124:8080/xnat/', user=config["SERVER"]["User"], password='yzhan')
     project  = session.projects[config["SERVER"]["Project"]]    
-    
     ## Verify fit with clinical criteria
     subject_list = []
     clinical_keys = list(config['CRITERIA'].keys())
     for nb,subject in enumerate(project.subjects.values()):
-        print(subject, nb)
+        print("Criteria", subject, nb)
+        if(nb>10): break
         subject_keys = subject.fields.keys()#.key_map
         #print(set(subject_dict))
         #subject_keys = list(subject_dict.keys())
@@ -136,7 +133,8 @@ def QueryFromServer(config, **kwargs):
     ## Verify availability of images
     for k, v in config['MODALITY'].items():
         for nb,subject in enumerate(subject_list):
-            print(subject, nb)
+            if(nb>10): break
+            print("Modality", subject, nb)
             for experiment in subject.experiments.values():
                 scan_dict = experiment.scans.key_map
                 if(v not in scan_dict.keys()):
@@ -150,6 +148,8 @@ def SynchronizeData(config, subject_list):
     
     ## Verify if data exists in data folder
     for subject in subject_list:
+        print(subject.label, subject.fulluri, dir(subject), subject.uri)
+        scans = subject.experiments[subject.label].scans['CT'].fulldata
         if(not Path(config['DATA']['DataFolder'], subject.label).is_dir()):
             print("Synchronizing ", subject.id, subject.label)
             subject.download_dir(config['DATA']['DataFolder'])
