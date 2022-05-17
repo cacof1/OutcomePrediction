@@ -206,10 +206,6 @@ def DoseMatchCT(itkObjD, DoseVolume, itkObj):
     Vf = np.flip(Vi, 2)
     return Vf
 
-def getCTsliceLocation(full_CT_path):
-    pass
-
-
 def SynchronizeData(config, subject_list):
     ## Data Storage Format --> Idem as XNAT
 
