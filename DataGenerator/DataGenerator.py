@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from pytorch_lightning import LightningDataModule, LightningModule, Trainer,seed_everything
+from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import pandas as pd
@@ -18,180 +18,221 @@ from skimage.measure import regionprops
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
 from sklearn.preprocessing import StandardScaler
 import xnat
+import SimpleITK as sitk
+from monai.data import image_reader
+from monai.transforms import LoadImage, LoadImaged
+
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, label, config, keys, inference=False, n_norm = None, c_norm = None, transform=None, target_transform = None):
+    def __init__(self, PatientList, config, keys, inference=False, transform=None, **kwargs):
         super().__init__()
-        self.keys             = list(keys)
-        self.transform        = transform
-        self.target_transform = target_transform
-        self.label            = label
-        self.inference        = inference
-        self.PatientList      = PatientList
-        self.n_norm = n_norm
-        self.c_norm = c_norm
+        self.keys = list(keys)
+        self.transform = transform
+        # self.label            = label
+        self.inference = inference
+        self.PatientList = PatientList
+        # self.n_norm = kwargs['numerical_norm']
+        # self.c_norm = kwargs['category_norm']
         self.config = config
 
     def __len__(self):
-        return int(self.mastersheet.shape[0])
+        return int(len(self.PatientList))
 
     def __getitem__(self, id):
 
         datadict = {}
         roiSize = [10, 40, 40]
-        AnatomyPath = PatientList[i].scan.experiment['CT'].path()
-        
-        #label    = self.mastersheet[self.label].iloc[id]
+        patient_id = self.PatientList[id].label
+        ScanPath = self.config['DATA']['DataFolder'] + patient_id + '\\' + patient_id + '\\' + 'scans\\'
+        subfolder_list = os.listdir(ScanPath)
+        reader = image_reader.ITKReader()
+        label = self.PatientList[id].fields['survival_months']
         # Get the mask of PTV
         if "Dose" in self.keys or "Anatomy" in self.keys:
             if self.config['DATA']['Use_mask']:
-                path = self.mastersheet["CTPath"].iloc[id]
-                mask = path[0:-16] + 'structs\PTV.nrrd'
-                mask_img = LoadImg(mask)
+                RT_match_folder = [match for match in subfolder_list if "Structs" in match]
+                full_RT_path = ScanPath + RT_match_folder[0] + '\\resources\\secondary\\files\\1-1.dcm'
+                # read the rtstruct
+
+                # need process to convert 2D points to 3D masks
                 properties = regionprops(mask_img.astype(np.int8), mask_img)
                 cropbox = properties[0].bbox
 
         if "Dose" in self.keys:
-            dose     = LoadImg(self.mastersheet["DosePath"].iloc[id])
-            #maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
-            #checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
-            #datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
+            Dose_match_folders = [match for match in subfolder_list if "Dose" in match]
+            full_Dose_path = [ScanPath + Dose_match_folder + '\\resources\\DICOM\\files\\' for Dose_match_folder in
+                              Dose_match_folders]
+            if len(full_Dose_path) > 1:
+                for dose_path in full_Dose_path:
+                    itkObj = reader.read(dose_path + '1-1.dcm')
+                    dose, info = reader.get_data(itkObj)
+                    for value in info.values():
+                        if 'totalhetero' in value:
+                            break
+            else:
+                itkObj = reader.read(full_Dose_path[0] + '1-1.dcm')
+                dose, info = reader.get_data(itkObj)
+
+            # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
+            # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
+            # datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
             if self.config['DATA']['Use_mask']:
-                datadict["Dose"] = np.expand_dims(MaskCrop(dose,cropbox), 0)
+                datadict["Dose"] = np.expand_dims(MaskCrop(dose, cropbox), 0)
             else:
                 datadict["Dose"] = np.expand_dims(dose, 0)
 
             if self.transform:
                 transformed_data = self.transform(datadict["Dose"])
                 if transformed_data is None:
-                    datadict["Dose"]  = None
+                    datadict["Dose"] = None
                 else:
-                    datadict["Dose"]  = torch.from_numpy(transformed_data)
+                    datadict["Dose"] = torch.from_numpy(transformed_data)
 
         if "Anatomy" in self.keys:
-            anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
-            #datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
+            CT_match_folder = [match for match in subfolder_list if "CT" in match]
+            full_CT_path = ScanPath + CT_match_folder[0] + '\\resources\\DICOM\\files\\'
+            itkObj = reader.read(full_CT_path)
+            anatomy, _ = reader.get_data(itkObj)
+            # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
+            # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
             if self.config['DATA']['Use_mask']:
-                datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy,cropbox), 0)
+                datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy, cropbox), 0)
             else:
                 datadict["Anatomy"] = np.expand_dims(anatomy, 0)
+
+            # datadict["Anatomy"] = np.expand_dims(anatomy, 0)
 
             if self.transform:
                 transformed_data = self.transform(datadict["Anatomy"])
                 if transformed_data is None:
-                    datadict["Anatomy"]  = None
+                    datadict["Anatomy"] = None
                 else:
-                    datadict["Anatomy"]  = torch.from_numpy(transformed_data)
+                    datadict["Anatomy"] = torch.from_numpy(transformed_data)
 
-            #print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
+            # print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
             numerical_data, category_data = LoadClinicalData(self.mastersheet)
-            #data = clinical_data.iloc[id].to_numpy()
+            # data = clinical_data.iloc[id].to_numpy()
             num_data = self.n_norm.transform([numerical_data.iloc[id]])
             cat_data = self.c_norm.transform([category_data.iloc[id]]).toarray()
             data = np.concatenate((num_data, cat_data), axis=1)
             datadict["Clinical"] = data.flatten()
 
-        if(self.inference): return datadict
-        else: return datadict, label.astype(np.float32)
+        if (self.inference):
+            return datadict
+        else:
+            return datadict, label.astype(np.float32)
+
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, PatientList, label, keys, train_transform = None, val_transform = None, batch_size = 64, **kwargs):
+    def __init__(self, PatientList, train_transform=None, val_transform=None, batch_size=64, **kwargs):
         super().__init__()
-        self.batch_size      = batch_size
+        self.batch_size = batch_size
 
         # Convert regression value to histogram class
-        train, val_test       = train_test_split(PatientList, train_size=0.7)
-        test, val             = train_test_split(val_test, test_size=0.66)
-        
-        self.train_data  = DataGenerator(train, transform = train_transform, **kwargs)
-        self.val_data    = DataGenerator(val, transform = val_transform, **kwargs)
-        self.test_data   = DataGenerator(test, transform = val_transform, **kwargs)
+        train, val_test = train_test_split(PatientList, train_size=0.7)
+        test, val = train_test_split(val_test, test_size=0.66)
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=custom_collate)
-    def val_dataloader(self):   return DataLoader(self.val_data,   batch_size=self.batch_size, num_workers=0, collate_fn=custom_collate)
-    def test_dataloader(self):  return DataLoader(self.test_data,  batch_size=self.batch_size, collate_fn=custom_collate)
+        self.train_data = DataGenerator(train, transform=train_transform, **kwargs)
+        self.val_data = DataGenerator(val, transform=val_transform, **kwargs)
+        self.test_data = DataGenerator(test, transform=val_transform, **kwargs)
+
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
+                                                  num_workers=0, collate_fn=custom_collate)
+
+    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=0,
+                                                  collate_fn=custom_collate)
+
+    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, collate_fn=custom_collate)
+
 
 def QueryFromServer(config, **kwargs):
     print("Querying from Server")
     ## Get List of Patients
-    session  = xnat.connect('http://128.16.11.124:8080/xnat/', user=config["SERVER"]["User"], password='yzhan')
-    project  = session.projects[config["SERVER"]["Project"]]    
+    session = xnat.connect('http://128.16.11.124:8080/xnat/', user=config["SERVER"]["User"], password='yzhan')
+    project = session.projects[config["SERVER"]["Project"]]
     ## Verify fit with clinical criteria
     subject_list = []
     clinical_keys = list(config['CRITERIA'].keys())
-    for nb,subject in enumerate(project.subjects.values()):
-        print("Criteria", subject, nb)
-        if(nb>10): break
-        subject_keys = subject.fields.keys()#.key_map
-        #print(set(subject_dict))
-        #subject_keys = list(subject_dict.keys())
-        if set(clinical_keys).issubset(subject_keys): 
-            if(all( subject.fields[k] == str(v) for k,v in config['CRITERIA'].items())):  subject_list.append(subject)
+    for nb, subject in enumerate(project.subjects.values()):
+        # print("Criteria", subject, nb)
+        # if(nb>10): break
+        subject_keys = subject.fields.keys()  # .key_map
+        # print(set(subject_dict))
+        # subject_keys = list(subject_dict.keys())
+        if set(clinical_keys).issubset(subject_keys):
+            if (all(subject.fields[k] == str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
 
     ## Verify availability of images
     for k, v in config['MODALITY'].items():
-        for nb,subject in enumerate(subject_list):
-            if(nb>10): break
-            print("Modality", subject, nb)
+        for nb, subject in enumerate(subject_list):
+            # if(nb>10): break
+            # print("Modality", subject, nb)
             for experiment in subject.experiments.values():
                 scan_dict = experiment.scans.key_map
-                if(v not in scan_dict.keys()):
-                    subject_list.remove(subject)                    
+                if (v not in scan_dict.keys()):
+                    subject_list.remove(subject)
                     break
     print("Queried from Server")
     return subject_list
 
+
 def SynchronizeData(config, subject_list):
     ## Data Storage Format --> Idem as XNAT
-    
+
     ## Verify if data exists in data folder
     for subject in subject_list:
-        print(subject.label, subject.fulluri, dir(subject), subject.uri)
+        # print(subject.label, subject.fulluri, dir(subject), subject.uri)
         scans = subject.experiments[subject.label].scans['CT'].fulldata
-        if(not Path(config['DATA']['DataFolder'], subject.label).is_dir()):
+        if (not Path(config['DATA']['DataFolder'], subject.label).is_dir()):
             print("Synchronizing ", subject.id, subject.label)
             subject.download_dir(config['DATA']['DataFolder'])
 
     ## Download data
 
+
 def LoadImg(path):
     img = sitk.ReadImage(path)
     return sitk.GetArrayFromImage(img).astype(np.float32)
-def MaskCrop(img, bbox):
-    return img[bbox[0]:bbox[3],bbox[1]:bbox[4],bbox[2]:bbox[5]]
 
-def CropImg(img, center, delta): ## Crop image 
-    return img[center[0]-delta[0]:center[0]+delta[0], center[1]-delta[1]:center[1]+delta[1], center[2]-delta[2]:center[2]+delta[2]]
+
+def MaskCrop(img, bbox):
+    return img[bbox[0]:bbox[3], bbox[1]:bbox[4], bbox[2]:bbox[5]]
+
+
+def CropImg(img, center, delta):  ## Crop image
+    return img[center[0] - delta[0]:center[0] + delta[0], center[1] - delta[1]:center[1] + delta[1],
+           center[2] - delta[2]:center[2] + delta[2]]
+
 
 def findMaxDoseCoord(img):
     result = np.where(img == np.amax(img))
     listOfCordinates = list(zip(result[0], result[1], result[2]))
 
-    return listOfCordinates[int(len(listOfCordinates)/2)]
+    return listOfCordinates[int(len(listOfCordinates) / 2)]
+
 
 def checkCrop(center, delta, imgShape, fn):
-    if (center[0]-delta[0] < 0 or
-        center[0]+delta[0] > imgShape[0] or
-        center[1]-delta[1] < 0 or
-        center[1]+delta[1] > imgShape[1] or
-        center[2]-delta[2] < 0 or
-        center[2]+delta[2] > imgShape[2]):
-
+    if (center[0] - delta[0] < 0 or
+            center[0] + delta[0] > imgShape[0] or
+            center[1] - delta[1] < 0 or
+            center[1] + delta[1] > imgShape[1] or
+            center[2] - delta[2] < 0 or
+            center[2] + delta[2] > imgShape[2]):
         print("ERROR! Invalid crop for file %s" % (fn))
         exit()
 
-def custom_collate(original_batch):
 
+def custom_collate(original_batch):
     filtered_data = {}
     filtered_target = []
 
     # Init the dict
     for key in original_batch[0][0].keys():
-        filtered_data[key]=None
+        filtered_data[key] = None
 
-    i=0
+    i = 0
     for patient in original_batch:
         none_found = False
         if "Anatomy" in patient[0].keys():
@@ -204,17 +245,20 @@ def custom_collate(original_batch):
         if not none_found:
             if i == 0:
                 for key in patient[0].keys():
-                    t_shape = (1, patient[0][key].shape[0], patient[0][key].shape[1],patient[0][key].shape[2], patient[0][key].shape[3])
+                    t_shape = (1, patient[0][key].shape[0], patient[0][key].shape[1], patient[0][key].shape[2],
+                               patient[0][key].shape[3])
                     filtered_data[key] = torch.reshape(patient[0][key], t_shape)
             else:
                 for key in patient[0].keys():
-                    t_shape = (1, patient[0][key].shape[0], patient[0][key].shape[1],patient[0][key].shape[2], patient[0][key].shape[3])
+                    t_shape = (1, patient[0][key].shape[0], patient[0][key].shape[1], patient[0][key].shape[2],
+                               patient[0][key].shape[3])
                     filtered_data[key] = torch.vstack((filtered_data[key], torch.reshape(patient[0][key], t_shape)))
 
             filtered_target.append(patient[1])
-            i+=1
+            i += 1
 
     return filtered_data, torch.FloatTensor(filtered_target)
+
 
 def LoadClinicalData(MasterSheet):
     clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
@@ -238,7 +282,7 @@ def LoadClinicalData(MasterSheet):
     numerical_cols = list(set(numerical_cols).intersection(set(MasterSheet.keys())))
     category_cols = list(set(category_cols).intersection(set(MasterSheet.keys())))
 
-    numerical_data = MasterSheet[numerical_cols] #pd.DataFrame()
+    numerical_data = MasterSheet[numerical_cols]  # pd.DataFrame()
     category_data = MasterSheet[category_cols]
 
     return numerical_data, category_data
