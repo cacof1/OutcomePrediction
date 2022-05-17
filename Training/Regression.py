@@ -65,7 +65,7 @@ callbacks = [
 label = config['DATA']['target']
 
 PatientList = QueryFromServer(config)
-SynchronizeData(config, PatientList)
+# SynchronizeData(config, PatientList)
 print(PatientList)
 
 """
@@ -127,13 +127,13 @@ for i, module in enumerate(module_selected):
     else:
         module_dict[module] = Clinical_backbone
 
-dataloader = DataModule(PatientList, label, config, module_dict.keys(), train_transform=train_transform,
-                        val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=sc, category_norm=ohe,
+dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), train_transform=train_transform,
+                        val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=None, category_norm=None,
                         inference=False)
-train_label = dataloader.train_label
+# train_label = dataloader.train_label
 
-trainer = Trainer(gpus=1, max_epochs=3, logger=logger)  # callbacks=callbacks,
-model = MixModel(module_dict, config, train_label, label_range=label_range, weights=weights)
+trainer = Trainer(accelerator='cpu', max_epochs=3, logger=logger)  # callbacks=callbacks,
+model = MixModel(module_dict, config, train_label =None, label_range=None, weights=None)
 trainer.fit(model, dataloader)
 
 worstCase = 0

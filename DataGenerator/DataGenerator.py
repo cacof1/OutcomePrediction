@@ -24,16 +24,17 @@ from monai.transforms import LoadImage, LoadImaged
 
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, config, keys, inference=False, transform=None, **kwargs):
+    def __init__(self, PatientList, transform=None, **kwargs):
         super().__init__()
-        self.keys = list(keys)
         self.transform = transform
+        self.config = kwargs['config']
+        self.keys = kwargs['keys']
         # self.label            = label
-        self.inference = inference
+        self.inference = kwargs['inference']
         self.PatientList = PatientList
         # self.n_norm = kwargs['numerical_norm']
         # self.c_norm = kwargs['category_norm']
-        self.config = config
+        self.config = kwargs['config']
 
     def __len__(self):
         return int(len(self.PatientList))
@@ -48,15 +49,15 @@ class DataGenerator(torch.utils.data.Dataset):
         reader = image_reader.ITKReader()
         label = self.PatientList[id].fields['survival_months']
         # Get the mask of PTV
-        if "Dose" in self.keys or "Anatomy" in self.keys:
-            if self.config['DATA']['Use_mask']:
-                RT_match_folder = [match for match in subfolder_list if "Structs" in match]
-                full_RT_path = ScanPath + RT_match_folder[0] + '\\resources\\secondary\\files\\1-1.dcm'
-                # read the rtstruct
-
-                # need process to convert 2D points to 3D masks
-                properties = regionprops(mask_img.astype(np.int8), mask_img)
-                cropbox = properties[0].bbox
+        # if "Dose" in self.keys or "Anatomy" in self.keys:
+        #     if self.config['DATA']['Use_mask']:
+        #         RT_match_folder = [match for match in subfolder_list if "Structs" in match]
+        #         full_RT_path = ScanPath + RT_match_folder[0] + '\\resources\\secondary\\files\\1-1.dcm'
+        #         # read the rtstruct
+        #
+        #         # need process to convert 2D points to 3D masks
+        #         properties = regionprops(mask_img.astype(np.int8), mask_img)
+        #         cropbox = properties[0].bbox
 
         if "Dose" in self.keys:
             Dose_match_folders = [match for match in subfolder_list if "Dose" in match]
