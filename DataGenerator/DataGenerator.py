@@ -204,7 +204,7 @@ def DoseMatchCT(itkObjD, DoseVolume, itkObj):
 
     Vi = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
     Vf = np.flip(Vi, 2)
-    return Vi
+    return Vf
 
 def getCTsliceLocation(full_CT_path):
     pass
