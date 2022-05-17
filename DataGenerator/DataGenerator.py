@@ -21,20 +21,20 @@ import xnat
 import SimpleITK as sitk
 from monai.data import image_reader
 from monai.transforms import LoadImage, LoadImaged
-
+from numpy import array
+from scipy.interpolate import RegularGridInterpolator as rgi
+from scipy.ndimage import map_coordinates
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, transform=None, **kwargs):
+    def __init__(self, PatientList, config, keys, transform=None, **kwargs):
         super().__init__()
         self.transform = transform
-        self.config = kwargs['config']
-        self.keys = kwargs['keys']
-        # self.label            = label
+        self.keys = keys
         self.inference = kwargs['inference']
         self.PatientList = PatientList
         # self.n_norm = kwargs['numerical_norm']
         # self.c_norm = kwargs['category_norm']
-        self.config = kwargs['config']
+        self.config = config
 
     def __len__(self):
         return int(len(self.PatientList))
@@ -47,7 +47,7 @@ class DataGenerator(torch.utils.data.Dataset):
         ScanPath = self.config['DATA']['DataFolder'] + patient_id + '\\' + patient_id + '\\' + 'scans\\'
         subfolder_list = os.listdir(ScanPath)
         reader = image_reader.ITKReader()
-        label = self.PatientList[id].fields['survival_months']
+        label = self.PatientList[id].fields[self.config['DATA']['target']]
         # Get the mask of PTV
         # if "Dose" in self.keys or "Anatomy" in self.keys:
         #     if self.config['DATA']['Use_mask']:
@@ -65,14 +65,14 @@ class DataGenerator(torch.utils.data.Dataset):
                               Dose_match_folders]
             if len(full_Dose_path) > 1:
                 for dose_path in full_Dose_path:
-                    itkObj = reader.read(dose_path + '1-1.dcm')
-                    dose, info = reader.get_data(itkObj)
-                    for value in info.values():
+                    itkObjD = reader.read(dose_path + '1-1.dcm')
+                    dose, dose_info = reader.get_data(itkObjD)
+                    for value in dose_info.values():
                         if 'totalhetero' in value:
                             break
             else:
-                itkObj = reader.read(full_Dose_path[0] + '1-1.dcm')
-                dose, info = reader.get_data(itkObj)
+                itkObjD = reader.read(full_Dose_path[0] + '1-1.dcm')
+                dose, dose_info = reader.get_data(itkObjD)
 
             # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
@@ -92,8 +92,13 @@ class DataGenerator(torch.utils.data.Dataset):
         if "Anatomy" in self.keys:
             CT_match_folder = [match for match in subfolder_list if "CT" in match]
             full_CT_path = ScanPath + CT_match_folder[0] + '\\resources\\DICOM\\files\\'
+            dicom_files = os.listdir(full_CT_path)
+            correct_Origin = reader.read(full_CT_path+dicom_files[0])
             itkObj = reader.read(full_CT_path)
+            itkObj.SetOrigin(correct_Origin.GetOrigin())
             anatomy, _ = reader.get_data(itkObj)
+            if "Dose" in self.keys:
+                MD = DoseMatchCT(itkObjD, dose, itkObj)
             # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
             # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
             if self.config['DATA']['Use_mask']:
@@ -127,7 +132,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, PatientList, train_transform=None, val_transform=None, batch_size=64, **kwargs):
+    def __init__(self, PatientList, config, keys, train_transform=None, val_transform=None, batch_size=64, **kwargs):
         super().__init__()
         self.batch_size = batch_size
 
@@ -135,9 +140,9 @@ class DataModule(LightningDataModule):
         train, val_test = train_test_split(PatientList, train_size=0.7)
         test, val = train_test_split(val_test, test_size=0.66)
 
-        self.train_data = DataGenerator(train, transform=train_transform, **kwargs)
-        self.val_data = DataGenerator(val, transform=val_transform, **kwargs)
-        self.test_data = DataGenerator(test, transform=val_transform, **kwargs)
+        self.train_data = DataGenerator(train, config, keys, transform=train_transform, **kwargs)
+        self.val_data = DataGenerator(val, config, keys, transform=val_transform, **kwargs)
+        self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
                                                   num_workers=0, collate_fn=custom_collate)
@@ -151,7 +156,8 @@ class DataModule(LightningDataModule):
 def QueryFromServer(config, **kwargs):
     print("Querying from Server")
     ## Get List of Patients
-    session = xnat.connect('http://128.16.11.124:8080/xnat/', user=config["SERVER"]["User"], password='yzhan')
+    session = xnat.connect('http://128.16.11.124:8080/xnat/', user=config["SERVER"]["User"],
+                           password=config["SERVER"]["Password"])
     project = session.projects[config["SERVER"]["Project"]]
     ## Verify fit with clinical criteria
     subject_list = []
@@ -177,6 +183,31 @@ def QueryFromServer(config, **kwargs):
                     break
     print("Queried from Server")
     return subject_list
+
+
+def DoseMatchCT(itkObjD, DoseVolume, itkObj):
+    originD = itkObjD.GetOrigin()
+    spaceD = itkObjD.GetSpacing()
+    origin = itkObj.GetOrigin()
+    space = itkObj.GetSpacing()
+    dx = np.arange(0, itkObjD.shape[2])*spaceD[2] + originD[0]
+    dy = np.arange(0, itkObjD.shape[1])*spaceD[1] + originD[1]
+    dz = -np.arange(0, itkObjD.shape[0])*spaceD[0] + originD[2]
+    dz.sort()
+
+    cz = -np.arange(0, itkObj.shape[0]) * space[2] + origin[2]
+    cy = np.arange(0, itkObj.shape[1]) * space[1] + origin[1]
+    cx = np.arange(0, itkObj.shape[2]) * space[0] + origin[0]
+    cz.sort()
+
+    cxv, cyv, czv = np.meshgrid(cx, cy, cz, indexing='ij')
+
+    Vi = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
+    Vf = np.flip(Vi, 2)
+    return Vi
+
+def getCTsliceLocation(full_CT_path):
+    pass
 
 
 def SynchronizeData(config, subject_list):
@@ -287,3 +318,26 @@ def LoadClinicalData(MasterSheet):
     category_data = MasterSheet[category_cols]
 
     return numerical_data, category_data
+
+
+def interp3(x, y, z, v, xi, yi, zi, **kwargs):
+    """Sample a 3D array "v" with pixel corner locations at "x","y","z" at the
+    points in "xi", "yi", "zi" using linear interpolation. Additional kwargs
+    are passed on to ``scipy.ndimage.map_coordinates``."""
+    def index_coords(corner_locs, interp_locs):
+        index = np.arange(len(corner_locs))
+        if np.all(np.diff(corner_locs) < 0):
+            corner_locs, index = corner_locs[::-1], index[::-1]
+        return np.interp(interp_locs, corner_locs, index)
+
+    orig_shape = np.asarray(xi).shape
+    xi, yi, zi = np.atleast_1d(xi, yi, zi)
+    for arr in [xi, yi, zi]:
+        arr.shape = -1
+
+    output = np.empty(xi.shape, dtype=float)
+    coords = [index_coords(*item) for item in zip([x, y, z], [xi, yi, zi])]
+
+    map_coordinates(v, coords, order=1, output=output, **kwargs)
+
+    return output.reshape(orig_shape)
