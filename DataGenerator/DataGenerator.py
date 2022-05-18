@@ -81,6 +81,7 @@ class DataGenerator(torch.utils.data.Dataset):
             DoseRegex = re.compile(r'.-Dose')
             Dose_match_folder = list(filter(DoseRegex.match, subfolder_list))
             if len(Dose_match_folder) > 1:
+                print(self.PatientList[id].label)
                 raise ValueError('Should only have one match!')
             full_Dose_path = ScanPath + Dose_match_folder[0] + '\\resources\\DICOM\\files\\1-1.dcm'
             itkObjD = reader.read(full_Dose_path)
@@ -134,7 +135,7 @@ class DataGenerator(torch.utils.data.Dataset):
         if (self.inference):
             return datadict
         else:
-            return datadict, label.astype(np.float32)
+            return datadict, np.float32(label)
 
 
 ### DataLoader
