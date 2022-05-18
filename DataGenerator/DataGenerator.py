@@ -26,6 +26,7 @@ from numpy import array
 from scipy.interpolate import RegularGridInterpolator as rgi
 from scipy.ndimage import map_coordinates
 import re
+from pathlib import Path
 
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList, config, keys, transform=None, **kwargs):
@@ -46,47 +47,47 @@ class DataGenerator(torch.utils.data.Dataset):
         datadict = {}
         roiSize = [10, 40, 40]
         patient_id = self.PatientList[id].label
-        print(patient_id)
-        ScanPath = self.config['DATA']['DataFolder'] + patient_id + '\\' + patient_id + '\\' + 'scans\\'
-        subfolder_list = os.listdir(ScanPath)
+        ScanPath = Path(self.config['DATA']['DataFolder'], patient_id, patient_id, 'scans')
+        # Load CT dicom series for mask and dose calculation
         reader = image_reader.ITKReader()
         label = self.PatientList[id].fields[self.config['DATA']['target']]
-        CTRegex = re.compile(r'.-CT')
-        CT_match_folder = list(filter(CTRegex.match,subfolder_list))
+        # Regex find the correct folder
+        CT_match_folder = sorted(ScanPath.glob('*-CT'))
         if len(CT_match_folder) > 1:
             raise ValueError(self.PatientList[id].label + ' should only have one match!')
-        full_CT_path = ScanPath + CT_match_folder[0] + '\\resources\\DICOM\\files\\'
-        dicom_files = os.listdir(full_CT_path)
-        correct_Origin = reader.read(full_CT_path + dicom_files[0])
-        itkObj = reader.read(full_CT_path)
-        itkObj.SetOrigin(correct_Origin.GetOrigin())
+        if len(CT_match_folder) < 1:
+            raise ValueError(self.PatientList[id].label + ' should have one match!')
+        full_CT_path = Path(CT_match_folder[0], 'resources', 'DICOM', 'files')
+        dicom_files = sorted(full_CT_path.glob('*.dcm'))
+        # The origin needs to be corrected before used in dose resampling
+        correct_Origin = reader.read(dicom_files[0])
+        CTObj = reader.read(full_CT_path)
+        CTObj.SetOrigin(correct_Origin.GetOrigin())
         # Get the mask of PTV
         if "Dose" in self.keys or "Anatomy" in self.keys:
             if self.config['DATA']['mask_name']:
-                RTRegex = re.compile(r'.-Structs')
-                RT_match_folder = list(filter(RTRegex.match, subfolder_list))
+                RT_match_folder = sorted(ScanPath.glob('*-Structs'))
                 if len(RT_match_folder) > 1:
                     raise ValueError(self.PatientList[id].label + ' should only have one match!')
-                full_RT_path = ScanPath + RT_match_folder[0] + '\\resources\\secondary\\files\\1-1.dcm'
+                full_RT_path = sorted(Path(RT_match_folder[0], 'resources', 'secondary', 'files').glob('*.dcm'))
                 # read the rtstruct
                 rtstruct = RTStructBuilder.create_from(
                     dicom_series_path=full_CT_path,
-                    rt_struct_path=full_RT_path
+                    rt_struct_path=full_RT_path[0]
                 )
                 mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
-                # need process to convert 2D points to 3D masks
+                # process to convert 2D points to 3D masks
                 properties = regionprops(mask_img.astype(np.int8), mask_img)
                 cropbox = properties[0].bbox
 
         if "Dose" in self.keys:
-            DoseRegex = re.compile(r'.-Dose')
-            Dose_match_folder = list(filter(DoseRegex.match, subfolder_list))
+            Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
             if len(Dose_match_folder) > 1:
                 raise ValueError(self.PatientList[id].label + ' should only have one match!')
-            full_Dose_path = ScanPath + Dose_match_folder[0] + '\\resources\\DICOM\\files\\1-1.dcm'
-            itkObjD = reader.read(full_Dose_path)
-            dose, dose_info = reader.get_data(itkObjD)
-            ResampledDose = DoseMatchCT(itkObjD, dose, itkObj)
+            full_Dose_path = sorted(Path(Dose_match_folder[0], 'resources', 'DICOM', 'files').glob('*.dcm'))
+            DoseObj = reader.read(full_Dose_path[0])
+            dose, dose_info = reader.get_data(DoseObj)
+            ResampledDose = DoseMatchCT(DoseObj, dose, CTObj)
 
             # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
@@ -104,7 +105,7 @@ class DataGenerator(torch.utils.data.Dataset):
                     datadict["Dose"] = torch.from_numpy(transformed_data)
 
         if "Anatomy" in self.keys:
-            anatomy, _ = reader.get_data(itkObj)
+            anatomy, _ = reader.get_data(CTObj)
             # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
             # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
             if self.config['DATA']['Use_mask']:
@@ -193,19 +194,19 @@ def QueryFromServer(config, **kwargs):
     return subject_list
 
 
-def DoseMatchCT(itkObjD, DoseVolume, itkObj):
-    originD = itkObjD.GetOrigin()
-    spaceD = itkObjD.GetSpacing()
-    origin = itkObj.GetOrigin()
-    space = itkObj.GetSpacing()
-    dx = np.arange(0, itkObjD.shape[2])*spaceD[2] + originD[0]
-    dy = np.arange(0, itkObjD.shape[1])*spaceD[1] + originD[1]
-    dz = -np.arange(0, itkObjD.shape[0])*spaceD[0] + originD[2]
+def DoseMatchCT(DoseObj, DoseVolume, CTObj):
+    originD = DoseObj.GetOrigin()
+    spaceD = DoseObj.GetSpacing()
+    origin = CTObj.GetOrigin()
+    space = CTObj.GetSpacing()
+    dx = np.arange(0, DoseObj.shape[2])*spaceD[2] + originD[0]
+    dy = np.arange(0, DoseObj.shape[1])*spaceD[1] + originD[1]
+    dz = -np.arange(0, DoseObj.shape[0])*spaceD[0] + originD[2]
     dz.sort()
 
-    cz = -np.arange(0, itkObj.shape[0]) * space[2] + origin[2]
-    cy = np.arange(0, itkObj.shape[1]) * space[1] + origin[1]
-    cx = np.arange(0, itkObj.shape[2]) * space[0] + origin[0]
+    cz = -np.arange(0, CTObj.shape[0]) * space[2] + origin[2]
+    cy = np.arange(0, CTObj.shape[1]) * space[1] + origin[1]
+    cx = np.arange(0, CTObj.shape[2]) * space[0] + origin[0]
     cz.sort()
 
     cxv, cyv, czv = np.meshgrid(cx, cy, cz, indexing='ij')
