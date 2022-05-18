@@ -46,6 +46,7 @@ class DataGenerator(torch.utils.data.Dataset):
         datadict = {}
         roiSize = [10, 40, 40]
         patient_id = self.PatientList[id].label
+        print(patient_id)
         ScanPath = self.config['DATA']['DataFolder'] + patient_id + '\\' + patient_id + '\\' + 'scans\\'
         subfolder_list = os.listdir(ScanPath)
         reader = image_reader.ITKReader()
@@ -53,7 +54,7 @@ class DataGenerator(torch.utils.data.Dataset):
         CTRegex = re.compile(r'.-CT')
         CT_match_folder = list(filter(CTRegex.match,subfolder_list))
         if len(CT_match_folder) > 1:
-            raise ValueError(self.PatientList[id].label + 'should only have one match!')
+            raise ValueError(self.PatientList[id].label + ' should only have one match!')
         full_CT_path = ScanPath + CT_match_folder[0] + '\\resources\\DICOM\\files\\'
         dicom_files = os.listdir(full_CT_path)
         correct_Origin = reader.read(full_CT_path + dicom_files[0])
@@ -65,7 +66,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 RTRegex = re.compile(r'.-Structs')
                 RT_match_folder = list(filter(RTRegex.match, subfolder_list))
                 if len(RT_match_folder) > 1:
-                    raise ValueError(self.PatientList[id].label + 'should only have one match!')
+                    raise ValueError(self.PatientList[id].label + ' should only have one match!')
                 full_RT_path = ScanPath + RT_match_folder[0] + '\\resources\\secondary\\files\\1-1.dcm'
                 # read the rtstruct
                 rtstruct = RTStructBuilder.create_from(
@@ -81,7 +82,7 @@ class DataGenerator(torch.utils.data.Dataset):
             DoseRegex = re.compile(r'.-Dose')
             Dose_match_folder = list(filter(DoseRegex.match, subfolder_list))
             if len(Dose_match_folder) > 1:
-                raise ValueError(self.PatientList[id].label + 'should only have one match!')
+                raise ValueError(self.PatientList[id].label + ' should only have one match!')
             full_Dose_path = ScanPath + Dose_match_folder[0] + '\\resources\\DICOM\\files\\1-1.dcm'
             itkObjD = reader.read(full_Dose_path)
             dose, dose_info = reader.get_data(itkObjD)
