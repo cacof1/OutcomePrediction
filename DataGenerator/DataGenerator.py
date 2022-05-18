@@ -46,20 +46,17 @@ class DataGenerator(torch.utils.data.Dataset):
         roiSize = [10, 40, 40]
         patient_id = self.PatientList[id].label
         ScanPath = self.config['DATA']['DataFolder'] + patient_id + '\\' + patient_id + '\\' + 'scans\\'
-        subfolder_list = os.listdir(ScanPath)
         reader = image_reader.ITKReader()
         label = self.PatientList[id].fields[self.config['DATA']['target']]
-        CT_match_folder = [match for match in subfolder_list if "CT" in match]
-        full_CT_path = ScanPath + CT_match_folder[0] + '\\resources\\DICOM\\files\\'
+        full_CT_path = ScanPath + '1-CT\\resources\\DICOM\\files\\'
         dicom_files = os.listdir(full_CT_path)
         correct_Origin = reader.read(full_CT_path + dicom_files[0])
         itkObj = reader.read(full_CT_path)
         itkObj.SetOrigin(correct_Origin.GetOrigin())
         # Get the mask of PTV
         if "Dose" in self.keys or "Anatomy" in self.keys:
-            if self.config['DATA']['Use_mask']:
-                RT_match_folder = [match for match in subfolder_list if "Structs" in match]
-                full_RT_path = ScanPath + RT_match_folder[0] + '\\resources\\secondary\\files\\1-1.dcm'
+            if self.config['DATA']['mask_name']:
+                full_RT_path = ScanPath + '2-Structs\\resources\\secondary\\files\\1-1.dcm'
                 # read the rtstruct
                 rtstruct = RTStructBuilder.create_from(
                     dicom_series_path=full_CT_path,
@@ -71,20 +68,9 @@ class DataGenerator(torch.utils.data.Dataset):
                 cropbox = properties[0].bbox
 
         if "Dose" in self.keys:
-            Dose_match_folders = [match for match in subfolder_list if "Dose" in match]
-            full_Dose_path = [ScanPath + Dose_match_folder + '\\resources\\DICOM\\files\\' for Dose_match_folder in
-                              Dose_match_folders]
-            if len(full_Dose_path) > 1:
-                for dose_path in full_Dose_path:
-                    itkObjD = reader.read(dose_path + '1-1.dcm')
-                    dose, dose_info = reader.get_data(itkObjD)
-                    for value in dose_info.values():
-                        if 'totalhetero' in value:
-                            break
-            else:
-                itkObjD = reader.read(full_Dose_path[0] + '1-1.dcm')
-                dose, dose_info = reader.get_data(itkObjD)
-
+            full_Dose_path = ScanPath + '4-Dose\\resources\\DICOM\\files\\1-1.dcm'
+            itkObjD = reader.read(full_Dose_path)
+            dose, dose_info = reader.get_data(itkObjD)
             ResampledDose = DoseMatchCT(itkObjD, dose, itkObj)
 
             # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
@@ -122,12 +108,14 @@ class DataGenerator(torch.utils.data.Dataset):
 
             # print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
-            numerical_data, category_data = LoadClinicalData(self.mastersheet)
-            # data = clinical_data.iloc[id].to_numpy()
-            num_data = self.n_norm.transform([numerical_data.iloc[id]])
-            cat_data = self.c_norm.transform([category_data.iloc[id]]).toarray()
-            data = np.concatenate((num_data, cat_data), axis=1)
-            datadict["Clinical"] = data.flatten()
+            clinical_features = self.PatientList[id].fields
+            data = clinical_features.listing
+            # numerical_data, category_data = LoadClinicalData(self.PatientList[id])
+            # # data = clinical_data.iloc[id].to_numpy()
+            # num_data = self.n_norm.transform([numerical_data.iloc[id]])
+            # cat_data = self.c_norm.transform([category_data.iloc[id]]).toarray()
+            # data = np.concatenate((num_data, cat_data), axis=1)
+            datadict["Clinical"] = data
 
         if (self.inference):
             return datadict
@@ -293,17 +281,19 @@ def custom_collate(original_batch):
     return filtered_data, torch.FloatTensor(filtered_target)
 
 
-def LoadClinicalData(MasterSheet):
-    clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
-                        'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
-                        # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician',
-                        'smoke_hx', 'rx_terminated_ae', 'rt_dose',
-                        'volume_ptv', 'dmax_ptv', 'v100_ptv',
-                        'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
-                        'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
-                        'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
-                        'rt_compliance_ptv90', 'received_conc_chemo',
-                        ]
+def LoadClinicalData(PatientList):
+    clinical_features = PatientList[0].fields
+    clinical_columns = list(clinical_features.key_map.keys())
+    # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
+    #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
+    #                     # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician',
+    #                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
+    #                     'volume_ptv', 'dmax_ptv', 'v100_ptv',
+    #                     'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
+    #                     'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
+    #                     'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
+    #                     'rt_compliance_ptv90', 'received_conc_chemo',
+    #                     ]
 
     numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
                       'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
@@ -312,13 +302,8 @@ def LoadClinicalData(MasterSheet):
 
     category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
 
-    numerical_cols = list(set(numerical_cols).intersection(set(MasterSheet.keys())))
-    category_cols = list(set(category_cols).intersection(set(MasterSheet.keys())))
 
-    numerical_data = MasterSheet[numerical_cols]  # pd.DataFrame()
-    category_data = MasterSheet[category_cols]
-
-    return numerical_data, category_data
+    pass
 
 
 def interp3(x, y, z, v, xi, yi, zi, **kwargs):
