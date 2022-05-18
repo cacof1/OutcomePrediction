@@ -29,7 +29,7 @@ class Linear(pl.LightningModule):
         self.loss_fcn = nn.CrossEntropyLoss()
 
     def forward(self, x):
-        return self.model(x.float())
+        return self.model(x)
 
     def training_step(self, batch,batch_idx):
         image,label = batch

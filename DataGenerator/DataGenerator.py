@@ -28,6 +28,7 @@ from scipy.ndimage import map_coordinates
 import re
 from pathlib import Path
 
+
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList, config, keys, transform=None, **kwargs):
         super().__init__()
@@ -124,10 +125,9 @@ class DataGenerator(torch.utils.data.Dataset):
 
             # print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
-            clinical_features = self.PatientList[id].fields
-            data = clinical_features.listing
-            # numerical_data, category_data = LoadClinicalData(self.PatientList[id])
-            # # data = clinical_data.iloc[id].to_numpy()
+            data = LoadClinicalData(self.config, self.PatientList[id])
+            data = np.array(data, dtype='float')
+            # data = clinical_data.iloc[id].to_numpy()
             # num_data = self.n_norm.transform([numerical_data.iloc[id]])
             # cat_data = self.c_norm.transform([category_data.iloc[id]]).toarray()
             # data = np.concatenate((num_data, cat_data), axis=1)
@@ -154,12 +154,12 @@ class DataModule(LightningDataModule):
         self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
-                                                  num_workers=0, collate_fn=custom_collate)
+                                                  num_workers=0, collate_fn=None)
 
     def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=0,
-                                                  collate_fn=custom_collate)
+                                                  collate_fn=None)
 
-    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, collate_fn=custom_collate)
+    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, collate_fn=None)
 
 
 def QueryFromServer(config, **kwargs):
@@ -199,9 +199,9 @@ def DoseMatchCT(DoseObj, DoseVolume, CTObj):
     spaceD = DoseObj.GetSpacing()
     origin = CTObj.GetOrigin()
     space = CTObj.GetSpacing()
-    dx = np.arange(0, DoseObj.shape[2])*spaceD[2] + originD[0]
-    dy = np.arange(0, DoseObj.shape[1])*spaceD[1] + originD[1]
-    dz = -np.arange(0, DoseObj.shape[0])*spaceD[0] + originD[2]
+    dx = np.arange(0, DoseObj.shape[2]) * spaceD[2] + originD[0]
+    dy = np.arange(0, DoseObj.shape[1]) * spaceD[1] + originD[1]
+    dz = -np.arange(0, DoseObj.shape[0]) * spaceD[0] + originD[2]
     dz.sort()
 
     cz = -np.arange(0, CTObj.shape[0]) * space[2] + origin[2]
@@ -214,6 +214,7 @@ def DoseMatchCT(DoseObj, DoseVolume, CTObj):
     Vi = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
     Vf = np.flip(Vi, 2)
     return Vf
+
 
 def SynchronizeData(config, subject_list):
     ## Data Storage Format --> Idem as XNAT
@@ -297,35 +298,34 @@ def custom_collate(original_batch):
     return filtered_data, torch.FloatTensor(filtered_target)
 
 
-def LoadClinicalData(PatientList):
-    clinical_features = PatientList[0].fields
-    clinical_columns = list(clinical_features.key_map.keys())
+def LoadClinicalData(config, PatientList):
+    clinical_features = PatientList.fields
+    clinical_columns =  config['DATA']['clinical_columns']
     # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
     #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
-    #                     # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician',
     #                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
     #                     'volume_ptv', 'dmax_ptv', 'v100_ptv',
     #                     'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
-    #                     'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
-    #                     'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
+    #                     'v30_heart', 'v20_esophagus', 'v60_esophagus',
     #                     'rt_compliance_ptv90', 'received_conc_chemo',
-    #                     ]
+    #                     ]  # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician', 'Dmin_PTV_CTV_MARGIN',
+    # 'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
+    feature_list = [clinical_features[x] for x in clinical_columns]
+    # numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
+    #                   'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
+    #                   'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
+    #                   'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN']
+    #
+    # category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
 
-    numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
-                      'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
-                      'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
-                      'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN']
-
-    category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
-
-
-    pass
+    return feature_list
 
 
 def interp3(x, y, z, v, xi, yi, zi, **kwargs):
     """Sample a 3D array "v" with pixel corner locations at "x","y","z" at the
     points in "xi", "yi", "zi" using linear interpolation. Additional kwargs
     are passed on to ``scipy.ndimage.map_coordinates``."""
+
     def index_coords(corner_locs, interp_locs):
         index = np.arange(len(corner_locs))
         if np.all(np.diff(corner_locs) < 0):
