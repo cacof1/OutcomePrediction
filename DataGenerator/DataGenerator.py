@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from rt_utils import RTStructBuilder
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -48,16 +49,26 @@ class DataGenerator(torch.utils.data.Dataset):
         subfolder_list = os.listdir(ScanPath)
         reader = image_reader.ITKReader()
         label = self.PatientList[id].fields[self.config['DATA']['target']]
+        CT_match_folder = [match for match in subfolder_list if "CT" in match]
+        full_CT_path = ScanPath + CT_match_folder[0] + '\\resources\\DICOM\\files\\'
+        dicom_files = os.listdir(full_CT_path)
+        correct_Origin = reader.read(full_CT_path + dicom_files[0])
+        itkObj = reader.read(full_CT_path)
+        itkObj.SetOrigin(correct_Origin.GetOrigin())
         # Get the mask of PTV
-        # if "Dose" in self.keys or "Anatomy" in self.keys:
-        #     if self.config['DATA']['Use_mask']:
-        #         RT_match_folder = [match for match in subfolder_list if "Structs" in match]
-        #         full_RT_path = ScanPath + RT_match_folder[0] + '\\resources\\secondary\\files\\1-1.dcm'
-        #         # read the rtstruct
-        #
-        #         # need process to convert 2D points to 3D masks
-        #         properties = regionprops(mask_img.astype(np.int8), mask_img)
-        #         cropbox = properties[0].bbox
+        if "Dose" in self.keys or "Anatomy" in self.keys:
+            if self.config['DATA']['Use_mask']:
+                RT_match_folder = [match for match in subfolder_list if "Structs" in match]
+                full_RT_path = ScanPath + RT_match_folder[0] + '\\resources\\secondary\\files\\1-1.dcm'
+                # read the rtstruct
+                rtstruct = RTStructBuilder.create_from(
+                    dicom_series_path=full_CT_path,
+                    rt_struct_path=full_RT_path
+                )
+                mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
+                # need process to convert 2D points to 3D masks
+                properties = regionprops(mask_img.astype(np.int8), mask_img)
+                cropbox = properties[0].bbox
 
         if "Dose" in self.keys:
             Dose_match_folders = [match for match in subfolder_list if "Dose" in match]
@@ -74,13 +85,15 @@ class DataGenerator(torch.utils.data.Dataset):
                 itkObjD = reader.read(full_Dose_path[0] + '1-1.dcm')
                 dose, dose_info = reader.get_data(itkObjD)
 
+            ResampledDose = DoseMatchCT(itkObjD, dose, itkObj)
+
             # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             # datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
             if self.config['DATA']['Use_mask']:
-                datadict["Dose"] = np.expand_dims(MaskCrop(dose, cropbox), 0)
+                datadict["Dose"] = np.expand_dims(MaskCrop(ResampledDose, cropbox), 0)
             else:
-                datadict["Dose"] = np.expand_dims(dose, 0)
+                datadict["Dose"] = np.expand_dims(ResampledDose, 0)
 
             if self.transform:
                 transformed_data = self.transform(datadict["Dose"])
@@ -90,15 +103,7 @@ class DataGenerator(torch.utils.data.Dataset):
                     datadict["Dose"] = torch.from_numpy(transformed_data)
 
         if "Anatomy" in self.keys:
-            CT_match_folder = [match for match in subfolder_list if "CT" in match]
-            full_CT_path = ScanPath + CT_match_folder[0] + '\\resources\\DICOM\\files\\'
-            dicom_files = os.listdir(full_CT_path)
-            correct_Origin = reader.read(full_CT_path+dicom_files[0])
-            itkObj = reader.read(full_CT_path)
-            itkObj.SetOrigin(correct_Origin.GetOrigin())
             anatomy, _ = reader.get_data(itkObj)
-            if "Dose" in self.keys:
-                MD = DoseMatchCT(itkObjD, dose, itkObj)
             # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
             # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
             if self.config['DATA']['Use_mask']:
