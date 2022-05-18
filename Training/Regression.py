@@ -65,7 +65,7 @@ callbacks = [
 label = config['DATA']['target']
 
 PatientList = QueryFromServer(config)
-# SynchronizeData(config, PatientList)
+SynchronizeData(config, PatientList)
 print(PatientList)
 
 """
