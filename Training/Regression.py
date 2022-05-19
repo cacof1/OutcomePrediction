@@ -130,10 +130,10 @@ for i, module in enumerate(module_selected):
 dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), train_transform=train_transform,
                         val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=None, category_norm=None,
                         inference=False)
-# train_label = dataloader.train_label
+train_label = dataloader.train_label
 
 trainer = Trainer(accelerator='cpu', max_epochs=3, logger=logger)  # callbacks=callbacks,
-model = MixModel(module_dict, config, train_label =None, label_range=None, weights=None)
+model = MixModel(module_dict, config, train_label=train_label, label_range=None, weights=None)
 trainer.fit(model, dataloader)
 
 worstCase = 0

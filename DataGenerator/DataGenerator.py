@@ -148,6 +148,7 @@ class DataModule(LightningDataModule):
         # Convert regression value to histogram class
         train, val_test = train_test_split(PatientList, train_size=0.7)
         test, val = train_test_split(val_test, test_size=0.66)
+        self.train_label = get_train_label(train, config)
 
         self.train_data = DataGenerator(train, config, keys, transform=train_transform, **kwargs)
         self.val_data = DataGenerator(val, config, keys, transform=val_transform, **kwargs)
@@ -343,3 +344,10 @@ def interp3(x, y, z, v, xi, yi, zi, **kwargs):
     map_coordinates(v, coords, order=1, output=output, **kwargs)
 
     return output.reshape(orig_shape)
+
+def get_train_label(PatientList, config):
+    train_label =[]
+    for patient in PatientList:
+        label = patient.fields[config['DATA']['target']]
+        train_label.append(label)
+    return train_label

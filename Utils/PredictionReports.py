@@ -63,7 +63,7 @@ class PredictionReports(TensorBoardLogger):
         return grid
 
     def log_text(self) -> None:
-        configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' + str(
+        configurations = 'The img_dim is ' + str(self.config['MODEL']['img_sizes']) + ' and the modules included are ' + str(
             self.config['DATA']['module'])
         self.experiment.add_text('configurations:', configurations)
 
@@ -101,7 +101,7 @@ class PredictionReports(TensorBoardLogger):
         # construct_test = {'death': torch.ones(y_test.shape, dtype=torch.bool), 'time': y_test}
         construct_train = np.ndarray(shape=(len(y_train),), dtype=dtypes)
         for i in range(len(y_train)):
-            construct_train[i] = (True, y_train.to_numpy()[i])
+            construct_train[i] = (True, y_train[i])
 
         cph_auc, cph_mean_auc = cumulative_dynamic_auc(
             construct_train, construct_test, risk_score.cpu(), va_times
