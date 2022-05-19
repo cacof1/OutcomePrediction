@@ -30,7 +30,7 @@ config = toml.load(sys.argv[1])
 
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['BaseModel'])
 logger.log_text()
-img_dim = config['MODEL']['img_sizes']
+img_dim = config['DATA']['dim']
 
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
@@ -132,7 +132,7 @@ dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), tra
                         inference=False)
 train_label = dataloader.train_label
 
-trainer = Trainer(accelerator='cpu', max_epochs=3, logger=logger)  # callbacks=callbacks,
+trainer = Trainer(gpus=1, max_epochs=3, logger=logger)  # callbacks=callbacks,
 model = MixModel(module_dict, config, train_label=train_label, label_range=None, weights=None)
 trainer.fit(model, dataloader)
 
