@@ -30,11 +30,11 @@ from pathlib import Path
 
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, config, keys, transform=None, **kwargs):
+    def __init__(self, PatientList, config, keys, inference= False, transform=None, **kwargs):
         super().__init__()
         self.transform = transform
         self.keys = keys
-        self.inference = kwargs['inference']
+        self.inference = inference
         self.PatientList = PatientList
         # self.n_norm = kwargs['numerical_norm']
         # self.c_norm = kwargs['category_norm']
