@@ -16,6 +16,7 @@ from Models.ModelTransUnet import ModelTransUnet
 from Models.ModelCoTr import ModelCoTr
 from Models.Classifier3D import Classifier3D
 from Models.Monai3DModel import Monai3DModel
+from Models.Model2DNet import Model2DNet
 from Models.Linear import Linear
 from Models.MixModel import MixModel
 
@@ -124,7 +125,10 @@ if config['MODEL']['Clinical_Backbone']:
 
 for i, module in enumerate(module_selected):
     if module == 'Anatomy' or module == 'Dose':
-        Backbone = Monai3DModel(config)
+        if config['MODEL_PARAMETERS']['spatial_dims'] == 3:
+            Backbone = Monai3DModel(config)
+        else:
+            Backbone = Model2DNet(config)
         module_dict[module] = Backbone
     else:
         module_dict[module] = Clinical_backbone
@@ -134,7 +138,7 @@ dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), tra
                         inference=False)
 train_label = dataloader.train_label
 
-trainer = Trainer(gpus=1, max_epochs=3, logger=logger)  # callbacks=callbacks,
+trainer = Trainer(accelerator='cpu', max_epochs=3, logger=logger)  # callbacks=callbacks,
 model = MixModel(module_dict, config, train_label=train_label, label_range=None, weights=None)
 trainer.fit(model, dataloader)
 
