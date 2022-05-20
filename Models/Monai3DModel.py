@@ -10,7 +10,7 @@ from torch import nn
 
 
 ## Model
-class Model3D(LightningModule):
+class Monai3DModel(LightningModule):
     def __init__(self, config):
         super().__init__()
         model = config['MODEL']['Backbone']

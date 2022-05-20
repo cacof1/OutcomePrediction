@@ -15,7 +15,7 @@ from Models.ModelCAE import ModelCAE
 from Models.ModelTransUnet import ModelTransUnet
 from Models.ModelCoTr import ModelCoTr
 from Models.Classifier3D import Classifier3D
-from Models.Model3D import Model3D
+from Models.Monai3DModel import Monai3DModel
 from Models.Linear import Linear
 from Models.MixModel import MixModel
 
@@ -118,12 +118,13 @@ module_selected = config['DATA']['module']
 
 
 # if config['MODEL']['BaseModel'] == 'Unet':
-Backbone = Model3D(config)
+
 if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
 
 for i, module in enumerate(module_selected):
     if module == 'Anatomy' or module == 'Dose':
+        Backbone = Monai3DModel(config)
         module_dict[module] = Backbone
     else:
         module_dict[module] = Clinical_backbone
