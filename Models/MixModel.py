@@ -59,7 +59,7 @@ class MixModel(LightningModule):
         prediction = self.classifier(features)
         print(prediction, label)
         loss = self.loss_fcn(prediction.squeeze(), batch[-1])
-        out['features'] = features
+        out['features'] = features.detach()
         out['label'] = label
         out['prediction'] = prediction
         self.log("train_loss", loss, on_step=False, on_epoch=True)
