@@ -5,17 +5,20 @@ from pytorch_lightning import LightningDataModule, LightningModule, Trainer, see
 from torchinfo import summary
 from Models.unet3d import UNet3D
 import torchmetrics
-from monai.networks import blocks
+from monai.networks import blocks, nets
 from torch import nn
 
 
 ## Model
 class Model3D(LightningModule):
-    def __init__(self, config, wf=2, depth=3):
+    def __init__(self, config):
         super().__init__()
-        self.config = config
-        self.in_channels = config['MODEL']['in_channels']
-        self.backbone = UnetEncoder(in_channels=self.in_channels, depth=depth, wf=wf)
+        model = config['MODEL']['Backbone']
+        parameters = config['MODEL_PARAMETERS']
+        if model == '3DUnet':
+            self.backbone = UnetEncoder(**parameters)
+        else:
+            self.backbone = eval()
         self.model = torch.nn.Sequential(
             self.backbone,
             torch.nn.Flatten(),

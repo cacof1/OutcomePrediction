@@ -118,7 +118,7 @@ if config['MODEL']['BaseModel'] == 'CoTr':
 
 
 if config['MODEL']['BaseModel'] == 'Unet':
-    Backbone = Model3D(config=config)
+    Backbone = Model3D(config['MODEL_PARAMETERS'])
 if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
 
