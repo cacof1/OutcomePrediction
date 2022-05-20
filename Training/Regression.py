@@ -29,7 +29,7 @@ from Utils.PredictionReports import PredictionReports
 
 config = toml.load(sys.argv[1])
 
-logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['BaseModel'])
+logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['Backbone'])
 logger.log_text()
 img_dim = config['DATA']['dim']
 
@@ -49,7 +49,7 @@ val_transform = tio.Compose([
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
-filename = config['MODEL']['BaseModel'] + '_DeepSurv'
+filename = config['MODEL']['Backbone'] + '_DeepSurv'
 
 
 callbacks = [
@@ -101,24 +101,24 @@ X_train_enc = ohe.transform(category_data)
 module_dict = nn.ModuleDict()
 module_selected = config['DATA']['module']
 
-if config['MODEL']['BaseModel'] == 'CAE':
-    Backbone = ModelCAE(config['MODEL'])
+# if config['MODEL']['BaseModel'] == 'CAE':
+#     Backbone = ModelCAE(config['MODEL'])
+#
+# if config['MODEL']['BaseModel'] == 'TransUnet':
+#     Backbone = ModelTransUnet(config['MODEL'])
+#
+# if config['MODEL']['BaseModel'] == 'CoTr':
+#     default_depth = 3
+#     img_sizes = []
+#     for i in range(default_depth):
+#         tmp = [x / 2 ** (i + 1) for x in img_dim]
+#         img_sizes.append(tmp)
+#     config['DATA']['dim'] = img_sizes
+#     Backbone = ModelCoTr(config['MODEL'])
 
-if config['MODEL']['BaseModel'] == 'TransUnet':
-    Backbone = ModelTransUnet(config['MODEL'])
 
-if config['MODEL']['BaseModel'] == 'CoTr':
-    default_depth = 3
-    img_sizes = []
-    for i in range(default_depth):
-        tmp = [x / 2 ** (i + 1) for x in img_dim]
-        img_sizes.append(tmp)
-    config['DATA']['dim'] = img_sizes
-    Backbone = ModelCoTr(config['MODEL'])
-
-
-if config['MODEL']['BaseModel'] == 'Unet':
-    Backbone = Model3D(config['MODEL_PARAMETERS'])
+# if config['MODEL']['BaseModel'] == 'Unet':
+Backbone = Model3D(config)
 if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
 

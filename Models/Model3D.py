@@ -15,16 +15,22 @@ class Model3D(LightningModule):
         super().__init__()
         model = config['MODEL']['Backbone']
         parameters = config['MODEL_PARAMETERS']
+
         if model == '3DUnet':
             self.backbone = UnetEncoder(**parameters)
         else:
-            self.backbone = eval()
+            model_str = 'nets.' + model + '(**parameters)'
+            loaded_model = eval(model_str)
+            # only use network for features
+            self.backbone = loaded_model.features
+
         self.model = torch.nn.Sequential(
             self.backbone,
             torch.nn.Flatten(),
         )
         self.model.apply(self.weights_init)
-        summary(self.model.to('cuda'), (3, 1, 20, 80, 80), col_names=["input_size", "output_size"], depth=5)
+        summary(self.model.to('cuda'), (config['MODEL']['batch_size'], 1, *config['DATA']['dim']),
+                col_names=["input_size", "output_size"], depth=5)
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
