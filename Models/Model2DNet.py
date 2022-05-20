@@ -5,6 +5,7 @@ from Models.TransformerEncoder import PositionEncoding, TransformerBlock
 from torchvision import models
 from monai.networks import nets
 
+
 # Please refer paper CAE-TRANSFORMER: TRANSFORMER-BASED MODEL TO PREDICT INVASIVENESS
 # OF LUNG ADENOCARCINOMA SUBSOLID NODULES FROM NON-THIN SECTION 3D
 # CT SCANS
@@ -26,13 +27,15 @@ class Model2DNet(LightningModule):
             loaded_model = eval(model_str)
             self.backbone = loaded_model.features
 
-        self.backbone.eval()
-        for param in self.backbone.parameters():
-            param.requires_grad = False
-        # for param in self.feature_extractor[0][0:10].parameters():
+        # self.backbone.eval()
+        # for param in self.backbone.parameters():
         #     param.requires_grad = False
 
-        self.pool_top = nn.MaxPool2d(4)
+        layers = list(self.backbone.children())[:-1]
+        self.feature_extractor = nn.Sequential(*layers)
+        self.feature_extractor.eval()
+        for param in self.feature_extractor[0:int(len(self.feature_extractor))].parameters():
+            param.requires_grad = False
 
     def convert2d(self, x):
         if self.config['MODEL_PARAMETERS']['in_channels'] == 3:
