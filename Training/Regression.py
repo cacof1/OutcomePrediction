@@ -15,6 +15,7 @@ from Models.ModelCAE import ModelCAE
 from Models.ModelTransUnet import ModelTransUnet
 from Models.ModelCoTr import ModelCoTr
 from Models.Classifier3D import Classifier3D
+from Models.Model3D import Model3D
 from Models.Linear import Linear
 from Models.MixModel import MixModel
 
@@ -117,7 +118,7 @@ if config['MODEL']['BaseModel'] == 'CoTr':
 
 
 if config['MODEL']['BaseModel'] == 'Unet':
-    Backbone = Classifier3D()
+    Backbone = Model3D(config=config)
 if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
 
