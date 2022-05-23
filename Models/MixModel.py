@@ -1,19 +1,7 @@
 import matplotlib.pyplot as plt
-from pytorch_lightning import LightningDataModule, LightningModule
-import numpy as np
 import torch
 from torch import nn
-from collections import Counter
-import torchvision
-from torchvision import datasets, models, transforms
-from torchvision import transforms
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
-import sys
-import torchio as tio
-from pytorch_lightning import loggers as pl_loggers
-import torchmetrics
-# from Utils.GenerateSmoothLabel import generate_report, plot_AUROC
 from Models.fds import FDS
 from Losses.loss import WeightedMSE, CrossEntropy
 from sksurv.metrics import concordance_index_censored
@@ -61,14 +49,14 @@ class MixModel(LightningModule):
         loss = self.loss_fcn(prediction.squeeze(), batch[-1])
         out['features'] = features.detach()
         out['label'] = label
-        out['prediction'] = prediction
+        out['prediction'] = prediction.detach()
         self.log("train_loss", loss, on_step=False, on_epoch=True)
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             if self.config['REGULARIZATION']['Label_smoothing']:
                 loss = WeightedMSE(prediction.squeeze(dim=1), batch[-1], weights=self.weights,
                                    label_range=self.label_range)
             MAE = torch.abs(prediction.flatten(0) - label)
-            out['MAE'] = MAE
+            out['MAE'] = MAE.detach()
             if 'Dose' in self.config['DATA']['module']:
                 out['dose'] = datadict['Dose']
             if 'Anatomy' in self.config['DATA']['module']:

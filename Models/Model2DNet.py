@@ -5,7 +5,6 @@ from Models.TransformerEncoder import PositionEncoding, TransformerBlock
 from torchvision import models
 from monai.networks import nets
 
-
 # Please refer paper CAE-TRANSFORMER: TRANSFORMER-BASED MODEL TO PREDICT INVASIVENESS
 # OF LUNG ADENOCARCINOMA SUBSOLID NODULES FROM NON-THIN SECTION 3D
 # CT SCANS

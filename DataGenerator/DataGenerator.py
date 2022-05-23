@@ -136,7 +136,7 @@ class DataGenerator(torch.utils.data.Dataset):
         if (self.inference):
             return datadict
         else:
-            return datadict, np.float(label)
+            return datadict, np.float32(label)
 
 
 ### DataLoader

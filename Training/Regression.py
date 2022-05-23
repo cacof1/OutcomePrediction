@@ -1,11 +1,9 @@
-import numpy as np
 import torch
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
 import torchio as tio
-import pandas as pd
 
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
@@ -138,7 +136,7 @@ dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), tra
                         inference=False)
 train_label = dataloader.train_label
 
-trainer = Trainer(accelerator='cpu', max_epochs=3, logger=logger)  # callbacks=callbacks,
+trainer = Trainer(gpus=1, max_epochs=3, logger=logger)  # callbacks=callbacks,
 model = MixModel(module_dict, config, train_label=train_label, label_range=None, weights=None)
 trainer.fit(model, dataloader)
 
