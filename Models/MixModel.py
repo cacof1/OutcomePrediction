@@ -8,7 +8,7 @@ from sksurv.metrics import concordance_index_censored
 
 
 class MixModel(LightningModule):
-    def __init__(self, module_dict, config, train_label, label_range, weights, loss_fcn=torch.nn.BCEWithLogitsLoss()):
+    def __init__(self, module_dict, config, train_label, label_range=None, weights=None, loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.FDS = None
         self.module_dict = module_dict

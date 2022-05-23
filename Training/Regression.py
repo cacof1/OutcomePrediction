@@ -136,8 +136,14 @@ dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), tra
                         inference=False)
 train_label = dataloader.train_label
 
+if config['REGULARIZATION']['Label_smoothing']:
+    weights, label_range = get_smoothed_label_distribution(PatientList, config)
+else:
+    weights = None
+    label_range = None
+
 trainer = Trainer(gpus=1, max_epochs=3, logger=logger)  # callbacks=callbacks,
-model = MixModel(module_dict, config, train_label=train_label, label_range=None, weights=None)
+model = MixModel(module_dict, config, train_label=train_label, label_range=label_range, weights=weights)
 trainer.fit(model, dataloader)
 
 worstCase = 0

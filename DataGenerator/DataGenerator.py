@@ -27,10 +27,11 @@ from scipy.interpolate import RegularGridInterpolator as rgi
 from scipy.ndimage import map_coordinates
 import re
 from pathlib import Path
+from Utils.GenerateSmoothLabel import get_train_label
 
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, config, keys, inference= False, transform=None, **kwargs):
+    def __init__(self, PatientList, config, keys, inference=False, transform=None, **kwargs):
         super().__init__()
         self.transform = transform
         self.keys = keys
@@ -301,7 +302,7 @@ def custom_collate(original_batch):
 
 def LoadClinicalData(config, PatientList):
     clinical_features = PatientList.fields
-    clinical_columns =  config['DATA']['clinical_columns']
+    clinical_columns = config['DATA']['clinical_columns']
     # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
     #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
     #                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
@@ -345,9 +346,5 @@ def interp3(x, y, z, v, xi, yi, zi, **kwargs):
 
     return output.reshape(orig_shape)
 
-def get_train_label(PatientList, config):
-    train_label =[]
-    for patient in PatientList:
-        label = patient.fields[config['DATA']['target']]
-        train_label.append(label)
-    return train_label
+
+
