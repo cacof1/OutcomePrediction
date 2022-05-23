@@ -92,7 +92,7 @@ class PredictionReports(TensorBoardLogger):
     def generate_cumulative_dynamic_auc(self, y_train, prediction, label, current_epoch) -> None:
         # this function has issues
         risk_score = 1 / prediction
-        va_times = np.arange(int(label.cpu().min()) + 1, label.cpu().max(), 1)
+        va_times = np.arange(int(label.cpu().min()) + 1, label.cpu().max()-1, 1)
 
         dtypes = np.dtype([('event', np.bool_), ('time', np.float)])
         construct_test = np.ndarray(shape=(len(label),), dtype=dtypes)
