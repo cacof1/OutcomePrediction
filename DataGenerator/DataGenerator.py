@@ -186,7 +186,7 @@ def QueryFromServer(config, **kwargs):
         # print(set(subject_dict))
         # subject_keys = list(subject_dict.keys())
         if set(clinical_keys).issubset(subject_keys):
-            if (all(subject.fields[k] == str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
+            if (all(subject.fields[k] in str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
 
     ## Verify availability of images
     for k, v in config['MODALITY'].items():
