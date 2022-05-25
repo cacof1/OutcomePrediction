@@ -77,10 +77,16 @@ class DataGenerator(torch.utils.data.Dataset):
                     dicom_series_path=full_CT_path,
                     rt_struct_path=full_RT_path[0]
                 )
-                mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
+                roi_names = rtstruct.get_roi_names()
+                if self.config['DATA']['mask_name'] in roi_names:
+                    mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
+                    mask_img = np.expand_dims(mask_img, 0)
+                    properties = regionprops(mask_img.astype(np.int8), mask_img)
+                    cropbox = properties[0].bbox
+                else:
+                    mask_img = None
                 # process to convert 2D points to 3D masks
-                properties = regionprops(mask_img.astype(np.int8), mask_img)
-                cropbox = properties[0].bbox
+
 
         if "Dose" in self.keys:
             Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
@@ -94,7 +100,7 @@ class DataGenerator(torch.utils.data.Dataset):
             # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             # datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
-            if self.config['DATA']['Use_mask']:
+            if self.config['DATA']['Use_mask'] and mask_img:
                 datadict["Dose"] = np.expand_dims(MaskCrop(ResampledDose, cropbox), 0)
             else:
                 datadict["Dose"] = np.expand_dims(ResampledDose, 0)
@@ -110,7 +116,7 @@ class DataGenerator(torch.utils.data.Dataset):
             anatomy, _ = reader.get_data(CTObj)
             # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
             # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
-            if self.config['DATA']['Use_mask']:
+            if self.config['DATA']['Use_mask'] and mask_img:
                 datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy, cropbox), 0)
             else:
                 datadict["Anatomy"] = np.expand_dims(anatomy, 0)
