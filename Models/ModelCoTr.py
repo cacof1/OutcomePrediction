@@ -14,7 +14,7 @@ import torchio as tio
 import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
-from Models.unet3d import UNet3D
+from Models.UnetEncoder import UnetEncoder
 ## Models
 from Models.Linear import Linear
 from Models.Classifier2D import Classifier2D
@@ -25,9 +25,12 @@ from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, Transfor
 
 
 class ModelCoTr(LightningModule):
-    def __init__(self, n_classes=1, wf=5, depth=3, config=None):
+    def __init__(self, config):
         super().__init__()
-        self.model = UNet3D(in_channels=1, n_classes=n_classes, depth=depth, wf=wf).encoder
+        parameters = config['MODEL_PARAMETERS']
+        depth = parameters['depth']
+        wf = parameters['width']
+        self.model = UnetEncoder(**parameters)
         self.pe = nn.ModuleList(
             [PositionEncoding(img_size=config['img_sizes'][i], patch_size=config['patch_size'], in_channel=2 ** (wf + i),
                               embed_dim=config['transformer_embed_dim'],

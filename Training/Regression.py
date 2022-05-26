@@ -13,8 +13,7 @@ from Models.ModelCAE import ModelCAE
 from Models.ModelTransUnet import ModelTransUnet
 from Models.ModelCoTr import ModelCoTr
 from Models.Classifier3D import Classifier3D
-from Models.Monai3DModel import Monai3DModel
-from Models.Model2DNet import Model2DNet
+from Models.Classifier2D import Classifier2D
 from Models.Linear import Linear
 from Models.MixModel import MixModel
 
@@ -124,9 +123,9 @@ if config['MODEL']['Clinical_Backbone']:
 for i, module in enumerate(module_selected):
     if module == 'Anatomy' or module == 'Dose':
         if config['MODEL_PARAMETERS']['spatial_dims'] == 3:
-            Backbone = Monai3DModel(config)
+            Backbone = Classifier3D(config)
         else:
-            Backbone = Model2DNet(config)
+            Backbone = Classifier2D(config)
         module_dict[module] = Backbone
     else:
         module_dict[module] = Clinical_backbone
