@@ -14,7 +14,7 @@ import torchio as tio
 import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
-from Models.unet3d import UNet3D
+from Models.UnetEncoder import UnetEncoder
 from torchinfo import summary
 ## Models
 from Models.Linear import Linear
@@ -27,10 +27,10 @@ from Models.TransformerEncoder import PositionEncoding, PatchEmbedding, Transfor
 #                  num_layers=3, num_heads=8, dropout=0.5, mlp_dim=128
 
 class ModelTransUnet(LightningModule):
-    def __init__(self,  n_classes=1, wf=5, depth=3, config=None):
+    def __init__(self, config):
         super().__init__()
-
-        self.model = UNet3D(in_channels=1, n_classes=n_classes, depth=depth, wf=wf).encoder
+        parameters = config['MODEL_PARAMETERS']
+        self.model = UnetEncoder(**parameters)
         self.model.apply(self.weights_init)
         summary(self.model.to('cuda'), (3, 1, 32, 128, 128), col_names=["input_size", "output_size"], depth=5)
 

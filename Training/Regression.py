@@ -1,11 +1,9 @@
-import numpy as np
 import torch
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
 import torchio as tio
-import pandas as pd
 
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
@@ -15,6 +13,7 @@ from Models.ModelCAE import ModelCAE
 from Models.ModelTransUnet import ModelTransUnet
 from Models.ModelCoTr import ModelCoTr
 from Models.Classifier3D import Classifier3D
+from Models.Classifier2D import Classifier2D
 from Models.Linear import Linear
 from Models.MixModel import MixModel
 
@@ -28,9 +27,9 @@ from Utils.PredictionReports import PredictionReports
 
 config = toml.load(sys.argv[1])
 
-logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['BaseModel'])
+logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['Backbone'])
 logger.log_text()
-img_dim = config['MODEL']['img_sizes']
+img_dim = config['DATA']['dim']
 
 train_transform = tio.Compose([
     tio.transforms.ZNormalization(),
@@ -48,7 +47,7 @@ val_transform = tio.Compose([
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
-filename = config['MODEL']['BaseModel'] + '_DeepSurv'
+filename = config['MODEL']['Backbone'] + '_DeepSurv'
 
 
 callbacks = [
@@ -100,29 +99,33 @@ X_train_enc = ohe.transform(category_data)
 module_dict = nn.ModuleDict()
 module_selected = config['DATA']['module']
 
-if config['MODEL']['BaseModel'] == 'CAE':
-    Backbone = ModelCAE(config['MODEL'])
+# if config['MODEL']['BaseModel'] == 'CAE':
+#     Backbone = ModelCAE(config['MODEL'])
+#
+# if config['MODEL']['BaseModel'] == 'TransUnet':
+#     Backbone = ModelTransUnet(config['MODEL'])
+#
+# if config['MODEL']['BaseModel'] == 'CoTr':
+#     default_depth = 3
+#     img_sizes = []
+#     for i in range(default_depth):
+#         tmp = [x / 2 ** (i + 1) for x in img_dim]
+#         img_sizes.append(tmp)
+#     config['DATA']['dim'] = img_sizes
+#     Backbone = ModelCoTr(config['MODEL'])
 
-if config['MODEL']['BaseModel'] == 'TransUnet':
-    Backbone = ModelTransUnet(config['MODEL'])
 
-if config['MODEL']['BaseModel'] == 'CoTr':
-    default_depth = 3
-    img_sizes = []
-    for i in range(default_depth):
-        tmp = [x / 2 ** (i + 1) for x in img_dim]
-        img_sizes.append(tmp)
-    config['DATA']['dim'] = img_sizes
-    Backbone = ModelCoTr(config['MODEL'])
+# if config['MODEL']['BaseModel'] == 'Unet':
 
-
-if config['MODEL']['BaseModel'] == 'Unet':
-    Backbone = Classifier3D()
 if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
 
 for i, module in enumerate(module_selected):
     if module == 'Anatomy' or module == 'Dose':
+        if config['MODEL_PARAMETERS']['spatial_dims'] == 3:
+            Backbone = Classifier3D(config)
+        else:
+            Backbone = Classifier2D(config)
         module_dict[module] = Backbone
     else:
         module_dict[module] = Clinical_backbone
@@ -132,8 +135,14 @@ dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), tra
                         inference=False)
 train_label = dataloader.train_label
 
-trainer = Trainer(accelerator='cpu', max_epochs=3, logger=logger)  # callbacks=callbacks,
-model = MixModel(module_dict, config, train_label=train_label, label_range=None, weights=None)
+if config['REGULARIZATION']['Label_smoothing']:
+    weights, label_range = get_smoothed_label_distribution(PatientList, config)
+else:
+    weights = None
+    label_range = None
+
+trainer = Trainer(gpus=1, max_epochs=3, logger=logger)  # callbacks=callbacks,
+model = MixModel(module_dict, config, train_label=train_label, label_range=label_range, weights=weights)
 trainer.fit(model, dataloader)
 
 worstCase = 0

@@ -1,12 +1,8 @@
-import sys
-import pandas as pd
-import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import convolve1d
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal.windows import triang
-import torchvision
 from sksurv.metrics import cumulative_dynamic_auc
 
 def get_lds_kernel_window(kernel, ks, sigma):
@@ -25,13 +21,8 @@ def get_lds_kernel_window(kernel, ks, sigma):
     return kernel_window
 
 
-def get_smoothed_label_distribution(MasterSheet, label):
-    # MasterSheet = pd.read_csv(sys.argv[1], index_col='patid')
-    # label = sys.argv[2]
-    Label = [label]
-    MasterSheet = MasterSheet.dropna(subset=[label])
-
-    label_all = MasterSheet[Label].to_numpy()
+def get_smoothed_label_distribution(PatientList, config):
+    label_all = get_train_label(PatientList, config)
     range_max = np.max(label_all).astype(int) + 1
     range_min = np.min(label_all).astype(int)
 
@@ -54,3 +45,11 @@ def get_smoothed_label_distribution(MasterSheet, label):
     # plt.bar(label_range[0:-1], eff_label_dist)
     # plt.show()
     return weights, bin_index_per_label[1]
+
+
+def get_train_label(PatientList, config):
+    train_label = []
+    for patient in PatientList:
+        label = patient.fields[config['DATA']['target']]
+        train_label.append(label)
+    return train_label

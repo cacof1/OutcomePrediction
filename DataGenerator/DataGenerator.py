@@ -27,10 +27,11 @@ from scipy.interpolate import RegularGridInterpolator as rgi
 from scipy.ndimage import map_coordinates
 import re
 from pathlib import Path
+from Utils.GenerateSmoothLabel import get_train_label
 
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, config, keys, inference= False, transform=None, **kwargs):
+    def __init__(self, PatientList, config, keys, inference=False, transform=None, **kwargs):
         super().__init__()
         self.transform = transform
         self.keys = keys
@@ -76,10 +77,16 @@ class DataGenerator(torch.utils.data.Dataset):
                     dicom_series_path=full_CT_path,
                     rt_struct_path=full_RT_path[0]
                 )
-                mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
+                roi_names = rtstruct.get_roi_names()
+                if self.config['DATA']['mask_name'] in roi_names:
+                    mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
+                    mask_img = mask_img.transpose(2, 1, 0)
+                    properties = regionprops(mask_img.astype(np.int8), mask_img)
+                    cropbox = properties[0].bbox
+                    mask_img = np.expand_dims(mask_img, 0)
+                else:
+                    mask_img = None
                 # process to convert 2D points to 3D masks
-                properties = regionprops(mask_img.astype(np.int8), mask_img)
-                cropbox = properties[0].bbox
 
         if "Dose" in self.keys:
             Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
@@ -88,18 +95,23 @@ class DataGenerator(torch.utils.data.Dataset):
             full_Dose_path = sorted(Path(Dose_match_folder[0], 'resources', 'DICOM', 'files').glob('*.dcm'))
             DoseObj = reader.read(full_Dose_path[0])
             dose, dose_info = reader.get_data(DoseObj)
+            dose = dose * np.double(dose_info['3004|000e'])
             ResampledDose = DoseMatchCT(DoseObj, dose, CTObj)
-
+            ResampledDose = ResampledDose.transpose(2, 1, 0)
             # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             # datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
-            if self.config['DATA']['Use_mask']:
+            if self.config['DATA']['Use_mask'] and (mask_img is not None):
                 datadict["Dose"] = np.expand_dims(MaskCrop(ResampledDose, cropbox), 0)
             else:
                 datadict["Dose"] = np.expand_dims(ResampledDose, 0)
 
             if self.transform:
-                transformed_data = self.transform(datadict["Dose"])
+                try:
+                    transformed_data = self.transform(datadict["Dose"])
+                except:
+                    print(self.PatientList[id].label + 'has transform problem.')
+
                 if transformed_data is None:
                     datadict["Dose"] = None
                 else:
@@ -107,9 +119,10 @@ class DataGenerator(torch.utils.data.Dataset):
 
         if "Anatomy" in self.keys:
             anatomy, _ = reader.get_data(CTObj)
+            anatomy = anatomy.transpose(2, 1, 0)
             # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
             # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
-            if self.config['DATA']['Use_mask']:
+            if self.config['DATA']['Use_mask'] and (mask_img is not None):
                 datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy, cropbox), 0)
             else:
                 datadict["Anatomy"] = np.expand_dims(anatomy, 0)
@@ -136,7 +149,7 @@ class DataGenerator(torch.utils.data.Dataset):
         if (self.inference):
             return datadict
         else:
-            return datadict, np.float(label)
+            return datadict, np.float32(label)
 
 
 ### DataLoader
@@ -179,7 +192,7 @@ def QueryFromServer(config, **kwargs):
         # print(set(subject_dict))
         # subject_keys = list(subject_dict.keys())
         if set(clinical_keys).issubset(subject_keys):
-            if (all(subject.fields[k] == str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
+            if (all(subject.fields[k] in str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
 
     ## Verify availability of images
     for k, v in config['MODALITY'].items():
@@ -301,7 +314,7 @@ def custom_collate(original_batch):
 
 def LoadClinicalData(config, PatientList):
     clinical_features = PatientList.fields
-    clinical_columns =  config['DATA']['clinical_columns']
+    clinical_columns = config['DATA']['clinical_columns']
     # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
     #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
     #                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
@@ -344,10 +357,3 @@ def interp3(x, y, z, v, xi, yi, zi, **kwargs):
     map_coordinates(v, coords, order=1, output=output, **kwargs)
 
     return output.reshape(orig_shape)
-
-def get_train_label(PatientList, config):
-    train_label =[]
-    for patient in PatientList:
-        label = patient.fields[config['DATA']['target']]
-        train_label.append(label)
-    return train_label

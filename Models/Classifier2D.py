@@ -1,51 +1,48 @@
 import pytorch_lightning as pl
-import sys
 import torch
-from torch.optim import Adam
 import torch.nn as nn
-from torchmetrics.functional import accuracy
-from torchvision import datasets, models, transforms
+from torchvision import models
+from monai.networks import nets
 
 class Classifier2D(pl.LightningModule):
-    def __init__(self, num_classes=2, backbone=models.densenet121()):
+    def __init__(self, config):
         super().__init__()
-        self.num_classes = num_classes
-        self.backbone = backbone
-        self.loss_fcn = nn.CrossEntropyLoss()
-        self.model = nn.Sequential(
-            self.backbone,
-            nn.LazyLinear(512),
-            nn.LazyLinear(num_classes)
-        )
+        self.config = config
+        model = config['MODEL']['Backbone']
+
+        self.linear1 = nn.LazyLinear(72)
+        if model == 'Vit':
+            self.backbone = models.vit_b_16(pretrained=True).eval()
+        else:
+            parameters = config['MODEL_PARAMETERS']
+            model_str = 'nets.' + model + '(**parameters)'
+            loaded_model = eval(model_str)
+            self.backbone = loaded_model.features
+
+        # self.backbone.eval()
+        # for param in self.backbone.parameters():
+        #     param.requires_grad = False
+
+        layers = list(self.backbone.children())[:-1]
+        self.feature_extractor = nn.Sequential(*layers)
+        self.feature_extractor.eval()
+        for param in self.feature_extractor[0:int(len(self.feature_extractor))].parameters():
+            param.requires_grad = False
+
+    def convert2d(self, x):
+        if self.config['MODEL_PARAMETERS']['in_channels'] == 3:
+            x = x.repeat(1, 3, 1, 1)
+        features = self.backbone(x)
+        features = features.flatten(1)
+        features = self.linear1(features)
+        features = features.unsqueeze(0)
+        features = features.unsqueeze(1)
+        # features = features.permute(2, 3, 0, 1)
+        return features
 
     def forward(self, x):
-        return self.model(x)
-
-    def training_step(self, train_batch, batch_idx):
-        image, labels = train_batch
-        logits = self(image)
-        loss = self.loss_fcn(logits, labels)
-        return loss
-
-    def validation_step(self, val_batch, batch_idx):
-        image, labels = val_batch
-        logits = self(image)
-        loss = self.loss_fcn(logits, labels)
-        return loss
-
-    def testing_step(self, test_batch, batch_idx):
-        image, labels = test_batch
-        logits = self(image)
-        loss = self.loss_fcn(logits, labels)
-        return loss
-
-    def predict_step(self, batch):
-        image = batch
-        return self(image)
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
-        return [optimizer], [scheduler]
+        features = torch.cat([self.convert2d(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
+        features = features.flatten(start_dim=1)
+        return features
 
 
