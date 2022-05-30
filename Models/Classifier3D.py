@@ -5,6 +5,7 @@ from torchinfo import summary
 from torch import nn
 import torchmetrics
 from monai.networks import blocks, nets
+from Models.UnetEncoder import UnetEncoder
 
 ## Model
 class Classifier3D(LightningModule):
