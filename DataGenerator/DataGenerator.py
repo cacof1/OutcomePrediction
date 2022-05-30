@@ -195,6 +195,7 @@ def QueryFromServer(config, **kwargs):
             if (all(subject.fields[k] in str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
 
     ## Verify availability of images
+    rm_subject_list = []
     for k, v in config['MODALITY'].items():
         for nb, subject in enumerate(subject_list):
             # if(nb>10): break
@@ -202,8 +203,11 @@ def QueryFromServer(config, **kwargs):
             for experiment in subject.experiments.values():
                 scan_dict = experiment.scans.key_map
                 if (v not in scan_dict.keys()):
-                    subject_list.remove(subject)
+                    rm_subject_list.append(subject)
                     break
+
+    for subject in rm_subject_list:
+        subject_list.remove(subject)
     print("Queried from Server")
     return subject_list
 
