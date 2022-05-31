@@ -103,9 +103,13 @@ class PredictionReports(TensorBoardLogger):
         for i in range(len(y_train)):
             construct_train[i] = (True, y_train[i])
 
-        cph_auc, cph_mean_auc = cumulative_dynamic_auc(
+        try:
+            cph_auc, cph_mean_auc = cumulative_dynamic_auc(
             construct_train, construct_test, risk_score.cpu(), va_times
-        )
+            )
+        except:
+            print('accumulative auc error!')
+
         fig = plt.figure()
         plt.plot(va_times, cph_auc, marker="o")
         plt.axhline(cph_mean_auc, linestyle="--")
