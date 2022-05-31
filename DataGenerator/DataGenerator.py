@@ -66,27 +66,48 @@ class DataGenerator(torch.utils.data.Dataset):
         CTObj = reader.read(full_CT_path)
         CTObj.SetOrigin(correct_Origin.GetOrigin())
         # Get the mask of PTV
-        if "Dose" in self.keys or "Anatomy" in self.keys:
-            if self.config['DATA']['mask_name']:
-                RT_match_folder = sorted(ScanPath.glob('*-Structs'))
-                if len(RT_match_folder) > 1:
-                    raise ValueError(self.PatientList[id].label + ' should only have one match!')
-                full_RT_path = sorted(Path(RT_match_folder[0], 'resources', 'secondary', 'files').glob('*.dcm'))
-                # read the rtstruct
-                rtstruct = RTStructBuilder.create_from(
-                    dicom_series_path=full_CT_path,
-                    rt_struct_path=full_RT_path[0]
-                )
-                roi_names = rtstruct.get_roi_names()
-                if self.config['DATA']['mask_name'] in roi_names:
-                    mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
-                    mask_img = mask_img.transpose(2, 1, 0)
-                    properties = regionprops(mask_img.astype(np.int8), mask_img)
-                    cropbox = properties[0].bbox
-                    mask_img = np.expand_dims(mask_img, 0)
+        if ("Dose" in self.keys or "Anatomy" in self.keys) and 'mask_name' in self.config['DATA']:
+            RT_match_folder = sorted(ScanPath.glob('*-Structs'))
+            if len(RT_match_folder) > 1:
+                raise ValueError(self.PatientList[id].label + ' should only have one match!')
+            full_RT_path = sorted(Path(RT_match_folder[0], 'resources', 'secondary', 'files').glob('*.dcm'))
+            # read the rtstruct
+            rtstruct = RTStructBuilder.create_from(
+                dicom_series_path=full_CT_path,
+                rt_struct_path=full_RT_path[0]
+            )
+            roi_names = rtstruct.get_roi_names()
+            if self.config['DATA']['mask_name'] in roi_names:
+                mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
+                mask_img = mask_img.transpose(2, 1, 0)
+                properties = regionprops(mask_img.astype(np.int8), mask_img)
+                cropbox = properties[0].bbox
+                mask_img = np.expand_dims(mask_img, 0)
+            else:
+                 mask_img = None
+        else:
+            mask_img = None
+
+
+        if "Anatomy" in self.keys:
+            anatomy, _ = reader.get_data(CTObj)
+            anatomy = anatomy.transpose(2, 1, 0)
+            # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
+            # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
+            if 'mask_name' in self.config['DATA'] and (mask_img is not None):
+                datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy, cropbox), 0)
+            else:
+                datadict["Anatomy"] = np.expand_dims(anatomy, 0)
+
+            # datadict["Anatomy"] = np.expand_dims(anatomy, 0)
+
+            if self.transform:
+                transformed_data = self.transform(datadict["Anatomy"])
+                if transformed_data is None:
+                    datadict["Anatomy"] = None
                 else:
-                    mask_img = None
-                # process to convert 2D points to 3D masks
+                    datadict["Anatomy"] = torch.from_numpy(transformed_data)
+
 
         if "Dose" in self.keys:
             Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
@@ -101,7 +122,7 @@ class DataGenerator(torch.utils.data.Dataset):
             # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             # datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
-            if self.config['DATA']['Use_mask'] and (mask_img is not None):
+            if 'mask_name' in self.config['DATA'] and (mask_img is not None):
                 datadict["Dose"] = np.expand_dims(MaskCrop(ResampledDose, cropbox), 0)
             else:
                 datadict["Dose"] = np.expand_dims(ResampledDose, 0)
@@ -116,25 +137,6 @@ class DataGenerator(torch.utils.data.Dataset):
                     datadict["Dose"] = None
                 else:
                     datadict["Dose"] = torch.from_numpy(transformed_data)
-
-        if "Anatomy" in self.keys:
-            anatomy, _ = reader.get_data(CTObj)
-            anatomy = anatomy.transpose(2, 1, 0)
-            # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
-            # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
-            if self.config['DATA']['Use_mask'] and (mask_img is not None):
-                datadict["Anatomy"] = np.expand_dims(MaskCrop(anatomy, cropbox), 0)
-            else:
-                datadict["Anatomy"] = np.expand_dims(anatomy, 0)
-
-            # datadict["Anatomy"] = np.expand_dims(anatomy, 0)
-
-            if self.transform:
-                transformed_data = self.transform(datadict["Anatomy"])
-                if transformed_data is None:
-                    datadict["Anatomy"] = None
-                else:
-                    datadict["Anatomy"] = torch.from_numpy(transformed_data)
 
             # print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
@@ -195,7 +197,20 @@ def QueryFromServer(config, **kwargs):
             if (all(subject.fields[k] in str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
 
     ## Verify availability of images
-    rm_subject_list = []
+    # rm_subject_list = []
+    # for k, v in config['MODALITY'].items():
+    #     for nb, subject in enumerate(subject_list):
+    #         # if(nb>10): break
+    #         # print("Modality", subject, nb)
+    #         for experiment in subject.experiments.values():
+    #             scan_dict = experiment.scans.key_map
+    #             if (v not in scan_dict.keys()):
+    #                 rm_subject_list.append(subject)
+    #                 break
+    #
+    # for subject in rm_subject_list:
+    #     subject_list.remove(subject)
+
     for k, v in config['MODALITY'].items():
         for nb, subject in enumerate(subject_list):
             # if(nb>10): break
@@ -203,11 +218,8 @@ def QueryFromServer(config, **kwargs):
             for experiment in subject.experiments.values():
                 scan_dict = experiment.scans.key_map
                 if (v not in scan_dict.keys()):
-                    rm_subject_list.append(subject)
+                    subject_list.remove(subject)
                     break
-
-    for subject in rm_subject_list:
-        subject_list.remove(subject)
     print("Queried from Server")
     return subject_list
 
