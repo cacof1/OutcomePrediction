@@ -195,6 +195,7 @@ def QueryFromServer(config, **kwargs):
             if (all(subject.fields[k] in str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
 
     ## Verify availability of images
+    rm_subject_list = []
     for k, v in config['MODALITY'].items():
         for nb, subject in enumerate(subject_list):
             # if(nb>10): break
@@ -202,8 +203,11 @@ def QueryFromServer(config, **kwargs):
             for experiment in subject.experiments.values():
                 scan_dict = experiment.scans.key_map
                 if (v not in scan_dict.keys()):
-                    subject_list.remove(subject)
+                    rm_subject_list.append(subject)
                     break
+
+    for subject in rm_subject_list:
+        subject_list.remove(subject)
     print("Queried from Server")
     return subject_list
 
@@ -213,14 +217,15 @@ def DoseMatchCT(DoseObj, DoseVolume, CTObj):
     spaceD = DoseObj.GetSpacing()
     origin = CTObj.GetOrigin()
     space = CTObj.GetSpacing()
-    dx = np.arange(0, DoseObj.shape[2]) * spaceD[2] + originD[0]
+
+    dx = np.arange(0, DoseObj.shape[2]) * spaceD[0] + originD[0]
     dy = np.arange(0, DoseObj.shape[1]) * spaceD[1] + originD[1]
-    dz = -np.arange(0, DoseObj.shape[0]) * spaceD[0] + originD[2]
+    dz = -np.arange(0, DoseObj.shape[0]) * spaceD[2] + originD[2]
     dz.sort()
 
-    cz = -np.arange(0, CTObj.shape[0]) * space[2] + origin[2]
-    cy = np.arange(0, CTObj.shape[1]) * space[1] + origin[1]
     cx = np.arange(0, CTObj.shape[2]) * space[0] + origin[0]
+    cy = np.arange(0, CTObj.shape[1]) * space[1] + origin[1]
+    cz = -np.arange(0, CTObj.shape[0]) * space[2] + origin[2]
     cz.sort()
 
     cxv, cyv, czv = np.meshgrid(cx, cy, cz, indexing='ij')
