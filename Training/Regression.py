@@ -37,13 +37,13 @@ train_transform = tio.Compose([
     tio.RandomFlip(),
     tio.RandomNoise(),
     tio.RandomMotion(),
-    tio.transforms.Resize(img_dim),
+    # tio.transforms.Resize(img_dim),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
 val_transform = tio.Compose([
     tio.transforms.ZNormalization(),
-    tio.transforms.Resize(img_dim),
+    # tio.transforms.Resize(img_dim),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 

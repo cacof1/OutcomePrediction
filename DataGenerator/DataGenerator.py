@@ -28,7 +28,7 @@ from scipy.ndimage import map_coordinates
 import re
 from pathlib import Path
 from Utils.GenerateSmoothLabel import get_train_label
-
+import nibabel as nib
 
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList, config, keys, inference=False, transform=None, **kwargs):
@@ -51,7 +51,7 @@ class DataGenerator(torch.utils.data.Dataset):
         patient_id = self.PatientList[id].label
         ScanPath = Path(self.config['DATA']['DataFolder'], patient_id, patient_id, 'scans')
         # Load CT dicom series for mask and dose calculation
-        reader = image_reader.ITKReader()
+
         label = self.PatientList[id].fields[self.config['DATA']['target']]
         # Regex find the correct folder
         CT_match_folder = sorted(ScanPath.glob('*-CT'))
@@ -60,11 +60,14 @@ class DataGenerator(torch.utils.data.Dataset):
         if len(CT_match_folder) < 1:
             raise ValueError(self.PatientList[id].label + ' should have one match!')
         full_CT_path = Path(CT_match_folder[0], 'resources', 'DICOM', 'files')
-        dicom_files = sorted(full_CT_path.glob('*.dcm'))
+
+        CTreader = sitk.ImageSeriesReader()
+        dicom_names = sorted(CTreader.GetGDCMSeriesFileNames(str(full_CT_path)))
+        CTreader.SetFileNames(dicom_names)
+        CTObj = CTreader.Execute()
         # The origin needs to be corrected before used in dose resampling
-        correct_Origin = reader.read(dicom_files[0])
-        CTObj = reader.read(full_CT_path)
-        CTObj.SetOrigin(correct_Origin.GetOrigin())
+        correct_Origin = sitk.ReadImage(dicom_names[0]).GetOrigin()
+        CTObj.SetOrigin(correct_Origin)
         # Get the mask of PTV
         if ("Dose" in self.keys or "Anatomy" in self.keys) and 'mask_name' in self.config['DATA']:
             RT_match_folder = sorted(ScanPath.glob('*-Structs'))
@@ -79,10 +82,11 @@ class DataGenerator(torch.utils.data.Dataset):
             roi_names = rtstruct.get_roi_names()
             if self.config['DATA']['mask_name'] in roi_names:
                 mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
-                mask_img = mask_img.transpose(2, 1, 0)
+                mask_img = mask_img.transpose(2, 0, 1)
+                mask_img = np.flip(mask_img,0)
                 properties = regionprops(mask_img.astype(np.int8), mask_img)
                 cropbox = properties[0].bbox
-                mask_img = np.expand_dims(mask_img, 0)
+                # mask_img = np.expand_dims(mask_img, 0)
             else:
                  mask_img = None
         else:
@@ -90,8 +94,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
 
         if "Anatomy" in self.keys:
-            anatomy, _ = reader.get_data(CTObj)
-            anatomy = anatomy.transpose(2, 1, 0)
+            anatomy = sitk.GetArrayFromImage(CTObj)
             # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
             # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
             if 'mask_name' in self.config['DATA'] and (mask_img is not None):
@@ -114,11 +117,22 @@ class DataGenerator(torch.utils.data.Dataset):
             if len(Dose_match_folder) > 1:
                 raise ValueError(self.PatientList[id].label + ' should only have one match!')
             full_Dose_path = sorted(Path(Dose_match_folder[0], 'resources', 'DICOM', 'files').glob('*.dcm'))
-            DoseObj = reader.read(full_Dose_path[0])
-            dose, dose_info = reader.get_data(DoseObj)
-            dose = dose * np.double(dose_info['3004|000e'])
+            DoseObj = sitk.ReadImage(str(full_Dose_path[0]))
+            dose = sitk.GetArrayFromImage(DoseObj)
+            dose = dose * np.double(DoseObj.GetMetaData('3004|000e'))
             ResampledDose = DoseMatchCT(DoseObj, dose, CTObj)
-            ResampledDose = ResampledDose.transpose(2, 1, 0)
+
+            ni_img = nib.Nifti1Image(anatomy, affine=np.eye(4))
+            nib.save(ni_img, "C:\\Users\\clara\\Desktop\\test\\anatomy.nii")
+
+            ni_img = nib.Nifti1Image(np.double(mask_img), affine=np.eye(4))
+            nib.save(ni_img, "C:\\Users\\clara\\Desktop\\test\\mask.nii")
+
+            ni_img = nib.Nifti1Image(ResampledDose, affine=np.eye(4))
+            nib.save(ni_img, "C:\\Users\\clara\\Desktop\\test\\dose.nii")
+
+
+
             # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             # datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
@@ -225,27 +239,27 @@ def QueryFromServer(config, **kwargs):
 
 
 def DoseMatchCT(DoseObj, DoseVolume, CTObj):
+    DoseVolume = DoseVolume.transpose(2, 1, 0)
     originD = DoseObj.GetOrigin()
     spaceD = DoseObj.GetSpacing()
     origin = CTObj.GetOrigin()
     space = CTObj.GetSpacing()
 
-    dx = np.arange(0, DoseObj.shape[2]) * spaceD[0] + originD[0]
-    dy = np.arange(0, DoseObj.shape[1]) * spaceD[1] + originD[1]
-    dz = -np.arange(0, DoseObj.shape[0]) * spaceD[2] + originD[2]
+    dx = np.arange(0, DoseObj.GetSize()[0]) * spaceD[0] + originD[0]
+    dy = np.arange(0, DoseObj.GetSize()[1]) * spaceD[1] + originD[1]
+    dz = -np.arange(0, DoseObj.GetSize()[2]) * spaceD[2] + originD[2]
     dz.sort()
 
-    cx = np.arange(0, CTObj.shape[2]) * space[0] + origin[0]
-    cy = np.arange(0, CTObj.shape[1]) * space[1] + origin[1]
-    cz = -np.arange(0, CTObj.shape[0]) * space[2] + origin[2]
+    cx = np.arange(0, CTObj.GetSize()[0]) * space[0] + origin[0]
+    cy = np.arange(0, CTObj.GetSize()[1]) * space[1] + origin[1]
+    cz = -np.arange(0, CTObj.GetSize()[2]) * space[2] + origin[2]
     cz.sort()
 
     cxv, cyv, czv = np.meshgrid(cx, cy, cz, indexing='ij')
 
-    Vi = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
-    Vf = np.flip(Vi, 2)
+    Vf = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
+    Vf = Vf.transpose(2, 1, 0)
     return Vf
-
 
 def SynchronizeData(config, subject_list):
     ## Data Storage Format --> Idem as XNAT
