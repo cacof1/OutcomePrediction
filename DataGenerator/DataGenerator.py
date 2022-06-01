@@ -122,17 +122,6 @@ class DataGenerator(torch.utils.data.Dataset):
             dose = dose * np.double(DoseObj.GetMetaData('3004|000e'))
             ResampledDose = DoseMatchCT(DoseObj, dose, CTObj)
 
-            ni_img = nib.Nifti1Image(anatomy, affine=np.eye(4))
-            nib.save(ni_img, "C:\\Users\\clara\\Desktop\\test\\anatomy.nii")
-
-            ni_img = nib.Nifti1Image(np.double(mask_img), affine=np.eye(4))
-            nib.save(ni_img, "C:\\Users\\clara\\Desktop\\test\\mask.nii")
-
-            ni_img = nib.Nifti1Image(ResampledDose, affine=np.eye(4))
-            nib.save(ni_img, "C:\\Users\\clara\\Desktop\\test\\dose.nii")
-
-
-
             # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
             # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
             # datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
