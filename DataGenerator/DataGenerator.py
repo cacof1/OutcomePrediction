@@ -92,7 +92,6 @@ class DataGenerator(torch.utils.data.Dataset):
         else:
             mask_img = None
 
-
         if "Anatomy" in self.keys:
             anatomy = sitk.GetArrayFromImage(CTObj)
             # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
@@ -110,7 +109,6 @@ class DataGenerator(torch.utils.data.Dataset):
                     datadict["Anatomy"] = None
                 else:
                     datadict["Anatomy"] = torch.from_numpy(transformed_data)
-
 
         if "Dose" in self.keys:
             Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
