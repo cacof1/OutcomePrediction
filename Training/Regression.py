@@ -37,13 +37,13 @@ train_transform = tio.Compose([
     tio.RandomFlip(),
     tio.RandomNoise(),
     tio.RandomMotion(),
-    tio.transforms.Resize(img_dim),
+    # tio.transforms.Resize(img_dim),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
 val_transform = tio.Compose([
     tio.transforms.ZNormalization(),
-    tio.transforms.Resize(img_dim),
+    # tio.transforms.Resize(img_dim),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
@@ -167,7 +167,7 @@ with torch.no_grad():
                 logger.log_image(worst_record[prefix+'worst_img'],text)
             if 'Dose' in config['DATA']['module']:
                 text = 'test_worst_case_dose'
-                logger.generate_report(worst_record[prefix+'worst_dose'],text)
+                logger.log_image(worst_record[prefix+'worst_dose'],text)
 
     if config['MODEL']['Prediction_type'] == 'Classification':
         classification_out = logger.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)

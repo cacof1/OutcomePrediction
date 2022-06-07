@@ -22,7 +22,7 @@ class Linear(pl.LightningModule):
         super().__init__()
         self.model = nn.Sequential(
             nn.LazyLinear(64),
-            nn.BatchNorm1d(64),
+            nn.LayerNorm(64),
             nn.LazyLinear(8),
             nn.ReLU()
         )
