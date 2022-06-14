@@ -1,31 +1,14 @@
-import matplotlib.pyplot as plt
 from rt_utils import RTStructBuilder
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 from torch.utils.data import DataLoader
-from torchvision import transforms
-import pandas as pd
-import os
-from pathlib import Path
-from torch.utils.data import Dataset
-import torchvision.models as models
 import numpy as np
-import fnmatch
 import torch
-import sys, glob
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
-import SimpleITK as sitk
-import scipy.ndimage as ndi
 from skimage.measure import regionprops
-from Utils.GenerateSmoothLabel import get_smoothed_label_distribution
-from sklearn.preprocessing import StandardScaler
 import xnat
 import SimpleITK as sitk
 from monai.data import image_reader
-from monai.transforms import LoadImage, LoadImaged
-from numpy import array
-from scipy.interpolate import RegularGridInterpolator as rgi
 from scipy.ndimage import map_coordinates
-import re
 from pathlib import Path
 from Utils.GenerateSmoothLabel import get_train_label
 import nibabel as nib
@@ -75,10 +58,13 @@ class DataGenerator(torch.utils.data.Dataset):
                 raise ValueError(self.PatientList[id].label + ' should only have one match!')
             full_RT_path = sorted(Path(RT_match_folder[0], 'resources', 'secondary', 'files').glob('*.dcm'))
             # read the rtstruct
-            rtstruct = RTStructBuilder.create_from(
-                dicom_series_path=full_CT_path,
-                rt_struct_path=full_RT_path[0]
-            )
+            try:
+                rtstruct = RTStructBuilder.create_from(
+                    dicom_series_path=full_CT_path,
+                    rt_struct_path=full_RT_path[0]
+                )
+            except:
+                raise ValueError(self.PatientList[id].label + ' has RTSTRUCT problem! ')
             roi_names = rtstruct.get_roi_names()
             if self.config['DATA']['mask_name'] in roi_names:
                 mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
@@ -114,6 +100,8 @@ class DataGenerator(torch.utils.data.Dataset):
             Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
             if len(Dose_match_folder) > 1:
                 raise ValueError(self.PatientList[id].label + ' should only have one match!')
+            if len(Dose_match_folder) < 1:
+                Dose_match_folder = sorted(ScanPath.glob('*Fx1Dose'))
             full_Dose_path = sorted(Path(Dose_match_folder[0], 'resources', 'DICOM', 'files').glob('*.dcm'))
             DoseObj = sitk.ReadImage(str(full_Dose_path[0]))
             dose = sitk.GetArrayFromImage(DoseObj)
@@ -197,30 +185,37 @@ def QueryFromServer(config, **kwargs):
         if set(clinical_keys).issubset(subject_keys):
             if (all(subject.fields[k] in str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
 
-    ## Verify availability of images
-    # rm_subject_list = []
-    # for k, v in config['MODALITY'].items():
-    #     for nb, subject in enumerate(subject_list):
-    #         # if(nb>10): break
-    #         # print("Modality", subject, nb)
-    #         for experiment in subject.experiments.values():
-    #             scan_dict = experiment.scans.key_map
-    #             if (v not in scan_dict.keys()):
-    #                 rm_subject_list.append(subject)
-    #                 break
-    #
-    # for subject in rm_subject_list:
-    #     subject_list.remove(subject)
-
+    # Verify availability of images
+    rm_subject_list = []
     for k, v in config['MODALITY'].items():
         for nb, subject in enumerate(subject_list):
             # if(nb>10): break
             # print("Modality", subject, nb)
             for experiment in subject.experiments.values():
                 scan_dict = experiment.scans.key_map
-                if (v not in scan_dict.keys()):
-                    subject_list.remove(subject)
+                if v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys():
+                    rm_subject_list.append(subject)
                     break
+
+    for v in config['DATA']['clinical_columns']:
+        for nb, subject in enumerate(subject_list):
+            if v not in subject.fields.keys():
+                if subject not in rm_subject_list:
+                    rm_subject_list.append(subject)
+
+    rm_subject_list = list(set(rm_subject_list))
+    for subject in rm_subject_list:
+        subject_list.remove(subject)
+
+    # for k, v in config['MODALITY'].items():
+    #     for nb, subject in enumerate(subject_list):
+    #         # if(nb>10): break
+    #         # print("Modality", subject, nb)
+    #         for experiment in subject.experiments.values():
+    #             scan_dict = experiment.scans.key_map
+    #             if (v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys()):
+    #                 subject_list.remove(subject)
+    #                 break
     print("Queried from Server")
     return subject_list
 

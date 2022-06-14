@@ -37,13 +37,13 @@ train_transform = tio.Compose([
     tio.RandomFlip(),
     tio.RandomNoise(),
     tio.RandomMotion(),
-    # tio.transforms.Resize(img_dim),
+    tio.transforms.Resize(img_dim),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
 val_transform = tio.Compose([
     tio.transforms.ZNormalization(),
-    # tio.transforms.Resize(img_dim),
+    tio.transforms.Resize(img_dim),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
@@ -64,6 +64,7 @@ callbacks = [
 label = config['DATA']['target']
 
 PatientList = QueryFromServer(config)
+PatientList = [p for p in PatientList if p.label not in config['FILTER']['patient_id']]
 SynchronizeData(config, PatientList)
 print(PatientList)
 
@@ -141,7 +142,7 @@ else:
     weights = None
     label_range = None
 
-trainer = Trainer(gpus=1, max_epochs=3, logger=logger)  # callbacks=callbacks,
+trainer = Trainer(gpus=1, max_epochs=20, logger=logger)  # callbacks=callbacks,
 model = MixModel(module_dict, config, train_label=train_label, label_range=label_range, weights=weights)
 trainer.fit(model, dataloader)
 

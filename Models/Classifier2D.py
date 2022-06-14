@@ -26,8 +26,8 @@ class Classifier2D(pl.LightningModule):
         layers = list(self.backbone.children())[:-1]
         self.feature_extractor = nn.Sequential(*layers)
         self.feature_extractor.eval()
-        for param in self.feature_extractor[0:int(len(self.feature_extractor))].parameters():
-            param.requires_grad = False
+        # for param in self.feature_extractor[0:int(len(self.feature_extractor)/2)].parameters():
+        #     param.requires_grad = False
 
     def convert2d(self, x):
         if self.config['MODEL_PARAMETERS']['in_channels'] == 3:
