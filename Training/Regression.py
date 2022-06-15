@@ -134,7 +134,6 @@ for i, module in enumerate(module_selected):
 dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), train_transform=train_transform,
                         val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=None, category_norm=None,
                         inference=False)
-train_label = dataloader.train_label
 
 if config['REGULARIZATION']['Label_smoothing']:
     weights, label_range = get_smoothed_label_distribution(PatientList, config)
@@ -143,7 +142,7 @@ else:
     label_range = None
 
 trainer = Trainer(gpus=1, max_epochs=20, logger=logger)  # callbacks=callbacks,
-model = MixModel(module_dict, config, train_label=train_label, label_range=label_range, weights=weights)
+model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 trainer.fit(model, dataloader)
 
 worstCase = 0

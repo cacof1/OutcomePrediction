@@ -152,7 +152,6 @@ class DataModule(LightningDataModule):
         # Convert regression value to histogram class
         train, val_test = train_test_split(PatientList, train_size=0.7)
         test, val = train_test_split(val_test, test_size=0.66)
-        self.train_label = get_train_label(train, config)
 
         self.train_data = DataGenerator(train, config, keys, transform=train_transform, **kwargs)
         self.val_data = DataGenerator(val, config, keys, transform=val_transform, **kwargs)

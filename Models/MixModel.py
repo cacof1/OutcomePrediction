@@ -8,7 +8,7 @@ from sksurv.metrics import concordance_index_censored
 
 
 class MixModel(LightningModule):
-    def __init__(self, module_dict, config, train_label, label_range=None, weights=None, loss_fcn=torch.nn.BCEWithLogitsLoss()):
+    def __init__(self, module_dict, config, label_range=None, weights=None, loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.FDS = None
         self.module_dict = module_dict
@@ -30,7 +30,6 @@ class MixModel(LightningModule):
                 nn.LazyLinear(1)
             )
             self.loss_fcn = torch.nn.MSELoss()
-        self.train_label = train_label
 
     def forward(self, datadict, labels):
         try:
@@ -77,7 +76,7 @@ class MixModel(LightningModule):
         prefix = 'train_epoch_'
         # self.logger.log_metrics({prefix+'loss': self.loss_fcn(training_prediction.squeeze(), training_labels)},
         # self.current_epoch)
-        self.logger.report_epoch(training_prediction.squeeze(), training_labels, self.train_label,
+        self.logger.report_epoch(training_prediction.squeeze(), training_labels,
                                  training_step_outputs, self.current_epoch, prefix)
 
         if self.config['REGULARIZATION']['Feature_smoothing']:
@@ -116,7 +115,7 @@ class MixModel(LightningModule):
         prefix = 'val_epoch_'
         # self.logger.log_metrics({prefix + 'loss': self.loss_fcn(val_prediction.squeeze(), val_labels)},
         #                         self.current_epoch)
-        self.logger.report_epoch(val_prediction.squeeze(), val_labels, self.train_label,
+        self.logger.report_epoch(val_prediction.squeeze(), val_labels,
                                  validation_step_outputs, self.current_epoch, prefix)
 
     def test_step(self, batch, batch_idx):
