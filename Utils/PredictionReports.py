@@ -89,10 +89,10 @@ class PredictionReports(TensorBoardLogger):
             c_out[prefix + 'specificity'] = spec
         return c_out
 
-    def generate_cumulative_dynamic_auc(self, prediction, label, current_epoch) -> None:
+    def generate_cumulative_dynamic_auc(self, prediction, label, current_epoch, prefix) -> None:
         # this function has issues
         risk_score = 1 / prediction
-        va_times = np.arange(int(label.cpu().min()), label.cpu().max()+1, 1)
+        va_times = np.arange(int(label.cpu().min()) + 1, label.cpu().max(), 1)
 
         dtypes = np.dtype([('event', np.bool_), ('time', np.float)])
         construct_test = np.ndarray(shape=(len(label),), dtype=dtypes)
@@ -106,11 +106,12 @@ class PredictionReports(TensorBoardLogger):
         fig = plt.figure()
         plt.plot(va_times, cph_auc, marker="o")
         plt.axhline(cph_mean_auc, linestyle="--")
-        plt.xlabel("days from enrollment")
+        plt.xlabel("survival months")
         plt.ylabel("time-dependent AUC")
         plt.grid(True)
         plt.show()
-        self.experiment.add_figure("AUC", fig, current_epoch)
+        self.experiment.add_figure(prefix+"AUC", fig, current_epoch)
+
 
     def plot_AUROC(self, prediction, label, prefix, current_epoch=None) -> None:
         roc = torchmetrics.ROC()
@@ -158,7 +159,7 @@ class PredictionReports(TensorBoardLogger):
             regression_out = self.regression_matrix(prediction, label, prefix)
             self.log_metrics(regression_out, current_epoch)
             if 'AUC' in self.config['REPORT']['matrix']:
-                self.generate_cumulative_dynamic_auc(prediction, label, current_epoch)
+                self.generate_cumulative_dynamic_auc(prediction, label, current_epoch, prefix)
             if 'WorstCase' in self.config['REPORT']['matrix']:
                 worst_record = self.worst_case_show(validation_step_outputs, prefix)
                 self.log_metrics({prefix + 'worst_AE': worst_record[prefix + 'worst_AE']}, current_epoch)
