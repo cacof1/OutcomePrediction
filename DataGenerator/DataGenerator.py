@@ -134,6 +134,7 @@ class DataGenerator(torch.utils.data.Dataset):
             n_category_feat = self.c_norm.transform(category_feat).toarray()
             n_numerical_feat = self.n_norm.transform(numerical_feat)
             data = np.concatenate((n_numerical_feat, n_category_feat), axis=1)
+            data = np.squeeze(data)
             # data = clinical_data.iloc[id].to_numpy()
             # num_data = self.n_norm.transform([numerical_data.iloc[id]])
             # cat_data = self.c_norm.transform([category_data.iloc[id]]).toarray()
