@@ -329,7 +329,7 @@ def custom_collate(original_batch):
 
 def LoadClinicalData(config, PatientList):
     category_cols = config['CLINICAL']['category_feat']
-    numerical_cols = config['CLINICAL']['numerical__feat']
+    numerical_cols = config['CLINICAL']['numerical_feat']
 
     # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
     #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
