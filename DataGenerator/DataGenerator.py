@@ -10,6 +10,7 @@ import SimpleITK as sitk
 from monai.data import image_reader
 from scipy.ndimage import map_coordinates
 from pathlib import Path
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from Utils.GenerateSmoothLabel import get_train_label
 import nibabel as nib
 
@@ -20,12 +21,12 @@ class DataGenerator(torch.utils.data.Dataset):
         self.keys = keys
         self.inference = inference
         self.PatientList = PatientList
-        numerical_feats, category_feats = LoadClinicalData(config, PatientList)
+        category_feats, numerical_feats = LoadClinicalData(config, PatientList)
         n_norm = StandardScaler()
         n_norm.fit_transform(numerical_feats)
 
         c_norm = OneHotEncoder()
-        ohe.fit(category_feats)
+        c_norm.fit(category_feats)
         self.n_norm = n_norm
         self.c_norm = c_norm
         self.config = config
@@ -135,7 +136,10 @@ class DataGenerator(torch.utils.data.Dataset):
 
             # print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
-            data = LoadClinicalData(self.config, self.PatientList[id])
+            category_feat, numerical_feat = LoadClinicalData(self.config, self.PatientList[id])
+            n_category_feat = self.c_norm(category_feat)
+            n_numerical_feat = self.n_norm(numerical_feat)
+            data = [n_category_feat, n_numerical_feat]
             data = np.array(data, dtype='float')
             # data = clinical_data.iloc[id].to_numpy()
             # num_data = self.n_norm.transform([numerical_data.iloc[id]])
