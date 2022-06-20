@@ -20,8 +20,14 @@ class DataGenerator(torch.utils.data.Dataset):
         self.keys = keys
         self.inference = inference
         self.PatientList = PatientList
-        # self.n_norm = kwargs['numerical_norm']
-        # self.c_norm = kwargs['category_norm']
+        numerical_feats, category_feats = LoadClinicalData(config, PatientList)
+        n_norm = StandardScaler()
+        n_norm.fit_transform(numerical_feats)
+
+        c_norm = OneHotEncoder()
+        ohe.fit(category_feats)
+        self.n_norm = n_norm
+        self.c_norm = c_norm
         self.config = config
 
     def __len__(self):
@@ -326,8 +332,9 @@ def custom_collate(original_batch):
 
 
 def LoadClinicalData(config, PatientList):
-    clinical_features = PatientList.fields
-    clinical_columns = config['DATA']['clinical_columns']
+    category_cols = config['CLINICAL']['category_feat']
+    numerical_cols = config['CLINICAL']['numerical__feat']
+
     # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
     #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
     #                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
@@ -337,7 +344,15 @@ def LoadClinicalData(config, PatientList):
     #                     'rt_compliance_ptv90', 'received_conc_chemo',
     #                     ]  # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician', 'Dmin_PTV_CTV_MARGIN',
     # 'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
-    feature_list = [clinical_features[x] for x in clinical_columns]
+    category_feats = []
+    numerical_feats = []
+    for patient in PatientList:
+        clinical_features = patient.fields
+        numerical_feat = [clinical_features[x] for x in numerical_cols]
+        category_feat = [clinical_features[x] for x in category_cols]
+        category_feats.append(category_feat)
+        numerical_feats.append(numerical_feat)
+
     # numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
     #                   'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
     #                   'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
@@ -345,7 +360,7 @@ def LoadClinicalData(config, PatientList):
     #
     # category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
 
-    return feature_list
+    return category_feats, numerical_feats
 
 
 def interp3(x, y, z, v, xi, yi, zi, **kwargs):
