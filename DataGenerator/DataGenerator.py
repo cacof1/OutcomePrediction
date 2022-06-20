@@ -101,8 +101,8 @@ class DataGenerator(torch.utils.data.Dataset):
             Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
             if len(Dose_match_folder) > 1:
                 raise ValueError(self.PatientList[id].label + ' should only have one match!')
-            if len(Dose_match_folder) < 1:
-                Dose_match_folder = sorted(ScanPath.glob('*Fx1Dose'))
+            # if len(Dose_match_folder) < 1:
+            #     Dose_match_folder = sorted(ScanPath.glob('*Fx1Dose'))
             full_Dose_path = sorted(Path(Dose_match_folder[0], 'resources', 'DICOM', 'files').glob('*.dcm'))
             DoseObj = sitk.ReadImage(str(full_Dose_path[0]))
             dose = sitk.GetArrayFromImage(DoseObj)
