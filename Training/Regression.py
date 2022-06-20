@@ -68,6 +68,12 @@ PatientList = [p for p in PatientList if p.label not in config['FILTER']['patien
 SynchronizeData(config, PatientList)
 print(PatientList)
 
+category_feats, numerical_feats = LoadClinicalData(config, PatientList)
+n_norm = StandardScaler()
+n_norm.fit_transform(numerical_feats)
+c_norm = OneHotEncoder()
+c_norm.fit(category_feats)
+
 """
 clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
                     # 'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
@@ -132,7 +138,8 @@ for i, module in enumerate(module_selected):
         module_dict[module] = Clinical_backbone
 
 dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), train_transform=train_transform,
-                        val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=None, category_norm=None,
+                        val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=n_norm,
+                        category_norm=c_norm,
                         inference=False)
 
 if config['REGULARIZATION']['Label_smoothing']:

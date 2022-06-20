@@ -21,14 +21,8 @@ class DataGenerator(torch.utils.data.Dataset):
         self.keys = keys
         self.inference = inference
         self.PatientList = PatientList
-        category_feats, numerical_feats = LoadClinicalData(config, PatientList)
-        n_norm = StandardScaler()
-        n_norm.fit_transform(numerical_feats)
-
-        c_norm = OneHotEncoder()
-        c_norm.fit(category_feats)
-        self.n_norm = n_norm
-        self.c_norm = c_norm
+        self.n_norm = kwargs['numerical_norm']
+        self.c_norm = kwargs['category_norm']
         self.config = config
 
     def __len__(self):
@@ -107,8 +101,8 @@ class DataGenerator(torch.utils.data.Dataset):
             Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
             if len(Dose_match_folder) > 1:
                 raise ValueError(self.PatientList[id].label + ' should only have one match!')
-            # if len(Dose_match_folder) < 1:
-            #     Dose_match_folder = sorted(ScanPath.glob('*Fx1Dose'))
+            if len(Dose_match_folder) < 1:
+                Dose_match_folder = sorted(ScanPath.glob('*Fx1Dose'))
             full_Dose_path = sorted(Path(Dose_match_folder[0], 'resources', 'DICOM', 'files').glob('*.dcm'))
             DoseObj = sitk.ReadImage(str(full_Dose_path[0]))
             dose = sitk.GetArrayFromImage(DoseObj)
@@ -136,10 +130,10 @@ class DataGenerator(torch.utils.data.Dataset):
 
             # print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
-            category_feat, numerical_feat = LoadClinicalData(self.config, self.PatientList[id])
-            n_category_feat = self.c_norm(category_feat)
-            n_numerical_feat = self.n_norm(numerical_feat)
-            data = [n_category_feat, n_numerical_feat]
+            category_feat, numerical_feat = LoadClinicalData(self.config, [self.PatientList[id]])
+            n_category_feat = self.c_norm.transform(category_feat).toarray()
+            n_numerical_feat = self.n_norm.transform(numerical_feat)
+            data = np.concatenate((n_numerical_feat, n_category_feat), axis=1)
             data = np.array(data, dtype='float')
             # data = clinical_data.iloc[id].to_numpy()
             # num_data = self.n_norm.transform([numerical_data.iloc[id]])
@@ -206,8 +200,8 @@ def QueryFromServer(config, **kwargs):
                 # if v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys():
                     rm_subject_list.append(subject)
                     break
-
-    for v in config['DATA']['clinical_columns']:
+    clinical_feat = np.concatenate([feat for feat in config['CLINICAL'].values()])
+    for v in clinical_feat:
         for nb, subject in enumerate(subject_list):
             if v not in subject.fields.keys():
                 if subject not in rm_subject_list:
@@ -350,7 +344,8 @@ def LoadClinicalData(config, PatientList):
     # 'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
     category_feats = []
     numerical_feats = []
-    for patient in PatientList:
+    for i, patient in enumerate(PatientList):
+        print(patient.label)
         clinical_features = patient.fields
         numerical_feat = [clinical_features[x] for x in numerical_cols]
         category_feat = [clinical_features[x] for x in category_cols]
