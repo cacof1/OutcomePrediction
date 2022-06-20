@@ -10,8 +10,6 @@ import SimpleITK as sitk
 from monai.data import image_reader
 from scipy.ndimage import map_coordinates
 from pathlib import Path
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from Utils.GenerateSmoothLabel import get_train_label
 import nibabel as nib
 
 class DataGenerator(torch.utils.data.Dataset):
