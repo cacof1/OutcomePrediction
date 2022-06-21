@@ -16,9 +16,9 @@ class Classifier2D(pl.LightningModule):
         else:
             parameters = config['MODEL_PARAMETERS']
             model_str = 'nets.' + model + '(**parameters)'
-            loaded_model = eval(model_str)
+            self.backbone = eval(model_str)
             # self.backbone = loaded_model.features
-            self.backbone = loaded_model
+
         # self.backbone.eval()
         # for param in self.backbone.parameters():
         #     param.requires_grad = False

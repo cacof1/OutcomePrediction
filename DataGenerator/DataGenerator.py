@@ -10,8 +10,6 @@ import SimpleITK as sitk
 from monai.data import image_reader
 from scipy.ndimage import map_coordinates
 from pathlib import Path
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from Utils.GenerateSmoothLabel import get_train_label
 import nibabel as nib
 
 class DataGenerator(torch.utils.data.Dataset):
@@ -101,8 +99,8 @@ class DataGenerator(torch.utils.data.Dataset):
             Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
             if len(Dose_match_folder) > 1:
                 raise ValueError(self.PatientList[id].label + ' should only have one match!')
-            if len(Dose_match_folder) < 1:
-                Dose_match_folder = sorted(ScanPath.glob('*Fx1Dose'))
+            # if len(Dose_match_folder) < 1:
+            #     Dose_match_folder = sorted(ScanPath.glob('*Fx1Dose'))
             full_Dose_path = sorted(Path(Dose_match_folder[0], 'resources', 'DICOM', 'files').glob('*.dcm'))
             DoseObj = sitk.ReadImage(str(full_Dose_path[0]))
             dose = sitk.GetArrayFromImage(DoseObj)
@@ -331,7 +329,7 @@ def custom_collate(original_batch):
 
 def LoadClinicalData(config, PatientList):
     category_cols = config['CLINICAL']['category_feat']
-    numerical_cols = config['CLINICAL']['numerical__feat']
+    numerical_cols = config['CLINICAL']['numerical_feat']
 
     # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
     #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
