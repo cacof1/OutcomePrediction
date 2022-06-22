@@ -65,14 +65,18 @@ label = config['DATA']['target']
 
 PatientList = QueryFromServer(config)
 PatientList = [p for p in PatientList if p.label not in config['FILTER']['patient_id']]
-SynchronizeData(config, PatientList)
+# SynchronizeData(config, PatientList)
 print(PatientList)
 
-category_feats, numerical_feats = LoadClinicalData(config, PatientList)
-n_norm = StandardScaler()
-n_norm.fit_transform(numerical_feats)
-c_norm = OneHotEncoder()
-c_norm.fit(category_feats)
+if "Clinical" in config['DATA']['module']:
+    category_feats, numerical_feats = LoadClinicalData(config, PatientList)
+    n_norm = StandardScaler()
+    n_norm.fit_transform(numerical_feats)
+    c_norm = OneHotEncoder()
+    c_norm.fit(category_feats)
+else:
+    c_norm = None
+    n_norm = None
 
 """
 clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',

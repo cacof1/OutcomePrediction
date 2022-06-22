@@ -31,12 +31,19 @@ class DataGenerator(torch.utils.data.Dataset):
         datadict = {}
         roiSize = [10, 40, 40]
         patient_id = self.PatientList[id].label
-        ScanPath = Path(self.config['DATA']['DataFolder'], patient_id, patient_id, 'scans')
+        path = Path(self.config['DATA']['DataFolder'], patient_id)
+        SessionPath = sorted(path.glob(patient_id + '*'))
+        if len(SessionPath) == 1:
+            CTScanPath = Path(SessionPath, patient_id)
+        else:
+            CTScanPath = sorted(path.glob(patient_id + '*FDG*'))
+            CTScanPath = Path(CTScanPath[0], 'scans')
+
         # Load CT dicom series for mask and dose calculation
 
         label = self.PatientList[id].fields[self.config['DATA']['target']]
         # Regex find the correct folder
-        CT_match_folder = sorted(ScanPath.glob('*-CT'))
+        CT_match_folder = sorted(CTScanPath.glob('*-CT'))
         if len(CT_match_folder) > 1:
             raise ValueError(self.PatientList[id].label + ' should only have one match!')
         if len(CT_match_folder) < 1:
@@ -52,7 +59,7 @@ class DataGenerator(torch.utils.data.Dataset):
         CTObj.SetOrigin(correct_Origin)
         # Get the mask of PTV
         if ("Dose" in self.keys or "Anatomy" in self.keys) and 'mask_name' in self.config['DATA']:
-            RT_match_folder = sorted(ScanPath.glob('*-Structs'))
+            RT_match_folder = sorted(CTScanPath.glob('*-Structs'))
             if len(RT_match_folder) > 1:
                 raise ValueError(self.PatientList[id].label + ' should only have one match!')
             full_RT_path = sorted(Path(RT_match_folder[0], 'resources', 'secondary', 'files').glob('*.dcm'))
@@ -96,7 +103,7 @@ class DataGenerator(torch.utils.data.Dataset):
                     datadict["Anatomy"] = torch.from_numpy(transformed_data)
 
         if "Dose" in self.keys:
-            Dose_match_folder = sorted(ScanPath.glob('*-Dose'))
+            Dose_match_folder = sorted(CTScanPath.glob('*-Dose'))
             if len(Dose_match_folder) > 1:
                 raise ValueError(self.PatientList[id].label + ' should only have one match!')
             # if len(Dose_match_folder) < 1:
@@ -125,6 +132,19 @@ class DataGenerator(torch.utils.data.Dataset):
                     datadict["Dose"] = None
                 else:
                     datadict["Dose"] = torch.from_numpy(transformed_data)
+        if 'PET' in self.keys:
+            PETScanPath = sorted(path.glob(patient_id + '*FDG*'))
+            PETScanPath = Path(PETScanPath[0], 'scans')
+            PET_match_folder = sorted(PETScanPath.glob('*-PET_AX_SC'))
+            if len(PET_match_folder) < 1:
+                raise ValueError(self.PatientList[id].label + ' should have one match!')
+            full_PET_path = Path(PET_match_folder[0], 'resources', 'DICOM', 'files')
+
+            PETreader = sitk.ImageSeriesReader()
+            dicom_names = sorted(PETreader.GetGDCMSeriesFileNames(str(full_PET_path)))
+            PETreader.SetFileNames(dicom_names)
+            PETObj = PETreader.Execute()
+            PET = sitk.GetArrayFromImage(CTObj)
 
             # print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
@@ -192,18 +212,20 @@ def QueryFromServer(config, **kwargs):
         for nb, subject in enumerate(subject_list):
             # if(nb>10): break
             # print("Modality", subject, nb)
-            for experiment in subject.experiments.values():
-                scan_dict = experiment.scans.key_map
-                if v not in scan_dict.keys():
+            keys = np.concatenate([list(experiment.scans.key_map.keys()) for experiment in subject.experiments.values()]
+                                  , axis=0)
+            if v not in keys:
                 # if v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys():
-                    rm_subject_list.append(subject)
-                    break
-    clinical_feat = np.concatenate([feat for feat in config['CLINICAL'].values()])
-    for v in clinical_feat:
-        for nb, subject in enumerate(subject_list):
-            if v not in subject.fields.keys():
-                if subject not in rm_subject_list:
-                    rm_subject_list.append(subject)
+                rm_subject_list.append(subject)
+                break
+
+    if 'Clinical' in config['DATA']['module']:
+        clinical_feat = np.concatenate([feat for feat in config['CLINICAL'].values()])
+        for v in clinical_feat:
+            for nb, subject in enumerate(subject_list):
+                if v not in subject.fields.keys():
+                    if subject not in rm_subject_list:
+                        rm_subject_list.append(subject)
 
     rm_subject_list = list(set(rm_subject_list))
     for subject in rm_subject_list:
@@ -251,7 +273,7 @@ def SynchronizeData(config, subject_list):
     ## Verify if data exists in data folder
     for subject in subject_list:
         # print(subject.label, subject.fulluri, dir(subject), subject.uri)
-        scans = subject.experiments[subject.label].scans['CT'].fulldata
+        # scans = subject.experiments[subject.label].scans['CT'].fulldata
         if (not Path(config['DATA']['DataFolder'], subject.label).is_dir()):
             print("Synchronizing ", subject.id, subject.label)
             subject.download_dir(config['DATA']['DataFolder'])
