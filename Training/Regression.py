@@ -65,7 +65,7 @@ label = config['DATA']['target']
 
 PatientList = QueryFromServer(config)
 PatientList = [p for p in PatientList if p.label not in config['FILTER']['patient_id']]
-# SynchronizeData(config, PatientList)
+SynchronizeData(config, PatientList)
 print(PatientList)
 
 if "Clinical" in config['DATA']['module']:
