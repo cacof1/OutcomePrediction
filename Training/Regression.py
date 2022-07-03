@@ -132,8 +132,8 @@ if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
 
 for i, module in enumerate(module_selected):
-    if module == 'Anatomy' or module == 'Dose' or module == 'PET':
-        if config['MODEL_PARAMETERS']['spatial_dims'] == 3:
+    if module == 'CT' or module == 'Dose' or module == 'PET':
+        if config['MODEL']['spatial_dims'] == 3:
             Backbone = Classifier3D(config)
         else:
             Backbone = Classifier2D(config)
