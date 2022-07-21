@@ -68,11 +68,15 @@ PatientList = [p for p in PatientList if p.label not in config['FILTER']['patien
 SynchronizeData(config, PatientList)
 print(PatientList)
 
-category_feats, numerical_feats = LoadClinicalData(config, PatientList)
-n_norm = StandardScaler()
-n_norm.fit_transform(numerical_feats)
-c_norm = OneHotEncoder()
-c_norm.fit(category_feats)
+if "Clinical" in config['DATA']['module']:
+    category_feats, numerical_feats = LoadClinicalData(config, PatientList)
+    n_norm = StandardScaler()
+    n_norm.fit_transform(numerical_feats)
+    c_norm = OneHotEncoder()
+    c_norm.fit(category_feats)
+else:
+    c_norm = None
+    n_norm = None
 
 """
 clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
@@ -128,8 +132,8 @@ if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
 
 for i, module in enumerate(module_selected):
-    if module == 'Anatomy' or module == 'Dose' or module == 'PET':
-        if config['MODEL_PARAMETERS']['spatial_dims'] == 3:
+    if module == 'CT' or module == 'Dose' or module == 'PET':
+        if config['MODEL']['spatial_dims'] == 3:
             Backbone = Classifier3D(config)
         else:
             Backbone = Classifier2D(config)
