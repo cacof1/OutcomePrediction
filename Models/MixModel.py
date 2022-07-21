@@ -32,10 +32,7 @@ class MixModel(LightningModule):
             self.loss_fcn = torch.nn.MSELoss()
 
     def forward(self, datadict, labels):
-        try:
-            features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
-        except:
-            print('model wrong!')
+        features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
         if self.config['REGULARIZATION']['Feature_smoothing']:
             if self.training and self.current_epoch >= 1:
                 features = self.FDS.smooth(features, labels, self.current_epoch)

@@ -10,7 +10,6 @@ import SimpleITK as sitk
 from monai.data import image_reader
 from scipy.ndimage import map_coordinates
 from pathlib import Path
-from Utils.GenerateSmoothLabel import get_train_label
 import nibabel as nib
 
 class DataGenerator(torch.utils.data.Dataset):
@@ -20,8 +19,8 @@ class DataGenerator(torch.utils.data.Dataset):
         self.keys = keys
         self.inference = inference
         self.PatientList = PatientList
-        # self.n_norm = kwargs['numerical_norm']
-        # self.c_norm = kwargs['category_norm']
+        self.n_norm = kwargs['numerical_norm']
+        self.c_norm = kwargs['category_norm']
         self.config = config
 
     def __len__(self):
@@ -129,8 +128,11 @@ class DataGenerator(torch.utils.data.Dataset):
 
             # print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
         if "Clinical" in self.keys:
-            data = LoadClinicalData(self.config, self.PatientList[id])
-            data = np.array(data, dtype='float')
+            category_feat, numerical_feat = LoadClinicalData(self.config, [self.PatientList[id]])
+            n_category_feat = self.c_norm.transform(category_feat).toarray()
+            n_numerical_feat = self.n_norm.transform(numerical_feat)
+            data = np.concatenate((n_numerical_feat, n_category_feat), axis=1)
+            data = np.squeeze(data)
             # data = clinical_data.iloc[id].to_numpy()
             # num_data = self.n_norm.transform([numerical_data.iloc[id]])
             # cat_data = self.c_norm.transform([category_data.iloc[id]]).toarray()
@@ -196,8 +198,8 @@ def QueryFromServer(config, **kwargs):
                 # if v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys():
                     rm_subject_list.append(subject)
                     break
-
-    for v in config['DATA']['clinical_columns']:
+    clinical_feat = np.concatenate([feat for feat in config['CLINICAL'].values()])
+    for v in clinical_feat:
         for nb, subject in enumerate(subject_list):
             if v not in subject.fields.keys():
                 if subject not in rm_subject_list:
@@ -326,8 +328,9 @@ def custom_collate(original_batch):
 
 
 def LoadClinicalData(config, PatientList):
-    clinical_features = PatientList.fields
-    clinical_columns = config['DATA']['clinical_columns']
+    category_cols = config['CLINICAL']['category_feat']
+    numerical_cols = config['CLINICAL']['numerical_feat']
+
     # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
     #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
     #                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
@@ -337,7 +340,15 @@ def LoadClinicalData(config, PatientList):
     #                     'rt_compliance_ptv90', 'received_conc_chemo',
     #                     ]  # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician', 'Dmin_PTV_CTV_MARGIN',
     # 'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
-    feature_list = [clinical_features[x] for x in clinical_columns]
+    category_feats = []
+    numerical_feats = []
+    for i, patient in enumerate(PatientList):
+        clinical_features = patient.fields
+        numerical_feat = [clinical_features[x] for x in numerical_cols]
+        category_feat = [clinical_features[x] for x in category_cols]
+        category_feats.append(category_feat)
+        numerical_feats.append(numerical_feat)
+
     # numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
     #                   'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
     #                   'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
@@ -345,7 +356,7 @@ def LoadClinicalData(config, PatientList):
     #
     # category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
 
-    return feature_list
+    return category_feats, numerical_feats
 
 
 def interp3(x, y, z, v, xi, yi, zi, **kwargs):

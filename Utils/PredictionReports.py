@@ -106,6 +106,7 @@ class PredictionReports(TensorBoardLogger):
         fig = plt.figure()
         plt.plot(va_times, cph_auc, marker="o")
         plt.axhline(cph_mean_auc, linestyle="--")
+        plt.ylim([0, 1])
         plt.xlabel("survival months")
         plt.ylabel("time-dependent AUC")
         plt.grid(True)
