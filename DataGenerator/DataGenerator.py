@@ -37,7 +37,10 @@ class DataGenerator(torch.utils.data.Dataset):
             CTScanPath = Path(path, patient_id, 'scans')
         else:
             CTScanPath = sorted(path.glob(patient_id + '*' + self.config['ImageSession']['CT'] + '*'))
-            CTScanPath = Path(CTScanPath[0], 'scans')
+            try:
+                CTScanPath = Path(CTScanPath[0], 'scans')
+            except:
+                print('test')
 
         # Load CT dicom series for mask and dose calculation
 
@@ -216,6 +219,8 @@ def QueryFromServer(config, **kwargs):
     ## Verify fit with clinical criteria
     subject_list = []
     clinical_keys = list(config['CRITERIA'].keys())
+    target = config['DATA']['target']
+
     for nb, subject in enumerate(project.subjects.values()):
         # print("Criteria", subject, nb)
         # if(nb>10): break
@@ -233,6 +238,13 @@ def QueryFromServer(config, **kwargs):
             # print("Modality", subject, nb)
             # keys = np.concatenate([list(experiment.scans.key_map.keys()) for experiment in subject.experiments.values()]
             #                       , axis=0)
+
+            # remove the target is nan
+            if subject.fields[target] == 'nan':
+                rm_subject_list.append(subject)
+                break
+
+            # verity the images
             if len(config['ImageSession'].items()) > 1:
                 for experiment in subject.experiments.values():
                     if config['ImageSession'].get(k) in experiment.label:
@@ -244,7 +256,7 @@ def QueryFromServer(config, **kwargs):
             if v not in keys:
                 # if v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys():
                 rm_subject_list.append(subject)
-
+    # Verify the clinical features
     if 'Clinical' in config['DATA']['module']:
         clinical_feat = np.concatenate([feat for feat in config['CLINICAL'].values()])
         for v in clinical_feat:
