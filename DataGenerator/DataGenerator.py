@@ -37,19 +37,14 @@ class DataGenerator(torch.utils.data.Dataset):
             CTScanPath = Path(path, patient_id, 'scans')
         else:
             CTScanPath = sorted(path.glob(patient_id + '*' + self.config['ImageSession']['CT'] + '*'))
-            try:
-                CTScanPath = Path(CTScanPath[0], 'scans')
-            except:
-                print('test')
+            CTScanPath = Path(CTScanPath[0], 'scans')
 
         # Load CT dicom series for mask and dose calculation
 
         label = self.PatientList[id].fields[self.config['DATA']['target']]
         # Regex find the correct folder
-        try:
-            CT_match_folder = sorted(CTScanPath.glob('*-CT'))
-        except:
-            print('test')
+
+        CT_match_folder = sorted(CTScanPath.glob('*-CT'))
 
         if len(CT_match_folder) > 1:
             raise ValueError(self.PatientList[id].label + ' should only have one match!')
