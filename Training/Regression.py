@@ -152,7 +152,8 @@ else:
     weights = None
     label_range = None
 
-trainer = Trainer(gpus=1, max_epochs=20, logger=logger)  # callbacks=callbacks,
+ngpu = torch.cuda.device_count()
+trainer = Trainer(gpus=ngpu, accelerator='ddp', max_epochs=20, logger=logger)  # callbacks=callbacks,
 model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 trainer.fit(model, dataloader)
 

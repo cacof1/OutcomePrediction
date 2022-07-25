@@ -197,12 +197,13 @@ class DataModule(LightningDataModule):
         self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
-                                                  num_workers=0, collate_fn=None)
+                                                  num_workers=0, drop_last=True, collate_fn=None)
 
     def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=0,
-                                                  collate_fn=None)
+                                                  drop_last=True, collate_fn=None)
 
-    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, collate_fn=None)
+    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, drop_last=True,
+                                                  collate_fn=None)
 
 
 def QueryFromServer(config, **kwargs):
