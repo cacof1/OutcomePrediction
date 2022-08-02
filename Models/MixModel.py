@@ -45,11 +45,14 @@ class MixModel(LightningModule):
         features = self.forward(datadict, label)
         prediction = self.classifier(features)
         print(prediction, label)
-        loss = self.loss_fcn(prediction.squeeze(), batch[-1])
+        try:
+            loss = self.loss_fcn(prediction.squeeze(), batch[-1])
+        except:
+            print('test')
         out['features'] = features.detach()
         out['label'] = label
         out['prediction'] = prediction.detach()
-        self.log("train_loss", loss, on_step=False, on_epoch=True)
+        self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             if self.config['REGULARIZATION']['Label_smoothing']:
                 loss = WeightedMSE(prediction.squeeze(dim=1), batch[-1], weights=self.weights,
@@ -58,8 +61,8 @@ class MixModel(LightningModule):
             out['MAE'] = MAE.detach()
             if 'Dose' in self.config['DATA']['module']:
                 out['dose'] = datadict['Dose']
-            if 'Anatomy' in self.config['DATA']['module']:
-                out['img'] = datadict['Anatomy']
+            if 'CT' in self.config['DATA']['module']:
+                out['img'] = datadict['CT']
         # prefix = 'train_step_'
         # self.logger.report_step(prediction, label, self.global_step, prefix)
         # Label smoothing for Regression
@@ -90,7 +93,7 @@ class MixModel(LightningModule):
         datadict, label = batch
         prediction = self.classifier(self.forward(datadict, label))
         val_loss = self.loss_fcn(prediction.squeeze(), batch[-1])
-        self.log("val_loss", val_loss, on_step=False, on_epoch=True)
+        self.log("val_loss", val_loss, on_step=False, on_epoch=True, sync_dist=True)
         # prefix = 'val_step_'
         # self.logger.report_step(prediction, label, batch_idx, prefix)
         # Finding worst case
@@ -99,8 +102,8 @@ class MixModel(LightningModule):
             out['MAE'] = MAE
             if 'Dose' in self.config['DATA']['module']:
                 out['dose'] = datadict['Dose']
-            if 'Anatomy' in self.config['DATA']['module']:
-                out['img'] = datadict['Anatomy']
+            if 'CT' in self.config['DATA']['module']:
+                out['img'] = datadict['CT']
         out['prediction'] = prediction.squeeze(dim=1)
         out['label'] = label
 
@@ -125,12 +128,16 @@ class MixModel(LightningModule):
             test_out['MAE'] = MAE
             if 'Dose' in self.config['DATA']['module']:
                 test_out['dose'] = datadict['Dose']
-            if 'Anatomy' in self.config['DATA']['module']:
-                test_out['img'] = datadict['Anatomy']
+            if 'CT' in self.config['DATA']['module']:
+                test_out['img'] = datadict['CT']
         test_out['prediction'] = prediction.squeeze(dim=1)
         test_out['label'] = label
         test_out['loss'] = test_loss
         return test_out
+
+    def weights_init(self, m):
+        if isinstance(m, nn.Conv3d) or isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight.data)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)

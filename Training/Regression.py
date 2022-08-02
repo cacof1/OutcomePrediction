@@ -153,7 +153,7 @@ else:
     label_range = None
 
 ngpu = torch.cuda.device_count()
-trainer = Trainer(gpus=ngpu, accelerator='ddp', max_epochs=20, logger=logger)  # callbacks=callbacks,
+trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10)  # callbacks=callbacks,
 model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 trainer.fit(model, dataloader)
 
@@ -170,10 +170,14 @@ with torch.no_grad():
     prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
     prefix = 'test_'
     if config['MODEL']['Prediction_type'] == 'Regression':
-        print('loss', model.loss_fcn(prediction_labels, validation_labels))
+        logger.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels)))
+        logger.generate_cumulative_dynamic_auc(prediction_labels, validation_labels, 0, prefix)
+        regression_out = logger.regression_matrix(prediction_labels, validation_labels, prefix)
+        logger.experiment.add_text('test_cindex: ', str(regression_out[prefix + 'cindex']))
+        logger.experiment.add_text('test_r2: ', str(regression_out[prefix + 'r2']))
         if 'WorstCase' in config['REPORT']['matrix']:
             worst_record = logger.worst_case_show(outs, prefix)
-            print('worst_AE', worst_record[prefix+'worst_AE'])
+            logger.experiment.add_text('worst_test_AE: ', str(worst_record[prefix+'worst_AE']))
             if 'Anatomy' in config['DATA']['module']:
                 text = 'test_worst_case_img'
                 logger.log_image(worst_record[prefix+'worst_img'],text)
@@ -185,6 +189,6 @@ with torch.no_grad():
         classification_out = logger.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
         if 'ROC' in config['REPORT']['matrix']:
             logger.plot_AUROC(prediction_labels, validation_labels, prefix)
-            print('AUROC:', classification_out[prefix + 'roc'])
+            logger.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
         if 'Specificity' in config['REPORT']['matrix']:
-            print('Specificity:', classification_out[prefix+'specificity'])
+            logger.experiment.add_text('Specificity:', str(classification_out[prefix+'specificity']))

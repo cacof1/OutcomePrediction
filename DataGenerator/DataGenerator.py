@@ -37,14 +37,19 @@ class DataGenerator(torch.utils.data.Dataset):
             CTScanPath = Path(path, patient_id, 'scans')
         else:
             CTScanPath = sorted(path.glob(patient_id + '*' + self.config['ImageSession']['CT'] + '*'))
-            CTScanPath = Path(CTScanPath[0], 'scans')
+            try:
+                CTScanPath = Path(CTScanPath[0], 'scans')
+            except:
+                print('test')
 
         # Load CT dicom series for mask and dose calculation
 
         label = self.PatientList[id].fields[self.config['DATA']['target']]
         # Regex find the correct folder
-
-        CT_match_folder = sorted(CTScanPath.glob('*-CT'))
+        try:
+            CT_match_folder = sorted(CTScanPath.glob('*-CT'))
+        except:
+            print('test')
 
         if len(CT_match_folder) > 1:
             raise ValueError(self.PatientList[id].label + ' should only have one match!')
@@ -52,6 +57,7 @@ class DataGenerator(torch.utils.data.Dataset):
             raise ValueError(self.PatientList[id].label + ' should have one match!')
         full_CT_path = Path(CT_match_folder[0], 'resources', 'DICOM', 'files')
 
+        sitk.ProcessObject_SetGlobalWarningDisplay(False)
         CTreader = sitk.ImageSeriesReader()
         dicom_names = sorted(CTreader.GetGDCMSeriesFileNames(str(full_CT_path)))
         CTreader.SetFileNames(dicom_names)
@@ -128,7 +134,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 try:
                     transformed_data = self.transform(datadict["Dose"])
                 except:
-                    print(self.PatientList[id].label + 'has transform problem.')
+                    print(self.PatientList[id].label + ' has transform problem.')
 
                 if transformed_data is None:
                     datadict["Dose"] = None

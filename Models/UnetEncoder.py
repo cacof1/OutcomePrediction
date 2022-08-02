@@ -19,3 +19,8 @@ class UnetEncoder(nn.Module):
         for i, down in enumerate(self.encoder):
             x = down(x)
         return x
+
+
+    def weights_init(self, m):
+        if isinstance(m, nn.Conv3d) or isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight.data)

@@ -45,8 +45,10 @@ class PredictionReports(TensorBoardLogger):
                 description = description + '_'
             description = description + param + '+' + '+'.join(clinical_criteria)
         # Return the experiment version, int or str.
+        if self._version is None:
+             self._version = self._get_next_version()
         modules = self.config['DATA']['module']
-        description = description + '_' + 'modalities' + '+' + '+'.join(modules)
+        description = description + '_' + 'modalities' + '+' + '+'.join(modules) + '_' + str(self._version)
 
         return description
 
@@ -134,13 +136,13 @@ class PredictionReports(TensorBoardLogger):
             loss = data['MAE']
             idx = torch.argmax(loss)
             if loss[idx] > worst_AE:
-                if 'Anatomy' in self.config['DATA']['module']:
+                if 'CT' in self.config['DATA']['module']:
                     worst_img = data['img'][idx]
                 if 'Dose' in self.config['DATA']['module']:
                     worst_dose = data['dose'][idx]
                 worst_AE = loss[idx]
         out[prefix + 'worst_AE'] = worst_AE
-        if 'Anatomy' in self.config['DATA']['module']:
+        if 'CT' in self.config['DATA']['module']:
             out[prefix + 'worst_img'] = worst_img
         if 'Dose' in self.config['DATA']['module']:
             out[prefix + 'worst_dose'] = worst_dose
@@ -164,7 +166,7 @@ class PredictionReports(TensorBoardLogger):
             if 'WorstCase' in self.config['REPORT']['matrix']:
                 worst_record = self.worst_case_show(validation_step_outputs, prefix)
                 self.log_metrics({prefix + 'worst_AE': worst_record[prefix + 'worst_AE']}, current_epoch)
-                if 'Anatomy' in self.config['DATA']['module']:
+                if 'CT' in self.config['DATA']['module']:
                     text = 'validate_worst_case_img'
                     self.log_image(worst_record[prefix + 'worst_img'], text, current_epoch)
                 if 'Dose' in self.config['DATA']['module']:

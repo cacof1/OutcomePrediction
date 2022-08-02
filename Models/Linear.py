@@ -42,6 +42,10 @@ class Linear(pl.LightningModule):
         prediction  = self.forward(image)
         loss = self.loss_fcn(prediction, label)
         return loss
+
+    def weights_init(self, m):
+        if isinstance(m, nn.Linear) or isinstance(m, nn.LayerNorm):
+            nn.init.xavier_uniform_(m.weight.data)
         
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
