@@ -52,9 +52,9 @@ filename = config['MODEL']['Backbone'] + '_DeepSurv'
 
 callbacks = [
     ModelCheckpoint(dirpath='./',
-                    monitor='loss',
+                    monitor='train_loss',
                     filename=filename,
-                    save_top_k=1,
+                    save_top_k=3,
                     mode='min'),
     
     EarlyStopping(monitor='val_loss',
@@ -153,11 +153,11 @@ else:
     label_range = None
 
 ngpu = torch.cuda.device_count()
-trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10)  # callbacks=callbacks,
+trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10, callbacks=callbacks)  # callbacks=callbacks,
 model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 trainer.fit(model, dataloader)
 
-print('start testing....')
+print('start testing...')
 worstCase = 0
 with torch.no_grad():
     outs = []
