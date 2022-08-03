@@ -157,6 +157,7 @@ trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10)  #
 model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 trainer.fit(model, dataloader)
 
+print('start testing....')
 worstCase = 0
 with torch.no_grad():
     outs = []
@@ -192,3 +193,5 @@ with torch.no_grad():
             logger.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
         if 'Specificity' in config['REPORT']['matrix']:
             logger.experiment.add_text('Specificity:', str(classification_out[prefix+'specificity']))
+
+print('test ends')
