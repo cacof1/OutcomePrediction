@@ -45,12 +45,26 @@ class PredictionReports(TensorBoardLogger):
                 description = description + '_'
             description = description + param + '+' + '+'.join(clinical_criteria)
         # Return the experiment version, int or str.
-        if self._version is None:
-             self._version = self._get_next_version()
+        self._version = self._get_next_version()
         modules = self.config['DATA']['module']
         description = description + '_' + 'modalities' + '+' + '+'.join(modules) + '_' + str(self._version)
 
         return description
+
+    def _get_next_version(self):
+        root_dir = self.root_dir
+        listdir_info = self._fs.listdir(root_dir)
+        existing_versions = []
+        for listing in listdir_info:
+            d = listing["name"]
+            bn = os.path.basename(d)
+            if self._fs.isdir(d):
+                dir_ver = bn.split("_")[-1]
+                existing_versions.append(int(dir_ver))
+        if len(existing_versions) == 0:
+            return 0
+
+        return max(existing_versions) + 1
 
     def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None):
         for k, v in metrics.items():
