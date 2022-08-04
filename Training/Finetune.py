@@ -40,17 +40,17 @@ val_transform = tio.Compose([
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
-filename = config['MODEL']['Backbone'] + '_DeepSurv'
+filename = config['MODEL']['Backbone'] + '_' + '_'.join(config['DATA']['module']) + '_Finetune'
 
 callbacks = [
     ModelCheckpoint(dirpath='./',
-                    monitor='train_loss',
+                    monitor='val_loss',
                     filename=filename,
-                    save_top_k=3,
+                    save_top_k=1,
                     mode='min'),
 
-    EarlyStopping(monitor='val_loss',
-                  check_finite=True),
+    # EarlyStopping(monitor='val_loss',
+    #               check_finite=True),
 ]
 
 label = config['DATA']['target']
@@ -132,7 +132,7 @@ else:
     label_range = None
 
 ngpu = torch.cuda.device_count()
-trainer = Trainer(gpus=ngpu, max_epochs=1, logger=logger, log_every_n_steps=10,
+trainer = Trainer(gpus=ngpu, max_epochs=20, logger=logger, log_every_n_steps=10,
                   callbacks=callbacks)  # callbacks=callbacks,
 model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 
