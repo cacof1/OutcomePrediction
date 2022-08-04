@@ -57,8 +57,8 @@ callbacks = [
                     save_top_k=1,
                     mode='min'),
     
-    EarlyStopping(monitor='train_loss',
-                  check_finite=True),
+    # EarlyStopping(monitor='train_loss',
+    #               check_finite=True),
 ]
 
 label = config['DATA']['target']
