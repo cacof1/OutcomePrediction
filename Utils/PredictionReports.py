@@ -45,20 +45,22 @@ class PredictionReports(TensorBoardLogger):
                 description = description + '_'
             description = description + param + '+' + '+'.join(clinical_criteria)
         # Return the experiment version, int or str.
-        self._version = self._get_next_version()
+
         modules = self.config['DATA']['module']
+        sub_str = description + '_' + 'modalities' + '+' + '+'.join(modules)
+        self._version = self._get_next_version(sub_str)
         description = description + '_' + 'modalities' + '+' + '+'.join(modules) + '_' + str(self._version)
 
         return description
 
-    def _get_next_version(self):
+    def _get_next_version(self, sub_str):
         root_dir = self.root_dir
         listdir_info = self._fs.listdir(root_dir)
         existing_versions = []
         for listing in listdir_info:
             d = listing["name"]
             bn = os.path.basename(d)
-            if self._fs.isdir(d):
+            if self._fs.isdir(d) and bn.startswith(sub_str):
                 dir_ver = bn.split("_")[-1]
                 existing_versions.append(int(dir_ver))
         if len(existing_versions) == 0:
