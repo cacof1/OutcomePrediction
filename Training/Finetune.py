@@ -132,7 +132,7 @@ else:
     label_range = None
 
 ngpu = torch.cuda.device_count()
-trainer = Trainer(gpus=ngpu, max_epochs=20, logger=logger, log_every_n_steps=10,
+trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10,
                   callbacks=callbacks)  # callbacks=callbacks,
 model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 
