@@ -5,4 +5,6 @@ lightning_logs
 Training/lightning_logs/
 Training/*.ckpt
 Training/DeepSurv*.ckpt
+*.ckpt
+*.ini
 wandb/

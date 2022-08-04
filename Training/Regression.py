@@ -47,17 +47,17 @@ val_transform = tio.Compose([
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
-filename = config['MODEL']['Backbone'] + '_DeepSurv'
+filename = config['MODEL']['Backbone'] + '_' + '_'.join(config['DATA']['module'])
 
 
 callbacks = [
     ModelCheckpoint(dirpath='./',
-                    monitor='train_loss',
+                    monitor='val_loss',
                     filename=filename,
-                    save_top_k=3,
+                    save_top_k=1,
                     mode='min'),
     
-    EarlyStopping(monitor='val_loss',
+    EarlyStopping(monitor='train_loss',
                   check_finite=True),
 ]
 
