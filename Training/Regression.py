@@ -52,12 +52,12 @@ filename = config['MODEL']['Backbone'] + '_' + '_'.join(config['DATA']['module']
 
 callbacks = [
     ModelCheckpoint(dirpath='./',
-                    monitor='train_loss',
+                    monitor='val_loss',
                     filename=filename,
                     save_top_k=1,
                     mode='min'),
     
-    EarlyStopping(monitor='val_loss',
+    EarlyStopping(monitor='train_loss',
                   check_finite=True),
 ]
 
