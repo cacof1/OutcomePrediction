@@ -163,7 +163,7 @@ with torch.no_grad():
         if 'WorstCase' in config['REPORT']['matrix']:
             worst_record = logger.worst_case_show(outs, prefix)
             logger.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
-            if 'Anatomy' in config['DATA']['module']:
+            if 'CT' in config['DATA']['module']:
                 text = 'test_worst_case_img'
                 logger.log_image(worst_record[prefix + 'worst_img'], text)
             if 'Dose' in config['DATA']['module']:
