@@ -5,6 +5,9 @@ from pytorch_lightning import LightningDataModule, LightningModule, Trainer, see
 import sys, os
 import torchio as tio
 
+torch.cuda.empty_cache()
+torch.cuda.memory_summary(device=None,abbreviated=False)
+
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
 
