@@ -45,6 +45,8 @@ class DataGenerator(torch.utils.data.Dataset):
         # Load CT dicom series for mask and dose calculation
 
         label = self.PatientList[id].fields[self.config['DATA']['target']]
+        if self.config['MODEL']['Prediction_type'] == 'Classification':
+            label = np.float32(np.float32(label) > self.config['MODEL']['Classification_threshold'])
         # Regex find the correct folder
         try:
             CT_match_folder = sorted(CTScanPath.glob('*-CT'))
@@ -203,9 +205,9 @@ class DataModule(LightningDataModule):
         self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
-                                                  num_workers=0, drop_last=True, collate_fn=None)
+                                                  num_workers=64, drop_last=True, collate_fn=None)
 
-    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=0,
+    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=64,
                                                   drop_last=True, collate_fn=None)
 
     def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, drop_last=True,
