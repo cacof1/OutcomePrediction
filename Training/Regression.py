@@ -43,7 +43,7 @@ val_transform = tio.Compose([
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
-filename = config['MODEL']['Backbone'] + '_' + '_'.join(config['DATA']['module']) + '_Finetune'
+filename = config['MODEL']['Backbone'] + '_' + '_'.join(config['DATA']['module'])
 
 callbacks = [
     ModelCheckpoint(dirpath='./',
