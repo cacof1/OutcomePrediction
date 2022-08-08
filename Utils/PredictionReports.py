@@ -192,7 +192,7 @@ class PredictionReports(TensorBoardLogger):
         if self.config['MODEL']['Prediction_type'] == 'Classification':
             classification_out = self.classification_matrix(prediction.squeeze(), label, prefix)
             self.log_metrics(classification_out, current_epoch)
-            if 'RUC' in self.config['REPORT']['matrix']:
+            if 'ROC' in self.config['REPORT']['matrix']:
                 self.plot_AUROC(prediction.squeeze(), label, prefix, current_epoch)
 
 
