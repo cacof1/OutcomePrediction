@@ -399,8 +399,11 @@ def custom_collate(original_batch):
 
 
 def LoadClinicalData(config, PatientList):
-    category_cols = config['CLINICAL']['category_feat']
-    numerical_cols = config['CLINICAL']['numerical_feat']
+
+    if 'category_feat' in config['CLINICAL']:
+        category_cols = config['CLINICAL']['category_feat']
+    if 'numerical_feat' in config['CLINICAL']:
+        numerical_cols = config['CLINICAL']['numerical_feat']
 
     # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
     #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
@@ -415,10 +418,13 @@ def LoadClinicalData(config, PatientList):
     numerical_feats = []
     for i, patient in enumerate(PatientList):
         clinical_features = patient.fields
-        numerical_feat = [clinical_features[x] for x in numerical_cols]
-        category_feat = [clinical_features[x] for x in category_cols]
-        category_feats.append(category_feat)
-        numerical_feats.append(numerical_feat)
+        if 'numerical_feat' in config['CLINICAL']:
+            numerical_feat = [clinical_features[x] for x in numerical_cols]
+            numerical_feats.append(numerical_feat)
+        if 'category_feat' in config['CLINICAL']:
+            category_feat = [clinical_features[x] for x in category_cols]
+            category_feats.append(category_feat)
+
 
     # numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
     #                   'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',

@@ -103,13 +103,17 @@ print(PatientList)
 
 if "Clinical" in config['DATA']['module']:
     category_feats, numerical_feats = LoadClinicalData(config, PatientList)
-    n_norm = StandardScaler()
-    n_norm.fit_transform(numerical_feats)
-    c_norm = OneHotEncoder()
-    c_norm.fit(category_feats)
-else:
-    c_norm = None
-    n_norm = None
+    if len(category_feats) > 0:
+        c_norm = OneHotEncoder()
+        c_norm.fit(category_feats)
+    else:
+        c_norm = None
+    if len(numerical_feats) > 0:
+        n_norm = StandardScaler()
+        n_norm.fit_transform(numerical_feats)
+    else:
+        n_norm = None
+
 dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), train_transform=train_transform,
                         val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=n_norm,
                         category_norm=c_norm,
