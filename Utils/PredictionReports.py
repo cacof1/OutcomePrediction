@@ -45,10 +45,28 @@ class PredictionReports(TensorBoardLogger):
                 description = description + '_'
             description = description + param + '+' + '+'.join(clinical_criteria)
         # Return the experiment version, int or str.
+
         modules = self.config['DATA']['module']
-        description = description + '_' + 'modalities' + '+' + '+'.join(modules)
+        sub_str = description + '_' + 'modalities' + '+' + '+'.join(modules)
+        self._version = self._get_next_version(sub_str)
+        description = description + '_' + 'modalities' + '+' + '+'.join(modules) + '_' + str(self._version)
 
         return description
+
+    def _get_next_version(self, sub_str):
+        root_dir = self.root_dir
+        listdir_info = self._fs.listdir(root_dir)
+        existing_versions = []
+        for listing in listdir_info:
+            d = listing["name"]
+            bn = os.path.basename(d)
+            if self._fs.isdir(d) and bn.startswith(sub_str):
+                dir_ver = bn.split("_")[-1]
+                existing_versions.append(int(dir_ver))
+        if len(existing_versions) == 0:
+            return 0
+
+        return max(existing_versions) + 1
 
     def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None):
         for k, v in metrics.items():
@@ -134,13 +152,13 @@ class PredictionReports(TensorBoardLogger):
             loss = data['MAE']
             idx = torch.argmax(loss)
             if loss[idx] > worst_AE:
-                if 'Anatomy' in self.config['DATA']['module']:
+                if 'CT' in self.config['DATA']['module']:
                     worst_img = data['img'][idx]
                 if 'Dose' in self.config['DATA']['module']:
                     worst_dose = data['dose'][idx]
                 worst_AE = loss[idx]
         out[prefix + 'worst_AE'] = worst_AE
-        if 'Anatomy' in self.config['DATA']['module']:
+        if 'CT' in self.config['DATA']['module']:
             out[prefix + 'worst_img'] = worst_img
         if 'Dose' in self.config['DATA']['module']:
             out[prefix + 'worst_dose'] = worst_dose
@@ -164,7 +182,7 @@ class PredictionReports(TensorBoardLogger):
             if 'WorstCase' in self.config['REPORT']['matrix']:
                 worst_record = self.worst_case_show(validation_step_outputs, prefix)
                 self.log_metrics({prefix + 'worst_AE': worst_record[prefix + 'worst_AE']}, current_epoch)
-                if 'Anatomy' in self.config['DATA']['module']:
+                if 'CT' in self.config['DATA']['module']:
                     text = 'validate_worst_case_img'
                     self.log_image(worst_record[prefix + 'worst_img'], text, current_epoch)
                 if 'Dose' in self.config['DATA']['module']:
@@ -174,7 +192,7 @@ class PredictionReports(TensorBoardLogger):
         if self.config['MODEL']['Prediction_type'] == 'Classification':
             classification_out = self.classification_matrix(prediction.squeeze(), label, prefix)
             self.log_metrics(classification_out, current_epoch)
-            if 'RUC' in self.config['REPORT']['matrix']:
+            if 'ROC' in self.config['REPORT']['matrix']:
                 self.plot_AUROC(prediction.squeeze(), label, prefix, current_epoch)
 
 

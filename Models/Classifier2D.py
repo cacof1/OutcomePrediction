@@ -5,16 +5,17 @@ from torchvision import models
 from monai.networks import nets
 
 class Classifier2D(pl.LightningModule):
-    def __init__(self, config):
+    def __init__(self, config, module_str):
         super().__init__()
         self.config = config
-        model = config['MODEL']['Backbone']
+        self.module_str = module_str
+        model = config['MODEL'][module_str + '_Backbone']
 
         self.linear1 = nn.LazyLinear(72)
         if model == 'Vit':
             self.backbone = models.vit_b_16(pretrained=True).eval()
         else:
-            parameters = config['MODEL_PARAMETERS']
+            parameters = config[module_str + '_MODEL_PARAMETERS']
             model_str = 'nets.' + model + '(**parameters)'
             self.backbone = eval(model_str)
             # self.backbone = loaded_model.features
@@ -30,7 +31,7 @@ class Classifier2D(pl.LightningModule):
         #     param.requires_grad = False
 
     def convert2d(self, x):
-        if self.config['MODEL_PARAMETERS']['in_channels'] == 3:
+        if self.config[self.module_str +'_MODEL_PARAMETERS']['in_channels'] == 3:
             x = x.repeat(1, 3, 1, 1)
         features = self.backbone(x)
         features = features.flatten(1)
@@ -44,5 +45,9 @@ class Classifier2D(pl.LightningModule):
         features = torch.cat([self.convert2d(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
         features = features.flatten(start_dim=1)
         return features
+
+    def weights_init(self, m):
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight.data)
 
 

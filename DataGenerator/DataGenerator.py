@@ -37,14 +37,21 @@ class DataGenerator(torch.utils.data.Dataset):
             CTScanPath = Path(path, patient_id, 'scans')
         else:
             CTScanPath = sorted(path.glob(patient_id + '*' + self.config['ImageSession']['CT'] + '*'))
-            CTScanPath = Path(CTScanPath[0], 'scans')
+            try:
+                CTScanPath = Path(CTScanPath[0], 'scans')
+            except:
+                print('test')
 
         # Load CT dicom series for mask and dose calculation
 
         label = self.PatientList[id].fields[self.config['DATA']['target']]
+        if self.config['MODEL']['Prediction_type'] == 'Classification':
+            label = np.float32(np.float32(label) > self.config['MODEL']['Classification_threshold'])
         # Regex find the correct folder
-
-        CT_match_folder = sorted(CTScanPath.glob('*-CT'))
+        try:
+            CT_match_folder = sorted(CTScanPath.glob('*-CT'))
+        except:
+            print('test')
 
         if len(CT_match_folder) > 1:
             raise ValueError(self.PatientList[id].label + ' should only have one match!')
@@ -52,6 +59,7 @@ class DataGenerator(torch.utils.data.Dataset):
             raise ValueError(self.PatientList[id].label + ' should have one match!')
         full_CT_path = Path(CT_match_folder[0], 'resources', 'DICOM', 'files')
 
+        sitk.ProcessObject_SetGlobalWarningDisplay(False)
         CTreader = sitk.ImageSeriesReader()
         dicom_names = sorted(CTreader.GetGDCMSeriesFileNames(str(full_CT_path)))
         CTreader.SetFileNames(dicom_names)
@@ -128,7 +136,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 try:
                     transformed_data = self.transform(datadict["Dose"])
                 except:
-                    print(self.PatientList[id].label + 'has transform problem.')
+                    print(self.PatientList[id].label + ' has transform problem.')
 
                 if transformed_data is None:
                     datadict["Dose"] = None
@@ -197,12 +205,13 @@ class DataModule(LightningDataModule):
         self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
-                                                  num_workers=0, collate_fn=None)
+                                                  num_workers=64, drop_last=True, collate_fn=None)
 
-    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=0,
+    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=64,
+                                                  drop_last=True, collate_fn=None)
+
+    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, drop_last=True,
                                                   collate_fn=None)
-
-    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, collate_fn=None)
 
 
 def QueryFromServer(config, **kwargs):
