@@ -197,8 +197,8 @@ class DataModule(LightningDataModule):
         self.batch_size = batch_size
 
         # Convert regression value to histogram class
-        train, val_test = train_test_split(PatientList, train_size=0.7)
-        test, val = train_test_split(val_test, test_size=0.66)
+        train_val, test = train_test_split(PatientList, train_size=0.85, random_state=42, shuffle=False)
+        train, val = train_test_split(train_val, test_size=0.7, random_state=np.random(), shuffle=True)
 
         self.train_data = DataGenerator(train, config, keys, transform=train_transform, **kwargs)
         self.val_data = DataGenerator(val, config, keys, transform=val_transform, **kwargs)
