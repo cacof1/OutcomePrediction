@@ -24,19 +24,6 @@ from Utils.PredictionReports import PredictionReports
 
 config = toml.load(sys.argv[1])
 s_module = config['DATA']['module']
-if 'CT' in s_module:
-    if 'Dose' in s_module:
-        total_backbone = config['MODEL']['CT_Backbone'] + '_' + config['MODEL']['Dose_Backbone']
-        logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
-    else:
-        total_backbone = config['MODEL']['CT_Backbone']
-        logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
-else:
-    if 'Dose' in s_module:
-        total_backbone = config['MODEL']['Dose_Backbone']
-        logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
-
-logger.log_text()
 img_dim = config['DATA']['dim']
 
 train_transform = tio.Compose([
@@ -54,19 +41,6 @@ val_transform = tio.Compose([
     tio.transforms.Resize(img_dim),
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
-
-filename = total_backbone + '_' + '_'.join(config['DATA']['module'])
-
-callbacks = [
-    ModelCheckpoint(dirpath='./',
-                    monitor='val_loss',
-                    filename=filename,
-                    save_top_k=1,
-                    mode='min'),
-
-    # EarlyStopping(monitor='val_loss',
-    #               check_finite=True),
-]
 
 label = config['DATA']['target']
 
@@ -147,50 +121,79 @@ else:
     weights = None
     label_range = None
 
-ngpu = torch.cuda.device_count()
-trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10, callbacks=callbacks)
-model = MixModel(module_dict, config, label_range=label_range, weights=weights)
+for iter in range(3):
 
-for param in model.parameters():
-    print(param.requires_grad)
+    if 'CT' in s_module:
+        if 'Dose' in s_module:
+            total_backbone = config['MODEL']['CT_Backbone'] + '_' + config['MODEL']['Dose_Backbone']
+            logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
+        else:
+            total_backbone = config['MODEL']['CT_Backbone']
+            logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
+    else:
+        if 'Dose' in s_module:
+            total_backbone = config['MODEL']['Dose_Backbone']
+            logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
 
-trainer.fit(model, dataloader)
+    logger.log_text()
 
-print('start testing...')
-worstCase = 0
-with torch.no_grad():
-    outs = []
-    for i, data in enumerate(dataloader.test_dataloader()):
-        truth = data[1]
-        x = data[0]
-        output = model.test_step(data, i)
-        outs.append(output)
+    filename = total_backbone + '_' + '_'.join(config['DATA']['module'])
 
-    validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
-    prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
-    prefix = 'test_'
-    if config['MODEL']['Prediction_type'] == 'Regression':
-        logger.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels)))
-        logger.generate_cumulative_dynamic_auc(prediction_labels, validation_labels, 0, prefix)
-        regression_out = logger.regression_matrix(prediction_labels, validation_labels, prefix)
-        logger.experiment.add_text('test_cindex: ', str(regression_out[prefix + 'cindex']))
-        logger.experiment.add_text('test_r2: ', str(regression_out[prefix + 'r2']))
-        if 'WorstCase' in config['REPORT']['matrix']:
-            worst_record = logger.worst_case_show(outs, prefix)
-            logger.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
-            if 'CT' in config['DATA']['module']:
-                text = 'test_worst_case_img'
-                logger.log_image(worst_record[prefix + 'worst_img'], text)
-            if 'Dose' in config['DATA']['module']:
-                text = 'test_worst_case_dose'
-                logger.log_image(worst_record[prefix + 'worst_dose'], text)
+    callbacks = [
+        ModelCheckpoint(dirpath='./',
+                        monitor='val_loss',
+                        filename=filename,
+                        save_top_k=1,
+                        mode='min'),
 
-    if config['MODEL']['Prediction_type'] == 'Classification':
-        classification_out = logger.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
-        if 'ROC' in config['REPORT']['matrix']:
-            logger.plot_AUROC(prediction_labels, validation_labels, prefix)
-            logger.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
-        if 'Specificity' in config['REPORT']['matrix']:
-            logger.experiment.add_text('Specificity:', str(classification_out[prefix + 'specificity']))
+        # EarlyStopping(monitor='val_loss',
+        #               check_finite=True),
+    ]
 
-print('finish test')
+    ngpu = torch.cuda.device_count()
+    trainer = Trainer(gpus=1, max_epochs=1, logger=logger, log_every_n_steps=10, callbacks=callbacks, auto_lr_find=True)
+    model = MixModel(module_dict, config, label_range=label_range, weights=weights)
+
+    for param in model.parameters():
+        print(param.requires_grad)
+
+    trainer.fit(model, dataloader)
+
+    print('start testing...')
+    worstCase = 0
+    with torch.no_grad():
+        outs = []
+        for i, data in enumerate(dataloader.test_dataloader()):
+            truth = data[1]
+            x = data[0]
+            output = model.test_step(data, i)
+            outs.append(output)
+
+        validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
+        prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
+        prefix = 'test_'
+        if config['MODEL']['Prediction_type'] == 'Regression':
+            logger.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels)))
+            logger.generate_cumulative_dynamic_auc(prediction_labels, validation_labels, 0, prefix)
+            regression_out = logger.regression_matrix(prediction_labels, validation_labels, prefix)
+            logger.experiment.add_text('test_cindex: ', str(regression_out[prefix + 'cindex']))
+            logger.experiment.add_text('test_r2: ', str(regression_out[prefix + 'r2']))
+            if 'WorstCase' in config['REPORT']['matrix']:
+                worst_record = logger.worst_case_show(outs, prefix)
+                logger.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
+                if 'CT' in config['DATA']['module']:
+                    text = 'test_worst_case_img'
+                    logger.log_image(worst_record[prefix + 'worst_img'], text)
+                if 'Dose' in config['DATA']['module']:
+                    text = 'test_worst_case_dose'
+                    logger.log_image(worst_record[prefix + 'worst_dose'], text)
+
+        if config['MODEL']['Prediction_type'] == 'Classification':
+            classification_out = logger.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
+            if 'ROC' in config['REPORT']['matrix']:
+                logger.plot_AUROC(prediction_labels, validation_labels, prefix)
+                logger.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
+            if 'Specificity' in config['REPORT']['matrix']:
+                logger.experiment.add_text('Specificity:', str(classification_out[prefix + 'specificity']))
+
+    print('finish test')

@@ -12,15 +12,17 @@ from scipy.ndimage import map_coordinates
 from pathlib import Path
 import nibabel as nib
 
+
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, config, keys, inference=False, transform=None, **kwargs):
+    def __init__(self, PatientList, config, keys, inference=False, transform=None, numerical_norm=None,
+                 category_norm=None, **kwargs):
         super().__init__()
         self.transform = transform
         self.keys = keys
         self.inference = inference
         self.PatientList = PatientList
-        self.n_norm = kwargs['numerical_norm']
-        self.c_norm = kwargs['category_norm']
+        self.n_norm = numerical_norm
+        self.c_norm = category_norm
         self.config = config
 
     def __len__(self):
@@ -85,12 +87,12 @@ class DataGenerator(torch.utils.data.Dataset):
             if self.config['DATA']['mask_name'] in roi_names:
                 mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
                 mask_img = mask_img.transpose(2, 0, 1)
-                mask_img = np.flip(mask_img,0)
+                mask_img = np.flip(mask_img, 0)
                 properties = regionprops(mask_img.astype(np.int8), mask_img)
                 cropbox = properties[0].bbox
                 # mask_img = np.expand_dims(mask_img, 0)
             else:
-                 mask_img = None
+                mask_img = None
         else:
             mask_img = None
 
@@ -192,22 +194,26 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, PatientList, config, keys, train_transform=None, val_transform=None, batch_size=64, **kwargs):
+    def __init__(self, PatientList, config, keys, train_transform=None, val_transform=None, batch_size=64,
+                 numerical_norm=None, category_norm=None, **kwargs):
         super().__init__()
         self.batch_size = batch_size
 
         # Convert regression value to histogram class
         train_val, test = train_test_split(PatientList, train_size=0.85, random_state=42, shuffle=False)
-        train, val = train_test_split(train_val, test_size=0.7, random_state=np.random(), shuffle=True)
+        train, val = train_test_split(train_val, test_size=0.7, random_state=np.random.randint(25, 50), shuffle=True)
 
-        self.train_data = DataGenerator(train, config, keys, transform=train_transform, **kwargs)
-        self.val_data = DataGenerator(val, config, keys, transform=val_transform, **kwargs)
-        self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
+        self.train_data = DataGenerator(train, config, keys, transform=train_transform, numerical_norm=numerical_norm,
+                                        category_norm=category_norm, **kwargs)
+        self.val_data = DataGenerator(val, config, keys, transform=val_transform, numerical_norm=numerical_norm,
+                                      category_norm=category_norm, **kwargs)
+        self.test_data = DataGenerator(test, config, keys, transform=val_transform, numerical_norm=numerical_norm,
+                                       category_norm=category_norm, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
-                                                  num_workers=64, drop_last=True, collate_fn=None)
+                                                  num_workers=0, drop_last=True, collate_fn=None)
 
-    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=64,
+    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=0,
                                                   drop_last=True, collate_fn=None)
 
     def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, drop_last=True,
@@ -308,6 +314,7 @@ def DoseMatchCT(DoseObj, DoseVolume, CTObj):
     Vf = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
     Vf = Vf.transpose(2, 1, 0)
     return Vf
+
 
 def SynchronizeData(config, subject_list):
     ## Data Storage Format --> Idem as XNAT
