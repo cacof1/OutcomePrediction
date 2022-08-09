@@ -26,13 +26,15 @@ config = toml.load(sys.argv[1])
 s_module = config['DATA']['module']
 if 'CT' in s_module:
     if 'Dose' in s_module:
-        logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['CT_Backbone'] + '_'
-                                                                                  + config['MODEL']['Dose_Backbone'])
+        total_backbone = config['MODEL']['CT_Backbone'] + '_' + config['MODEL']['Dose_Backbone']
+        logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
     else:
-        logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['CT_Backbone'])
+        total_backbone = config['MODEL']['CT_Backbone']
+        logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
 else:
     if 'Dose' in s_module:
-        logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['CT_Backbone'])
+        total_backbone = config['MODEL']['Dose_Backbone']
+        logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
 
 logger.log_text()
 img_dim = config['DATA']['dim']
@@ -53,18 +55,18 @@ val_transform = tio.Compose([
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
-# filename = config['MODEL']['Backbone'] + '_' + '_'.join(config['DATA']['module'])
-#
-# callbacks = [
-#     ModelCheckpoint(dirpath='./',
-#                     monitor='val_loss',
-#                     filename=filename,
-#                     save_top_k=1,
-#                     mode='min'),
-#
-#     EarlyStopping(monitor='val_loss',
-#                   check_finite=True),
-# ]
+filename = total_backbone + '_' + '_'.join(config['DATA']['module'])
+
+callbacks = [
+    ModelCheckpoint(dirpath='./',
+                    monitor='val_loss',
+                    filename=filename,
+                    save_top_k=1,
+                    mode='min'),
+
+    # EarlyStopping(monitor='val_loss',
+    #               check_finite=True),
+]
 
 label = config['DATA']['target']
 
@@ -146,7 +148,7 @@ else:
     label_range = None
 
 ngpu = torch.cuda.device_count()
-trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10)  # callbacks=callbacks,
+trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10, callbacks=callbacks)
 model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 
 for param in model.parameters():
