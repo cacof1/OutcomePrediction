@@ -53,18 +53,18 @@ val_transform = tio.Compose([
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
-filename = config['MODEL']['Backbone'] + '_' + '_'.join(config['DATA']['module'])
-
-callbacks = [
-    ModelCheckpoint(dirpath='./',
-                    monitor='val_loss',
-                    filename=filename,
-                    save_top_k=1,
-                    mode='min'),
-
-    # EarlyStopping(monitor='val_loss',
-    #               check_finite=True),
-]
+# filename = config['MODEL']['Backbone'] + '_' + '_'.join(config['DATA']['module'])
+#
+# callbacks = [
+#     ModelCheckpoint(dirpath='./',
+#                     monitor='val_loss',
+#                     filename=filename,
+#                     save_top_k=1,
+#                     mode='min'),
+#
+#     EarlyStopping(monitor='val_loss',
+#                   check_finite=True),
+# ]
 
 label = config['DATA']['target']
 
