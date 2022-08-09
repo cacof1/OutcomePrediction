@@ -6,7 +6,7 @@ import sys, os
 import torchio as tio
 
 torch.cuda.empty_cache()
-torch.cuda.memory_summary(device=None,abbreviated=False)
+torch.cuda.memory_summary(device=None, abbreviated=False)
 
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
@@ -23,7 +23,17 @@ from Utils.GenerateSmoothLabel import get_smoothed_label_distribution, get_modul
 from Utils.PredictionReports import PredictionReports
 
 config = toml.load(sys.argv[1])
-logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['Backbone'])
+s_module = config['DATA']['module']
+if 'CT' in s_module:
+    if 'Dose' in s_module:
+        logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['CT_Backbone'] + '_'
+                                                                                  + config['MODEL']['Dose_Backbone'])
+    else:
+        logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['CT_Backbone'])
+else:
+    if 'Dose' in s_module:
+        logger = PredictionReports(config=config, save_dir='lightning_logs', name=config['MODEL']['CT_Backbone'])
+
 logger.log_text()
 img_dim = config['DATA']['dim']
 
@@ -59,14 +69,14 @@ callbacks = [
 label = config['DATA']['target']
 
 module_dict = nn.ModuleDict()
-s_module = config['DATA']['module']
+
 if 'CT' in s_module:
     if 'CT' in config['MODEL']['Finetune']:
         CT_config = toml.load(config['Finetune']['CT_config'])
         CT_module_dict = get_module(CT_config)
         CT_model = MixModel(CT_module_dict, CT_config)
         pretrained_CT_model = CT_model.load_from_checkpoint(checkpoint_path=config['Finetune']['CT_ckpt'],
-                                                        module_dict=CT_module_dict, config=CT_config)
+                                                            module_dict=CT_module_dict, config=CT_config)
         if config['MODEL']['CT_spatial_dims'] == 3:
             CT_Backbone = pretrained_CT_model.module_dict['CT'].model
         if config['MODEL']['CT_spatial_dims'] == 2:
@@ -88,7 +98,7 @@ if 'Dose' in s_module:
         Dose_module_dict = get_module(Dose_config)
         Dose_model = MixModel(Dose_module_dict, Dose_config)
         pretrained_Dose_model = Dose_model.load_from_checkpoint(checkpoint_path=config['Finetune']['Dose_ckpt'],
-                                                            module_dict=Dose_module_dict, config=Dose_config)
+                                                                module_dict=Dose_module_dict, config=Dose_config)
         if config['MODEL']['Dose_spatial_dims'] == 3:
             Dose_Backbone = pretrained_Dose_model.module_dict['Dose'].model
         if config['MODEL']['Dose_spatial_dims'] == 2:
@@ -109,7 +119,6 @@ if config['MODEL']['Clinical_Backbone']:
 
 if 'Clinical' in s_module:
     module_dict['Clinical'] = Clinical_backbone
-
 
 PatientList = QueryFromServer(config)
 PatientList = [p for p in PatientList if p.label not in config['FILTER']['patient_id']]
@@ -184,4 +193,3 @@ with torch.no_grad():
             logger.experiment.add_text('Specificity:', str(classification_out[prefix + 'specificity']))
 
 print('finish test')
-
