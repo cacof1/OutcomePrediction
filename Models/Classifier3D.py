@@ -9,11 +9,11 @@ from Models.UnetEncoder import UnetEncoder
 
 ## Model
 class Classifier3D(LightningModule):
-    def __init__(self, config):
+    def __init__(self, config, module_str):
         super().__init__()
 
-        backbone_name = config['MODEL']['Backbone']
-        parameters = config['MODEL_PARAMETERS']
+        backbone_name = config['MODEL'][module_str + '_Backbone']
+        parameters = config[module_str + '_MODEL_PARAMETERS']
 
         if backbone_name == '3DUnet':
             self.backbone = UnetEncoder(**parameters)

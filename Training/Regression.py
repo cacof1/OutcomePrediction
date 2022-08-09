@@ -67,17 +67,19 @@ if 'CT' in s_module:
         CT_model = MixModel(CT_module_dict, CT_config)
         pretrained_CT_model = CT_model.load_from_checkpoint(checkpoint_path=config['Finetune']['CT_ckpt'],
                                                         module_dict=CT_module_dict, config=CT_config)
-        if config['MODEL']['spatial_dims'] == 3:
+        if config['MODEL']['CT_spatial_dims'] == 3:
             CT_Backbone = pretrained_CT_model.module_dict['CT'].model
-            module_dict['CT'] = CT_Backbone
-        if config['MODEL']['spatial_dims'] == 2:
+        if config['MODEL']['CT_spatial_dims'] == 2:
             CT_Backbone = pretrained_CT_model.module_dict['CT'].backbone
-            module_dict['CT'] = CT_Backbone
+        CT_Backbone.eval()
+        for param in CT_Backbone.parameters():
+            param.requires_grad = False
+        module_dict['CT'] = CT_Backbone
     else:
-        if config['MODEL']['spatial_dims'] == 3:
-            CT_Backbone = Classifier3D(config)
-        if config['MODEL']['spatial_dims'] == 2:
-            CT_Backbone = Classifier2D(config)
+        if config['MODEL']['CT_spatial_dims'] == 3:
+            CT_Backbone = Classifier3D(config, 'CT')
+        if config['MODEL']['CT_spatial_dims'] == 2:
+            CT_Backbone = Classifier2D(config, 'CT')
         module_dict['CT'] = CT_Backbone
 
 if 'Dose' in s_module:
@@ -87,19 +89,19 @@ if 'Dose' in s_module:
         Dose_model = MixModel(Dose_module_dict, Dose_config)
         pretrained_Dose_model = Dose_model.load_from_checkpoint(checkpoint_path=config['Finetune']['Dose_ckpt'],
                                                             module_dict=Dose_module_dict, config=Dose_config)
-        if config['MODEL']['spatial_dims'] == 3:
+        if config['MODEL']['Dose_spatial_dims'] == 3:
             Dose_Backbone = pretrained_Dose_model.module_dict['Dose'].model
-        else:
+        if config['MODEL']['Dose_spatial_dims'] == 2:
             Dose_Backbone = pretrained_Dose_model.module_dict['Dose'].backbone
         Dose_Backbone.eval()
         for param in Dose_Backbone.parameters():
             param.requires_grad = False
         module_dict['Dose'] = Dose_Backbone
     else:
-        if config['MODEL']['spatial_dims'] == 3:
-            Dose_Backbone = Classifier3D(config)
-        if config['MODEL']['spatial_dims'] == 2:
-            Dose_Backbone = Classifier2D(config)
+        if config['MODEL']['Dose_spatial_dims'] == 3:
+            Dose_Backbone = Classifier3D(config, 'Dose')
+        if config['MODEL']['Dose_spatial_dims'] == 2:
+            Dose_Backbone = Classifier2D(config, 'Dose')
         module_dict['Dose'] = Dose_Backbone
 
 if config['MODEL']['Clinical_Backbone']:
