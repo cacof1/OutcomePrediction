@@ -113,6 +113,9 @@ if "Clinical" in config['DATA']['module']:
         n_norm.fit_transform(numerical_feats)
     else:
         n_norm = None
+else:
+    c_norm = None
+    n_norm = None
 
 dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), train_transform=train_transform,
                         val_transform=val_transform, batch_size=config['MODEL']['batch_size'], numerical_norm=n_norm,
@@ -125,23 +128,23 @@ else:
     weights = None
     label_range = None
 
-for iter in range(3):
+for iter in range(10):
 
     if 'CT' in s_module:
         if 'Dose' in s_module:
-            total_backbone = config['MODEL']['CT_Backbone'] + '_' + config['MODEL']['Dose_Backbone']
+            total_backbone = config['MODEL']['Prediction_type'] + '_' + config['MODEL']['CT_Backbone'] + '_' + config['MODEL']['Dose_Backbone']
             logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
         else:
-            total_backbone = config['MODEL']['CT_Backbone']
+            total_backbone = config['MODEL']['Prediction_type'] + '_' + config['MODEL']['CT_Backbone']
             logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
     else:
         if 'Dose' in s_module:
-            total_backbone = config['MODEL']['Dose_Backbone']
+            total_backbone = config['MODEL']['Prediction_type'] + '_' + config['MODEL']['Dose_Backbone']
             logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
 
     logger.log_text()
 
-    filename = total_backbone + '_' + '_'.join(config['DATA']['module'])
+    filename = config['MODEL']['Prediction_type'] + '_' + total_backbone + '_' + '_'.join(config['DATA']['module'])
 
     callbacks = [
         ModelCheckpoint(dirpath='./',
@@ -155,10 +158,12 @@ for iter in range(3):
     ]
 
     ngpu = torch.cuda.device_count()
-    trainer = Trainer(gpus=1, max_epochs=1, logger=logger, log_every_n_steps=10, callbacks=callbacks, auto_lr_find=True)
+    trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10, callbacks=callbacks, auto_lr_find=True)
     model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 
+    i = 0
     for param in model.parameters():
+        i = i+1
         print(param.requires_grad)
 
     trainer.fit(model, dataloader)

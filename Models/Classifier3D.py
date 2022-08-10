@@ -28,8 +28,8 @@ class Classifier3D(LightningModule):
             torch.nn.Flatten(),
         )
         self.model.apply(self.weights_init)
-        # summary(self.model.to('cuda'), (config['MODEL']['batch_size'], 1, *config['DATA']['dim']),
-        #         col_names=["input_size", "output_size"], depth=5)
+        summary(self.model.to('cuda'), (config['MODEL']['batch_size'], 1, *config['DATA']['dim']),
+                col_names=["input_size", "output_size"], depth=5)
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
