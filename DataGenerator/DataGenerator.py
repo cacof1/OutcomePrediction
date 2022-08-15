@@ -91,7 +91,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, patient_df, train_transform=None, val_transform=None, batch_size=8, train_size=0.7, val_size=0.3,
+    def __init__(self, PatientList, train_transform=None, val_transform=None, batch_size=8, train_size=0.7, val_size=0.2, test_size=0.1,
                  target="pCR",selected_channel=['CT','RTDose','Records'], targetROI='PTV',ROIRange=[60,60,20],
                  dicom_folder=None, num_workers=0, **kwargs):
         super().__init__()
@@ -99,22 +99,27 @@ class DataModule(LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
 
-        patient_df_train, patient_df_val = train_test_split(patient_df, test_size=val_size, train_size=train_size)
-        patient_df_train.reset_index(drop=True, inplace=True)
-        patient_df_val.reset_index(drop=True, inplace=True)
-
-        self.train_data = DataGenerator(patient_df_train, target=target, selected_channel=selected_channel,
+        train_list, val_list = train_test_split(PatientList, test_size=(val_size+test_size), train_size=train_size)
+        val_list, test_list = train_test_split(val_list, test_size=(test_size/val_size), train_size=(1-test_size/val_size))
+        
+        self.train_data = DataGenerator(train_list, target=target, selected_channel=selected_channel,
                                         targetROI=targetROI,ROIRange=ROIRange,dicom_folder=dicom_folder,
                                         transform=train_transform, **kwargs)
-        self.val_data = DataGenerator(patient_df_val, target=target, selected_channel=selected_channel,
+        self.val_data = DataGenerator(val_list, target=target, selected_channel=selected_channel,
                                         targetROI=targetROI,ROIRange=ROIRange,dicom_folder=dicom_folder,
                                         transform=val_transform, **kwargs)
+        self.test_data = DataGenerator(test_list, target=target, selected_channel=selected_channel,
+                                      targetROI=targetROI, ROIRange=ROIRange, dicom_folder=dicom_folder,
+                                      transform=val_transform, **kwargs)
 
     def train_dataloader(self):
         return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True)
+    
+    def test_dataloader(self):
+        return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True)
 
 def QueryFromServer(config, **kwargs):
     print("Querying from Server")
