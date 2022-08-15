@@ -1,218 +1,120 @@
-from rt_utils import RTStructBuilder
+import glob
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 from torch.utils.data import DataLoader
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
-from skimage.measure import regionprops
 import xnat
 import SimpleITK as sitk
-from monai.data import image_reader
-from scipy.ndimage import map_coordinates
 from pathlib import Path
-import nibabel as nib
+from Utils.DicomTools import *
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, config, keys, inference=False, transform=None, **kwargs):
+    def __init__(self, PatientList,
+                 target="pCR", selected_channel=['CT','RTDose','Records'], targetROI='PTV', ROIRange=[60,60,20],
+                 dicom_folder=None, transform=None, inference=False, **kwargs):
+
         super().__init__()
-        self.transform = transform
-        self.keys = keys
-        self.inference = inference
         self.PatientList = PatientList
+        self.target = target
+        self.targetROI = targetROI
+        self.ROIRange = ROIRange
+        self.selected_channel = selected_channel
+        self.dicom_folder = dicom_folder
+        self.transform = transform
+        self.inference = inference
+
         self.n_norm = kwargs['numerical_norm']
         self.c_norm = kwargs['category_norm']
-        self.config = config
 
     def __len__(self):
         return int(len(self.PatientList))
 
-    def __getitem__(self, id):
-
-        datadict = {}
-        roiSize = [10, 40, 40]
+    def __getitem__(self, i):
+        data = {}
         patient_id = self.PatientList[id].label
-        path = Path(self.config['DATA']['DataFolder'], patient_id)
-        SessionPath = self.config['ImageSession'].items()
-        if len(SessionPath) < 1:
-            CTScanPath = Path(path, patient_id, 'scans')
+        DicomPath = os.path.join(self.dicom_folder, patient_id, patient_id, 'scans/')
+        if self.targetROI is not None:
+            RTSSPath = glob.glob(DicomPath + '*Structs')
+            RTSSPath = os.path.join(RTSSPath[0], 'resources/secondary/files/')
+            contours = RTSStoContour(RTSSPath, targetROI=self.targetROI)
+            CTPath = glob.glob(DicomPath + '*CT')
+            CTPath = os.path.join(CTPath[0], 'resources/DICOM/files/')
+            CTSession = ReadDicom(CTPath)
+            CTSession.SetOrigin(CTSession.GetOrigin())
+            CTArray = sitk.GetArrayFromImage(CTSession)
+            mask_voxel, bbox_voxel, ROI_voxel, img_indices = get_ROI_voxel(contours, CTPath, roi_range=self.ROIRange)
+
+        for channel in self.selected_channel:
+            if channel == 'CT':
+                data['CT'] = get_masked_img_voxel(CTArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
+                data['CT'] = np.expand_dims(data['CT'], 0)
+                if self.transform is not None: data['CT'] = self.transform(data['CT'])
+                data['CT'] = torch.as_tensor(data['CT'], dtype=torch.float32)
+
+            if channel == 'RTDose':
+                DosePath = glob.glob(DicomPath + '*Dose')
+                DosePath = os.path.join(DosePath[0], 'resources/DICOM/files/')
+                DoseSession = ReadDicom(DosePath)[..., 0]
+                DoseSession = ResamplingITK(DoseSession, CTSession)
+                DoseArray = sitk.GetArrayFromImage(DoseSession)
+                data['RTDose'] = get_masked_img_voxel(DoseArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
+                data['RTDose'] = np.expand_dims(data['RTDose'], 0)
+                if self.transform is not None: data['RTDose'] = self.transform(data['RTDose'])
+                data['RTDose'] = torch.as_tensor(data['RTDose'], dtype=torch.float32)
+
+            if channel == 'PET':
+                PETPath = glob.glob(DicomPath + '*PET')
+                PETPath = os.path.join(PETPath[0], 'resources/DICOM/files/')
+                PETSession = ReadDicom(PETPath)
+                PETSession = ResamplingITK(PETSession, CTSession)
+                PETArray = sitk.GetArrayFromImage(PETSession)
+                data['PET'] = get_masked_img_voxel(PETArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
+                data['PET'] = np.expand_dims(data['PET'], 0)
+                if self.transform is not None: data['PET'] = self.transform(data['PET'])
+                data['PET'] = torch.as_tensor(data['PET'], dtype=torch.float32)
+
+            if channel == 'Records':
+                category_feat, numerical_feat = LoadClinicalData(self.config, [self.PatientList[id]])
+                n_category_feat = self.c_norm.transform(category_feat).toarray()
+                n_numerical_feat = self.n_norm.transform(numerical_feat)
+                records = np.concatenate((n_numerical_feat, n_category_feat), axis=1)
+                records = np.squeeze(records)
+                data['Records'] = records
+
+        if self.inference:
+            return data
         else:
-            CTScanPath = sorted(path.glob(patient_id + '*' + self.config['ImageSession']['CT'] + '*'))
-            try:
-                CTScanPath = Path(CTScanPath[0], 'scans')
-            except:
-                print('test')
-
-        # Load CT dicom series for mask and dose calculation
-
-        label = self.PatientList[id].fields[self.config['DATA']['target']]
-        if self.config['MODEL']['Prediction_type'] == 'Classification':
-            label = np.float32(np.float32(label) > self.config['MODEL']['Classification_threshold'])
-        # Regex find the correct folder
-        try:
-            CT_match_folder = sorted(CTScanPath.glob('*-CT'))
-        except:
-            print('test')
-
-        if len(CT_match_folder) > 1:
-            raise ValueError(self.PatientList[id].label + ' should only have one match!')
-        if len(CT_match_folder) < 1:
-            raise ValueError(self.PatientList[id].label + ' should have one match!')
-        full_CT_path = Path(CT_match_folder[0], 'resources', 'DICOM', 'files')
-
-        sitk.ProcessObject_SetGlobalWarningDisplay(False)
-        CTreader = sitk.ImageSeriesReader()
-        dicom_names = sorted(CTreader.GetGDCMSeriesFileNames(str(full_CT_path)))
-        CTreader.SetFileNames(dicom_names)
-        CTObj = CTreader.Execute()
-        # The origin needs to be corrected before used in dose resampling
-        correct_Origin = sitk.ReadImage(dicom_names[0]).GetOrigin()
-        CTObj.SetOrigin(correct_Origin)
-        # Get the mask of PTV
-        if ("Dose" in self.keys or "CT" in self.keys) and 'mask_name' in self.config['DATA']:
-            RT_match_folder = sorted(CTScanPath.glob('*-Structs'))
-            if len(RT_match_folder) > 1:
-                raise ValueError(self.PatientList[id].label + ' should only have one match!')
-            full_RT_path = sorted(Path(RT_match_folder[0], 'resources', 'secondary', 'files').glob('*.dcm'))
-            # read the rtstruct
-            try:
-                rtstruct = RTStructBuilder.create_from(
-                    dicom_series_path=full_CT_path,
-                    rt_struct_path=full_RT_path[0]
-                )
-            except:
-                raise ValueError(self.PatientList[id].label + ' has RTSTRUCT problem! ')
-            roi_names = rtstruct.get_roi_names()
-            if self.config['DATA']['mask_name'] in roi_names:
-                mask_img = rtstruct.get_roi_mask_by_name(self.config['DATA']['mask_name'])
-                mask_img = mask_img.transpose(2, 0, 1)
-                mask_img = np.flip(mask_img,0)
-                properties = regionprops(mask_img.astype(np.int8), mask_img)
-                cropbox = properties[0].bbox
-                # mask_img = np.expand_dims(mask_img, 0)
-            else:
-                 mask_img = None
-        else:
-            mask_img = None
-
-        if "CT" in self.keys:
-            anatomy = sitk.GetArrayFromImage(CTObj)
-            # anatomy = LoadImg(self.mastersheet["CTPath"].iloc[id])
-            # datadict["Anatomy"] = np.expand_dims(CropImg(anatomy, maxDoseCoords, roiSize), 0)
-            if 'mask_name' in self.config['DATA'] and (mask_img is not None):
-                datadict["CT"] = np.expand_dims(MaskCrop(anatomy, cropbox), 0)
-            else:
-                datadict["CT"] = np.expand_dims(anatomy, 0)
-
-            # datadict["Anatomy"] = np.expand_dims(anatomy, 0)
-
-            if self.transform:
-                transformed_data = self.transform(datadict["CT"])
-                if transformed_data is None:
-                    datadict["CT"] = None
-                else:
-                    datadict["CT"] = torch.from_numpy(transformed_data)
-
-        if "Dose" in self.keys:
-            Dose_match_folder = sorted(CTScanPath.glob('*-Dose'))
-            if len(Dose_match_folder) > 1:
-                raise ValueError(self.PatientList[id].label + ' should only have one match!')
-            # if len(Dose_match_folder) < 1:
-            #     Dose_match_folder = sorted(ScanPath.glob('*Fx1Dose'))
-            full_Dose_path = sorted(Path(Dose_match_folder[0], 'resources', 'DICOM', 'files').glob('*.dcm'))
-            DoseObj = sitk.ReadImage(str(full_Dose_path[0]))
-            dose = sitk.GetArrayFromImage(DoseObj)
-            dose = dose * np.double(DoseObj.GetMetaData('3004|000e'))
-            ResampledDose = DoseMatchCT(DoseObj, dose, CTObj)
-
-            # maxDoseCoords = findMaxDoseCoord(dose) # Find coordinates of max dose
-            # checkCrop(maxDoseCoords, roiSize, dose.shape, self.mastersheet["DosePath"].iloc[id]) # Check if the crop works (min-max image shape costraint)
-            # datadict["Dose"]  = np.expand_dims(CropImg(dose, maxDoseCoords, roiSize),0)
-            if 'mask_name' in self.config['DATA'] and (mask_img is not None):
-                datadict["Dose"] = np.expand_dims(MaskCrop(ResampledDose, cropbox), 0)
-            else:
-                datadict["Dose"] = np.expand_dims(ResampledDose, 0)
-
-            if self.transform:
-                try:
-                    transformed_data = self.transform(datadict["Dose"])
-                except:
-                    print(self.PatientList[id].label + ' has transform problem.')
-
-                if transformed_data is None:
-                    datadict["Dose"] = None
-                else:
-                    datadict["Dose"] = torch.from_numpy(transformed_data)
-        if 'PET' in self.keys:
-            PETScanPath = sorted(path.glob(patient_id + '*' + self.config['ImageSession']['PET'] + '*'))
-            PETScanPath = Path(PETScanPath[0], 'scans')
-            PET_match_folder = sorted(PETScanPath.glob('*-PET_AX_SC'))
-            if len(PET_match_folder) < 1:
-                raise ValueError(self.PatientList[id].label + ' should have one match!')
-            full_PET_path = Path(PET_match_folder[0], 'resources', 'DICOM', 'files')
-
-            PETreader = sitk.ImageSeriesReader()
-            dicom_names = sorted(PETreader.GetGDCMSeriesFileNames(str(full_PET_path)))
-            PETreader.SetFileNames(dicom_names)
-            PETObj = PETreader.Execute()
-            PET = sitk.GetArrayFromImage(CTObj)
-            if 'mask_name' in self.config['DATA'] and (mask_img is not None):
-                datadict["PET"] = np.expand_dims(MaskCrop(PET, cropbox), 0)
-            else:
-                datadict["PET"] = np.expand_dims(PET, 0)
-
-            if self.transform:
-                try:
-                    transformed_data = self.transform(datadict["PET"])
-                except:
-                    print(self.PatientList[id].label + 'has transform problem.')
-
-                if transformed_data is None:
-                    datadict["PET"] = None
-                else:
-                    datadict["PET"] = torch.from_numpy(transformed_data)
-
-            # print(datadict["Anatomy"].size, type(datadict["Anatomy"]))
-        if "Clinical" in self.keys:
-            category_feat, numerical_feat = LoadClinicalData(self.config, [self.PatientList[id]])
-            n_category_feat = self.c_norm.transform(category_feat).toarray()
-            n_numerical_feat = self.n_norm.transform(numerical_feat)
-            data = np.concatenate((n_numerical_feat, n_category_feat), axis=1)
-            data = np.squeeze(data)
-            # data = clinical_data.iloc[id].to_numpy()
-            # num_data = self.n_norm.transform([numerical_data.iloc[id]])
-            # cat_data = self.c_norm.transform([category_data.iloc[id]]).toarray()
-            # data = np.concatenate((num_data, cat_data), axis=1)
-            datadict["Clinical"] = data
-
-        if (self.inference):
-            return datadict
-        else:
-            return datadict, np.float32(label)
-
+            label = self.PatientList[id].fields[self.target]
+            label = torch.as_tensor(label, dtype=torch.int64)
+            return data, label
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, PatientList, config, keys, train_transform=None, val_transform=None, batch_size=64, **kwargs):
+    def __init__(self, patient_df, train_transform=None, val_transform=None, batch_size=8, train_size=0.7, val_size=0.3,
+                 target="pCR",selected_channel=['CT','RTDose','Records'], targetROI='PTV',ROIRange=[60,60,20],
+                 dicom_folder=None, num_workers=0, **kwargs):
         super().__init__()
+
         self.batch_size = batch_size
+        self.num_workers = num_workers
 
-        # Convert regression value to histogram class
-        train, val_test = train_test_split(PatientList, train_size=0.7)
-        test, val = train_test_split(val_test, test_size=0.66)
+        patient_df_train, patient_df_val = train_test_split(patient_df, test_size=val_size, train_size=train_size)
+        patient_df_train.reset_index(drop=True, inplace=True)
+        patient_df_val.reset_index(drop=True, inplace=True)
 
-        self.train_data = DataGenerator(train, config, keys, transform=train_transform, **kwargs)
-        self.val_data = DataGenerator(val, config, keys, transform=val_transform, **kwargs)
-        self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
+        self.train_data = DataGenerator(patient_df_train, target=target, selected_channel=selected_channel,
+                                        targetROI=targetROI,ROIRange=ROIRange,dicom_folder=dicom_folder,
+                                        transform=train_transform, **kwargs)
+        self.val_data = DataGenerator(patient_df_val, target=target, selected_channel=selected_channel,
+                                        targetROI=targetROI,ROIRange=ROIRange,dicom_folder=dicom_folder,
+                                        transform=val_transform, **kwargs)
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
-                                                  num_workers=64, drop_last=True, collate_fn=None)
+    def train_dataloader(self):
+        return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=True)
 
-    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=64,
-                                                  drop_last=True, collate_fn=None)
-
-    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, drop_last=True,
-                                                  collate_fn=None)
-
+    def val_dataloader(self):
+        return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True)
 
 def QueryFromServer(config, **kwargs):
     print("Querying from Server")
@@ -285,30 +187,6 @@ def QueryFromServer(config, **kwargs):
     print("Queried from Server")
     return subject_list
 
-
-def DoseMatchCT(DoseObj, DoseVolume, CTObj):
-    DoseVolume = DoseVolume.transpose(2, 1, 0)
-    originD = DoseObj.GetOrigin()
-    spaceD = DoseObj.GetSpacing()
-    origin = CTObj.GetOrigin()
-    space = CTObj.GetSpacing()
-
-    dx = np.arange(0, DoseObj.GetSize()[0]) * spaceD[0] + originD[0]
-    dy = np.arange(0, DoseObj.GetSize()[1]) * spaceD[1] + originD[1]
-    dz = -np.arange(0, DoseObj.GetSize()[2]) * spaceD[2] + originD[2]
-    dz.sort()
-
-    cx = np.arange(0, CTObj.GetSize()[0]) * space[0] + origin[0]
-    cy = np.arange(0, CTObj.GetSize()[1]) * space[1] + origin[1]
-    cz = -np.arange(0, CTObj.GetSize()[2]) * space[2] + origin[2]
-    cz.sort()
-
-    cxv, cyv, czv = np.meshgrid(cx, cy, cz, indexing='ij')
-
-    Vf = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
-    Vf = Vf.transpose(2, 1, 0)
-    return Vf
-
 def SynchronizeData(config, subject_list):
     ## Data Storage Format --> Idem as XNAT
 
@@ -319,41 +197,6 @@ def SynchronizeData(config, subject_list):
         if (not Path(config['DATA']['DataFolder'], subject.label).is_dir()):
             print("Synchronizing ", subject.id, subject.label)
             subject.download_dir(config['DATA']['DataFolder'])
-
-    ## Download data
-
-
-def LoadImg(path):
-    img = sitk.ReadImage(path)
-    return sitk.GetArrayFromImage(img).astype(np.float32)
-
-
-def MaskCrop(img, bbox):
-    return img[bbox[0]:bbox[3], bbox[1]:bbox[4], bbox[2]:bbox[5]]
-
-
-def CropImg(img, center, delta):  ## Crop image
-    return img[center[0] - delta[0]:center[0] + delta[0], center[1] - delta[1]:center[1] + delta[1],
-           center[2] - delta[2]:center[2] + delta[2]]
-
-
-def findMaxDoseCoord(img):
-    result = np.where(img == np.amax(img))
-    listOfCordinates = list(zip(result[0], result[1], result[2]))
-
-    return listOfCordinates[int(len(listOfCordinates) / 2)]
-
-
-def checkCrop(center, delta, imgShape, fn):
-    if (center[0] - delta[0] < 0 or
-            center[0] + delta[0] > imgShape[0] or
-            center[1] - delta[1] < 0 or
-            center[1] + delta[1] > imgShape[1] or
-            center[2] - delta[2] < 0 or
-            center[2] + delta[2] > imgShape[2]):
-        print("ERROR! Invalid crop for file %s" % (fn))
-        exit()
-
 
 def custom_collate(original_batch):
     filtered_data = {}
@@ -390,20 +233,10 @@ def custom_collate(original_batch):
 
     return filtered_data, torch.FloatTensor(filtered_target)
 
-
 def LoadClinicalData(config, PatientList):
     category_cols = config['CLINICAL']['category_feat']
     numerical_cols = config['CLINICAL']['numerical_feat']
 
-    # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
-    #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
-    #                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
-    #                     'volume_ptv', 'dmax_ptv', 'v100_ptv',
-    #                     'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
-    #                     'v30_heart', 'v20_esophagus', 'v60_esophagus',
-    #                     'rt_compliance_ptv90', 'received_conc_chemo',
-    #                     ]  # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician', 'Dmin_PTV_CTV_MARGIN',
-    # 'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
     category_feats = []
     numerical_feats = []
     for i, patient in enumerate(PatientList):
@@ -413,35 +246,4 @@ def LoadClinicalData(config, PatientList):
         category_feats.append(category_feat)
         numerical_feats.append(numerical_feat)
 
-    # numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
-    #                   'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
-    #                   'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
-    #                   'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN']
-    #
-    # category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
-
     return category_feats, numerical_feats
-
-
-def interp3(x, y, z, v, xi, yi, zi, **kwargs):
-    """Sample a 3D array "v" with pixel corner locations at "x","y","z" at the
-    points in "xi", "yi", "zi" using linear interpolation. Additional kwargs
-    are passed on to ``scipy.ndimage.map_coordinates``."""
-
-    def index_coords(corner_locs, interp_locs):
-        index = np.arange(len(corner_locs))
-        if np.all(np.diff(corner_locs) < 0):
-            corner_locs, index = corner_locs[::-1], index[::-1]
-        return np.interp(interp_locs, corner_locs, index)
-
-    orig_shape = np.asarray(xi).shape
-    xi, yi, zi = np.atleast_1d(xi, yi, zi)
-    for arr in [xi, yi, zi]:
-        arr.shape = -1
-
-    output = np.empty(xi.shape, dtype=float)
-    coords = [index_coords(*item) for item in zip([x, y, z], [xi, yi, zi])]
-
-    map_coordinates(v, coords, order=1, output=output, **kwargs)
-
-    return output.reshape(orig_shape)
