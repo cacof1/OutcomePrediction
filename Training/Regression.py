@@ -75,7 +75,7 @@ module_dict = nn.ModuleDict()
 
 PatientList = QueryFromServer(config)
 SynchronizeData(config, PatientList)
-print(PatientList)
+print(len(PatientList))
 
 if 'CT' in config['DATA']['module']:
     """

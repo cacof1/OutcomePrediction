@@ -35,7 +35,10 @@ class DataGenerator(torch.utils.data.Dataset):
 
         datadict = {}
         roiSize = [10, 40, 40]
-        patient_id = self.PatientList[id].label
+        try:
+            patient_id = self.PatientList.iloc[id]['subject_label']
+        except:
+            print('test')
         path = Path(self.config['DATA']['DataFolder'], patient_id)
         SessionPath = self.config['ImageSession'].items()
         if len(SessionPath) < 1:
@@ -49,7 +52,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
         # Load CT dicom series for mask and dose calculation
 
-        label = self.PatientList[id].fields[self.config['DATA']['target']]
+        label = self.PatientList.iloc[id]['xnat_subjectdata_field_map_' + self.config['DATA']['target'][0]]
         if self.config['MODEL']['Prediction_type'] == 'Classification':
             label = np.float32(np.float32(label) > self.config['MODEL']['Classification_threshold'])
         # Regex find the correct folder
@@ -209,8 +212,8 @@ class DataModule(LightningDataModule):
         self.val_data = DataGenerator(val, config, keys, transform=val_transform, **kwargs)
         self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,num_workers=64, drop_last=True, collate_fn=None)
-    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=64,drop_last=True, collate_fn=None)
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,num_workers=0, drop_last=True, collate_fn=None)
+    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=0,drop_last=True, collate_fn=None)
     def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, drop_last=True,collate_fn=None)
 
 def QueryFromServer(config, **kwargs):

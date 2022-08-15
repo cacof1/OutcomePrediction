@@ -17,7 +17,7 @@ class MixModel(LightningModule):
         self.weights = weights
 
         self.loss_fcn = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
-        self.activation = getattr(torch.nn, self.config["BASEMODEL"]["Activation"])()
+        self.activation = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         # self.FDS = FDS(feature_dim=1032, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
         self.classifier = nn.Sequential(
             nn.LazyLinear(128),
@@ -30,8 +30,8 @@ class MixModel(LightningModule):
         #if self.config['REGULARIZATION']['Feature_smoothing']:
         #if self.training and self.current_epoch >= 1:
         #features = self.FDS.smooth(features, labels, self.current_epoch)
-        prediction = self.classifier(self.forward(datadict, label))
-        return features
+        prediction = self.classifier(features)
+        return prediction
 
     def training_step(self, batch, batch_idx):
         out = {}
@@ -39,7 +39,6 @@ class MixModel(LightningModule):
         prediction = self.forward(datadict, label)
         loss = self.loss_fcn(prediction.squeeze(), batch[-1])
 
-        out['features'] = features.detach()
         out['label'] = label
         out['prediction'] = prediction.detach()
         self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
