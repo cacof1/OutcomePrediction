@@ -74,7 +74,6 @@ label = config['DATA']['target']
 module_dict = nn.ModuleDict()
 
 PatientList = QueryFromServer(config)
-PatientList = [p for p in PatientList if p.label not in config['FILTER']['patient_id']]
 SynchronizeData(config, PatientList)
 print(PatientList)
 
@@ -155,8 +154,8 @@ dataloader = DataModule(PatientList,
                         train_transform=train_transform,
                         val_transform=val_transform,
                         batch_size=config['MODEL']['batch_size'],
-                        numerical_norm=n_norm,
-                        category_norm=c_norm,
+                        n_norm=n_norm,
+                        c_norm=c_norm,
                         inference=False)
 
 """

@@ -197,8 +197,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, PatientList, config, keys, train_transform=None, val_transform=None, batch_size=64,
-                 numerical_norm=None, category_norm=None, **kwargs):
+    def __init__(self, PatientList, config, keys, train_transform=None, val_transform=None, batch_size=64, **kwargs):
         super().__init__()
         self.batch_size = batch_size
 
@@ -206,12 +205,9 @@ class DataModule(LightningDataModule):
         train_val, test = train_test_split(PatientList, train_size=0.85, random_state=42, shuffle=False)
         train, val = train_test_split(train_val, test_size=0.7, random_state=np.random.randint(25, 50), shuffle=True)
 
-        self.train_data = DataGenerator(train, config, keys, transform=train_transform, numerical_norm=numerical_norm,
-                                        category_norm=category_norm, **kwargs)
-        self.val_data = DataGenerator(val, config, keys, transform=val_transform, numerical_norm=numerical_norm,
-                                      category_norm=category_norm, **kwargs)
-        self.test_data = DataGenerator(test, config, keys, transform=val_transform, numerical_norm=numerical_norm,
-                                       category_norm=category_norm, **kwargs)
+        self.train_data = DataGenerator(train, config, keys, transform=train_transform, **kwargs)
+        self.val_data = DataGenerator(val, config, keys, transform=val_transform, **kwargs)
+        self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,num_workers=64, drop_last=True, collate_fn=None)
     def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=64,drop_last=True, collate_fn=None)
@@ -239,6 +235,12 @@ def QueryFromServer(config, **kwargs):
     for key,value in config['CRITERIA'].items():
         dict_temp = {"schema_field":"xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP="+key, "comparison_type":"=","value":str(value)}
         search_where.append(dict_temp)
+
+    for value in config['FILTER']['patient_id']:
+        dict_temp = {"schema_field": "xnat:subjectData.SUBJECT_LABEL", "comparison_type": "!=",
+                     "value": str(value)}
+        search_where.append(dict_temp)
+
     for key,value in config['MODALITY'].items():
         dict_temp = {"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE="+key,"comparison_type":">=","value":str(value)}
         search_where.append(dict_temp)
@@ -253,7 +255,6 @@ def QueryFromServer(config, **kwargs):
     PatientList = pd.read_csv(StringIO(response.text))
     print(PatientList)
     print("Queried from Server")
-        
     return PatientList
 
 
@@ -285,10 +286,10 @@ def SynchronizeData(config, subject_list):
     ## Data Storage Format --> Idem as XNAT
 
     ## Verify if data exists in data folder
-    for subject in subject_list:
+    for subject in subject_list['subject_label']:
         # print(subject.label, subject.fulluri, dir(subject), subject.uri)
         # scans = subject.experiments[subject.label].scans['CT'].fulldata
-        if (not Path(config['DATA']['DataFolder'], subject.label).is_dir()):
+        if (not Path(config['DATA']['DataFolder'], subject).is_dir()):
             print("Synchronizing ", subject.id, subject.label)
             subject.download_dir(config['DATA']['DataFolder'])
 

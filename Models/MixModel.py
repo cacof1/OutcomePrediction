@@ -25,8 +25,6 @@ class MixModel(LightningModule):
             self.activation
         )
 
-
-
     def forward(self, datadict, labels):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
         #if self.config['REGULARIZATION']['Feature_smoothing']:
