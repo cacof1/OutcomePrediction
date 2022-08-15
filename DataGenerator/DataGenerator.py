@@ -208,30 +208,43 @@ class DataModule(LightningDataModule):
         self.val_data = DataGenerator(val, config, keys, transform=val_transform, **kwargs)
         self.test_data = DataGenerator(test, config, keys, transform=val_transform, **kwargs)
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
-                                                  num_workers=64, drop_last=True, collate_fn=None)
-
-    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=64,
-                                                  drop_last=True, collate_fn=None)
-
-    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, drop_last=True,
-                                                  collate_fn=None)
-
-
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,num_workers=64, drop_last=True, collate_fn=None)
+    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=64,drop_last=True, collate_fn=None)
+    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, drop_last=True,collate_fn=None)
+                                                  
 def QueryFromServer(config, **kwargs):
 
     print("Querying from Server")
+    search_field = []
+    search_where = []
 
-    search_field = [{"element_name":"xnat:subjectData","field_ID":"SUBJECT_LABEL","sequence":"1", "type":"1"}]
-    search_where = [{"schema_field":"xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP=survival_status","comparison_type":"=","value":"1"},
-                    {"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE=Dose","comparison_type":">=","value":"1"},]
-    
+    ## ITEMS TO QUERY
+    for value in config['DATA']['target']:
+        dict_temp = {"element_name":"xnat:subjectData","field_ID":"XNAT_SUBJECTDATA_FIELD_MAP="+str(value),"sequence":"1", "type":"int"}
+        search_field.append(dict_temp)
+    ##Project
+    search_field.append({"element_name":"xnat:subjectData","field_ID":"PROJECT","sequence":"1", "type":"string"})
+    ##Label
+    search_field.append({"element_name":"xnat:subjectData","field_ID":"SUBJECT_LABEL","sequence":"1", "type":"string"})
+
+    ## WHERE CONDITION
+    for value in config['SERVER']['Projects']:
+        dict_temp = {"schema_field":"xnat:subjectData.PROJECT","comparison_type":"=","value":str(value)}
+        search_where.append(dict_temp)
+    for key,value in config['CRITERIA'].items():
+        dict_temp = {"schema_field":"xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP="+key, "comparison_type":"=","value":str(value)}
+        search_where.append(dict_temp)
+    for key,value in config['MODALITY'].items():
+        dict_temp = {"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE="+key,"comparison_type":">=","value":str(value)}
+        search_where.append(dict_temp)
+
     root_element = "xnat:subjectData"
-    test = XMLCreator(root_element, search_field, search_where)
+    XML = XMLCreator(root_element, search_field, search_where)
+    xmlstr= XML.ConstructTree()
     params = {'format': 'csv'}
-
     files = {'file': open('example.xml', 'rb')}
-    response = requests.post('http://128.16.11.124:8080/xnat/data/search/', params=params, files=files, auth=(config['SERVER']['User'], config['SERVER']['Password']))
+
+    response    = requests.post('http://128.16.11.124:8080/xnat/data/search/', params=params, files=files, auth=(config['SERVER']['User'], config['SERVER']['Password']))
     PatientList = pd.read_csv(StringIO(response.text))
     print(PatientList)
     print("Queried from Server")
