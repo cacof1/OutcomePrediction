@@ -13,6 +13,9 @@ from io import StringIO
 import requests
 import pandas as pd
 
+from sklearn.preprocessing import OneHotEncoder,MinMaxScaler,LabelEncoder,OrdinalEncoder
+from sklearn.compose import ColumnTransformer
+
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList,
                  target="pCR", selected_channel=['CT','RTDose','Records'], targetROI='PTV', ROIRange=[60,60,10],
@@ -77,9 +80,8 @@ class DataGenerator(torch.utils.data.Dataset):
                 data['PET'] = torch.as_tensor(data['PET'], dtype=torch.float32)
 
             if channel == 'Records':
-                records = self.PatientList.loc[:,self.clinical_cols].toarray()
-                records = torch.as_tensor(records, dtype=torch.float32)
-                data['Records'] = records
+                records = self.PatientList.loc[:,self.clinical_cols].to_numpy()
+                data['Records'] = torch.as_tensor(records, dtype=torch.float32)
 
         if self.inference:
             return data
@@ -192,17 +194,24 @@ def custom_collate(original_batch):
 
     return filtered_data, torch.FloatTensor(filtered_target)
 
-def LoadClinicalData(config, PatientList):
+def LoadClinicalData(config, PatientList, ClinicalDataset):
     category_cols = config['CLINICAL']['category_feat']
     numerical_cols = config['CLINICAL']['numerical_feat']
+    target = config['DATA']['Target']
 
-    category_feats = []
-    numerical_feats = []
-    for i, patient in enumerate(PatientList):
-        clinical_features = patient.fields
-        numerical_feat = [clinical_features[x] for x in numerical_cols]
-        category_feat = [clinical_features[x] for x in category_cols]
-        category_feats.append(category_feat)
-        numerical_feats.append(numerical_feat)
+    patient_list = PatientList['subject_label'].tolist()
+    ClinicalDataset = ClinicalDataset[ClinicalDataset.PatientID.isin(patient_list)].reset_index(drop=True)
 
-    return category_feats, numerical_feats
+    ct = ColumnTransformer(
+        [("CatTrans", OneHotEncoder(), category_cols),
+         ("NumTrans", MinMaxScaler(), numerical_cols), ])
+
+    X = ClinicalDataset.loc[:,category_cols+numerical_cols]
+    X.loc[:, category_cols] = X.loc[:, category_cols].astype('str')
+    X.loc[:, numerical_cols] = X.loc[:, numerical_cols].astype('float32')
+    X_trans = ct.fit_transform(X)
+    df_trans = pd.DataFrame(X_trans, index=X.index, columns=ct.get_feature_names_out())
+    df_trans[target] = LabelEncoder().fit_transform(ClinicalDataset[target])
+    df_trans['subject_label'] = ClinicalDataset.loc[:,'PatientID']
+
+    return df_trans
