@@ -53,18 +53,4 @@ class XMLCreator():
         for key,value in search_where.items():
             ET.SubElement(criteria, "xdat:"+key).text = value
     
-if __name__ == "__main__":
-    search_field = [{"element_name":"xnat:subjectData","field_ID":"SUBJECT_LABEL","sequence":"1", "type":"1"}]
-    search_where = [{"schema_field":"xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP=survival_status","comparison_type":"=","value":"1"},
-                    {"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE=Dose","comparison_type":">=","value":"1"},]
-        
-    root_element = "xnat:subjectData"
-    test = XMLCreator(root_element, search_field, search_where)
 
-    
-    params = {'format': 'csv'}
-    
-    files = {'file': open('example.xml', 'rb')}
-    response = requests.post('http://128.16.11.124:8080/xnat/data/search/', params=params, files=files, auth=('admin', 'mortavar1977'))
-    df = pd.read_csv(StringIO(response.text))
-    print(df)
