@@ -19,7 +19,7 @@ from sklearn.compose import ColumnTransformer
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList,
                  target="pCR", selected_channel=['CT','RTDose','Records'], targetROI='PTV', ROIRange=[60,60,10],
-                 dicom_folder=None, transform=None, inference=False, clinical_cols=None,**kwargs):
+                 dicom_folder=None, transform=None, inference=False, clinical_cols=None, threshold=None, **kwargs):
 
         super().__init__()
         self.PatientList = PatientList
@@ -31,6 +31,7 @@ class DataGenerator(torch.utils.data.Dataset):
         self.transform = transform
         self.inference = inference
         self.clinical_cols = clinical_cols
+        self.threshold = threshold
 
     def __len__(self):
         return int(self.PatientList.shape[0])
@@ -86,22 +87,23 @@ class DataGenerator(torch.utils.data.Dataset):
         if self.inference:
             return data
         else:
-            llabel = self.PatientList.loc[i,self.target]
+            label = self.PatientList.loc[i,self.target]
+            if self.threshold is not None:  label = np.array(label > self.threshold)
             label = torch.as_tensor(label, dtype=torch.int64)
             return data, label
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, PatientList, train_transform=None, val_transform=None, batch_size=8, train_size=0.7, val_size=0.2, test_size=0.1,
-                 target="pCR",selected_channel=['CT','RTDose','Records'], targetROI='PTV',ROIRange=[60,60,20],
-                 dicom_folder=None, num_workers=0, clinical_cols=None,**kwargs):
+    def __init__(self, PatientList, train_transform=None, val_transform=None, 
+                 batch_size=8, train_size=0.7, val_size=0.2, test_size=0.1, num_workers=10, **kwargs):
+        
         super().__init__()
 
         self.batch_size = batch_size
         self.num_workers = num_workers
-
-        train_list, val_list = train_test_split(PatientList, test_size=(val_size+test_size), train_size=train_size)
-        val_list, test_list = train_test_split(val_list, test_size=(test_size/val_size), train_size=(1-test_size/val_size))
+        
+        train_val_list, test_list = train_test_split(PatientList, train_size = (train_size+val_size), random_state=42, shuffle=False)
+        train_list, val_list = train_test_split(train_val_list, test_size=(val_size/train_size), random_state=np.random(), shuffle=True)
         
         train_list.reset_index(inplace=True,drop=True)
         val_list.reset_index(inplace=True, drop=True)
@@ -228,7 +230,7 @@ def LoadClinicalData(config, PatientList, ClinicalDataset):
     X.loc[:, numerical_cols] = X.loc[:, numerical_cols].astype('float32')
     X_trans = ct.fit_transform(X)
     df_trans = pd.DataFrame(X_trans, index=X.index, columns=ct.get_feature_names_out())
-    df_trans[target] = LabelEncoder().fit_transform(ClinicalDataset[target])
+    df_trans[target] = ClinicalDataset.loc[:,target]
     df_trans['subject_label'] = ClinicalDataset.loc[:,'PatientID']
 
     return df_trans
