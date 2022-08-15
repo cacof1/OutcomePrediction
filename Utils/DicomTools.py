@@ -77,21 +77,14 @@ def FindMatchedImage(filenames,contour_coord):
     for i in range(len(filenames)):
         img = dicom.read_file(filenames[i])
         z = int(img.ImagePositionPatient[-1])
-        if z == int(contour_coord[0][-1]): return filenames[i]
+        if z == int(contour_coord[0][-1]): return filenames[i], img
 
 def ContourtoROI(contour, CTPath):
     contour_coord = np.array(contour.ContourData)
     contour_coord = contour_coord.reshape(int(contour.NumberOfContourPoints), 3)
     filenames = glob.glob(CTPath + '*.dcm')
-    try:
-        img_id =contour.ContourImageSequence[0].ReferencedSOPInstanceUID
-        img_file = glob.glob(CTPath + '*{}.dcm'.format(img_id))
-    except:
-        img_path = FindMatchedImage(filenames,contour_coord)
-        img_file = glob.glob(img_path)
-
-    img = dicom.read_file(img_file[0])
-    img_index = filenames.index(img_file[0])
+    img_path, img = FindMatchedImage(filenames, contour_coord)
+    img_index = filenames.index(img_path)
     img_array = img.pixel_array
     x_spacing, y_spacing = float(img.PixelSpacing[0]), float(img.PixelSpacing[1])
     origin_x, origin_y, _ = img.ImagePositionPatient
@@ -127,7 +120,6 @@ def get_ROI_voxel(contours, dicom_path, roi_range=[64,64,10]):
     mask_voxel = []
     bbox_voxel = []
     ROI_voxel = []
-    image_voxel = []
     img_indices = []
     N_slices = len(contours)
     for contour in contours:
@@ -141,16 +133,14 @@ def get_ROI_voxel(contours, dicom_path, roi_range=[64,64,10]):
         mask_voxel.append(mask_array)
         bbox_voxel.append(bbox)
         ROI_voxel.append(ROI_region)
-        image_voxel.append(img_array)
         img_indices.append(img_index)
 
     mask_voxel = mask_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
     bbox_voxel = bbox_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
     ROI_voxel = ROI_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
-    image_voxel = image_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
     img_indices = img_indices[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
 
-    return mask_voxel, bbox_voxel, ROI_voxel, image_voxel, img_indices
+    return mask_voxel, bbox_voxel, ROI_voxel, img_indices
 
 def get_masked_img_voxel(ImageVoxel, mask_voxel, bbox_voxel, ROI_voxel, visImage=False, PatientID=None):
 
