@@ -158,5 +158,10 @@ if __name__ == "__main__":
                 truth = data[1]
                 x = data[0]
                 output = model.predict_step(data, i)
+                key = list(x.keys())[0]
+                im_st = x[key][0, 0, 5, :, :]
+                plt.imshow(im_st.cpu())
+                plt.title('standard image')
+                plt.show()
         print('finish test')
 
