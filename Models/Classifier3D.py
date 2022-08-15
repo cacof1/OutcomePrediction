@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import torch
 from pytorch_lightning import LightningModule
-from torchinfo import summary
 from torch import nn
 import torchmetrics
 from monai.networks import blocks, nets

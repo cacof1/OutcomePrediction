@@ -46,10 +46,9 @@ class PredictionReports(TensorBoardLogger):
             description = description + param + '+' + '+'.join(clinical_criteria)
         # Return the experiment version, int or str.
 
-        modules = self.config['DATA']['module']
-        sub_str = description + '_' + 'modalities' + '+' + '+'.join(modules)
+        sub_str = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module'])
         self._version = self._get_next_version(sub_str)
-        description = description + '_' + 'modalities' + '+' + '+'.join(modules) + '_' + str(self._version)
+        description = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module']) + '_' + str(self._version)
 
         return description
 
@@ -81,27 +80,26 @@ class PredictionReports(TensorBoardLogger):
         return grid
 
     def log_text(self) -> None:
-        configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' + str(
-            self.config['DATA']['module'])
+        configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' + str(self.config['DATA']['module'])
         self.experiment.add_text('configurations:', configurations)
 
     def regression_matrix(self, prediction, label, prefix):
         r_out = {}
-        if 'cindex' in self.config['REPORT']['matrix']:
+        if 'cindex' in self.config['CHECKPOINT']['matrix']:
             cindex = c_index(prediction, label)
             r_out[prefix + 'cindex'] = cindex[0]
-        if 'r2' in self.config['REPORT']['matrix']:
+        if 'r2' in self.config['CHECKPOINT']['matrix']:
             r2 = r2_index(prediction, label)
             r_out[prefix + 'r2'] = r2
         return r_out
 
     def classification_matrix(self, prediction, label, prefix):
         c_out = {}
-        if 'ROC' in self.config['REPORT']['matrix']:
+        if 'ROC' in self.config['CHECKPOINT']['matrix']:
             auroc = torchmetrics.AUROC()
             accuracy = auroc(prediction, label.int())
             c_out[prefix + 'roc'] = accuracy
-        if 'Specificity' in self.config['REPORT']['matrix']:
+        if 'Specificity' in self.config['CHECKPOINT']['matrix']:
             specificity = torchmetrics.Specificity()
             spec = specificity(prediction.to('cpu'), label.int().to('cpu'))
             c_out[prefix + 'specificity'] = spec
@@ -177,9 +175,9 @@ class PredictionReports(TensorBoardLogger):
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             regression_out = self.regression_matrix(prediction, label, prefix)
             self.log_metrics(regression_out, current_epoch)
-            if 'AUC' in self.config['REPORT']['matrix']:
+            if 'AUC' in self.config['CHECKPOINT']['matrix']:
                 self.generate_cumulative_dynamic_auc(prediction, label, current_epoch, prefix)
-            if 'WorstCase' in self.config['REPORT']['matrix']:
+            if 'WorstCase' in self.config['CHECKPOINT']['matrix']:
                 worst_record = self.worst_case_show(validation_step_outputs, prefix)
                 self.log_metrics({prefix + 'worst_AE': worst_record[prefix + 'worst_AE']}, current_epoch)
                 if 'CT' in self.config['DATA']['module']:
@@ -192,7 +190,7 @@ class PredictionReports(TensorBoardLogger):
         if self.config['MODEL']['Prediction_type'] == 'Classification':
             classification_out = self.classification_matrix(prediction.squeeze(), label, prefix)
             self.log_metrics(classification_out, current_epoch)
-            if 'ROC' in self.config['REPORT']['matrix']:
+            if 'ROC' in self.config['CHECKPOINT']['matrix']:
                 self.plot_AUROC(prediction.squeeze(), label, prefix, current_epoch)
 
 

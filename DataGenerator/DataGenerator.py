@@ -11,16 +11,20 @@ from monai.data import image_reader
 from scipy.ndimage import map_coordinates
 from pathlib import Path
 import nibabel as nib
+from Utils.XNATXML import XMLCreator
+import requests
+import pandas as pd
+from io import StringIO
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, config, keys, inference=False, transform=None, **kwargs):
+    def __init__(self, PatientList, config, keys, inference=False, transform=None, c_norm = None, n_norm = None, **kwargs):
         super().__init__()
         self.transform = transform
         self.keys = keys
         self.inference = inference
         self.PatientList = PatientList
-        self.n_norm = kwargs['numerical_norm']
-        self.c_norm = kwargs['category_norm']
+        self.n_norm = n_norm
+        self.c_norm = c_norm
         self.config = config
 
     def __len__(self):
@@ -76,8 +80,8 @@ class DataGenerator(torch.utils.data.Dataset):
             # read the rtstruct
             try:
                 rtstruct = RTStructBuilder.create_from(
-                    dicom_series_path=full_CT_path,
-                    rt_struct_path=full_RT_path[0]
+                    dicom_series_path = full_CT_path,
+                    rt_struct_path    = full_RT_path[0]
                 )
             except:
                 raise ValueError(self.PatientList[id].label + ' has RTSTRUCT problem! ')
@@ -215,75 +219,24 @@ class DataModule(LightningDataModule):
 
 
 def QueryFromServer(config, **kwargs):
+
     print("Querying from Server")
-    ## Get List of Patients
-    session = xnat.connect('http://128.16.11.124:8080/xnat/', user=config["SERVER"]["User"],
-                           password=config["SERVER"]["Password"])
-    project = session.projects[config["SERVER"]["Project"]]
-    ## Verify fit with clinical criteria
-    subject_list = []
-    clinical_keys = list(config['CRITERIA'].keys())
-    target = config['DATA']['target']
 
-    for nb, subject in enumerate(project.subjects.values()):
-        # print("Criteria", subject, nb)
-        # if(nb>10): break
-        subject_keys = subject.fields.keys()  # .key_map
-        # print(set(subject_dict))
-        # subject_keys = list(subject_dict.keys())
-        if set(clinical_keys).issubset(subject_keys):
-            if (all(subject.fields[k] in str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
+    search_field = [{"element_name":"xnat:subjectData","field_ID":"SUBJECT_LABEL","sequence":"1", "type":"1"}]
+    search_where = [{"schema_field":"xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP=survival_status","comparison_type":"=","value":"1"},
+                    {"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE=Dose","comparison_type":">=","value":"1"},]
+    
+    root_element = "xnat:subjectData"
+    test = XMLCreator(root_element, search_field, search_where)
+    params = {'format': 'csv'}
 
-    # Verify availability of images
-    rm_subject_list = []
-    for k, v in config['MODALITY'].items():
-        for nb, subject in enumerate(subject_list):
-            # if(nb>10): break
-            # print("Modality", subject, nb)
-            # keys = np.concatenate([list(experiment.scans.key_map.keys()) for experiment in subject.experiments.values()]
-            #                       , axis=0)
-
-            # remove the target is nan
-            if subject.fields[target] == 'nan':
-                rm_subject_list.append(subject)
-                break
-
-            # verity the images
-            if len(config['ImageSession'].items()) > 1:
-                for experiment in subject.experiments.values():
-                    if config['ImageSession'].get(k) in experiment.label:
-                        keys = experiment.scans.key_map.keys()
-            else:
-                keys = np.concatenate([list(experiment.scans.key_map.keys()) for experiment in
-                                       subject.experiments.values()], axis=0)
-
-            if v not in keys:
-                # if v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys():
-                rm_subject_list.append(subject)
-    # Verify the clinical features
-    if 'Clinical' in config['DATA']['module']:
-        clinical_feat = np.concatenate([feat for feat in config['CLINICAL'].values()])
-        for v in clinical_feat:
-            for nb, subject in enumerate(subject_list):
-                if v not in subject.fields.keys():
-                    if subject not in rm_subject_list:
-                        rm_subject_list.append(subject)
-
-    rm_subject_list = list(set(rm_subject_list))
-    for subject in rm_subject_list:
-        subject_list.remove(subject)
-
-    # for k, v in config['MODALITY'].items():
-    #     for nb, subject in enumerate(subject_list):
-    #         # if(nb>10): break
-    #         # print("Modality", subject, nb)
-    #         for experiment in subject.experiments.values():
-    #             scan_dict = experiment.scans.key_map
-    #             if (v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys()):
-    #                 subject_list.remove(subject)
-    #                 break
+    files = {'file': open('example.xml', 'rb')}
+    response = requests.post('http://128.16.11.124:8080/xnat/data/search/', params=params, files=files, auth=(config['SERVER']['User'], config['SERVER']['Password']))
+    PatientList = pd.read_csv(StringIO(response.text))
+    print(PatientList)
     print("Queried from Server")
-    return subject_list
+        
+    return PatientList
 
 
 def DoseMatchCT(DoseObj, DoseVolume, CTObj):
@@ -395,15 +348,6 @@ def LoadClinicalData(config, PatientList):
     category_cols = config['CLINICAL']['category_feat']
     numerical_cols = config['CLINICAL']['numerical_feat']
 
-    # clinical_columns = ['arm', 'age', 'gender', 'race', 'ethnicity', 'zubrod',
-    #                     'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
-    #                     'smoke_hx', 'rx_terminated_ae', 'rt_dose',
-    #                     'volume_ptv', 'dmax_ptv', 'v100_ptv',
-    #                     'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
-    #                     'v30_heart', 'v20_esophagus', 'v60_esophagus',
-    #                     'rt_compliance_ptv90', 'received_conc_chemo',
-    #                     ]  # 'egfr_hscore_200', 'received_conc_cetuximab','rt_compliance_physician', 'Dmin_PTV_CTV_MARGIN',
-    # 'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN',
     category_feats = []
     numerical_feats = []
     for i, patient in enumerate(PatientList):
@@ -412,13 +356,6 @@ def LoadClinicalData(config, PatientList):
         category_feat = [clinical_features[x] for x in category_cols]
         category_feats.append(category_feat)
         numerical_feats.append(numerical_feat)
-
-    # numerical_cols = ['age', 'volume_ptv', 'dmax_ptv', 'v100_ptv',
-    #                   'v95_ptv', 'v5_lung', 'v20_lung', 'dmean_lung', 'v5_heart',
-    #                   'v30_heart', 'v20_esophagus', 'v60_esophagus', 'Dmin_PTV_CTV_MARGIN',
-    #                   'Dmax_PTV_CTV_MARGIN', 'Dmean_PTV_CTV_MARGIN']
-    #
-    # category_cols = list(set(clinical_columns).difference(set(numerical_cols)))
 
     return category_feats, numerical_feats
 
