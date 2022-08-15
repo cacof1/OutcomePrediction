@@ -16,7 +16,6 @@ from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 
 ## Model
-from torchinfo import summary
 class Linear(pl.LightningModule):
     def __init__(self):
         super().__init__()

@@ -15,40 +15,32 @@ class MixModel(LightningModule):
         self.config = config
         self.label_range = label_range
         self.weights = weights
-        # self.FDS = FDS(feature_dim=1032, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
-        if config['MODEL']['Prediction_type'] == 'Classification':
-            self.classifier = nn.Sequential(
-                nn.LazyLinear(128),
-                nn.LazyLinear(1),
-                nn.Sigmoid()
-            )
-            self.loss_fcn = torch.nn.BCELoss()
 
-        if config['MODEL']['Prediction_type'] == 'Regression':
-            self.classifier = nn.Sequential(
-                nn.LazyLinear(128),
-                nn.LazyLinear(1)
-            )
-            self.loss_fcn = torch.nn.MSELoss()
+        self.loss_fcn = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
+        self.activation = getattr(torch.nn, self.config["BASEMODEL"]["Activation"])()
+        # self.FDS = FDS(feature_dim=1032, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
+        self.classifier = nn.Sequential(
+            nn.LazyLinear(128),
+            nn.LazyLinear(1),
+            self.activation
+        )
+
+
 
     def forward(self, datadict, labels):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
-        if self.config['REGULARIZATION']['Feature_smoothing']:
-            if self.training and self.current_epoch >= 1:
-                features = self.FDS.smooth(features, labels, self.current_epoch)
-
+        #if self.config['REGULARIZATION']['Feature_smoothing']:
+        #if self.training and self.current_epoch >= 1:
+        #features = self.FDS.smooth(features, labels, self.current_epoch)
+        prediction = self.classifier(self.forward(datadict, label))
         return features
 
     def training_step(self, batch, batch_idx):
         out = {}
         datadict, label = batch
-        features = self.forward(datadict, label)
-        prediction = self.classifier(features)
-        print(prediction, label)
-        try:
-            loss = self.loss_fcn(prediction.squeeze(), batch[-1])
-        except:
-            print('test')
+        prediction = self.forward(datadict, label)
+        loss = self.loss_fcn(prediction.squeeze(), batch[-1])
+
         out['features'] = features.detach()
         out['label'] = label
         out['prediction'] = prediction.detach()
@@ -59,13 +51,10 @@ class MixModel(LightningModule):
                                    label_range=self.label_range)
             MAE = torch.abs(prediction.flatten(0) - label)
             out['MAE'] = MAE.detach()
-            if 'Dose' in self.config['DATA']['module']:
-                out['dose'] = datadict['Dose']
-            if 'CT' in self.config['DATA']['module']:
-                out['img'] = datadict['CT']
-        # prefix = 'train_step_'
-        # self.logger.report_step(prediction, label, self.global_step, prefix)
-        # Label smoothing for Regression
+            if 'Dose' in self.config['DATA']['module']: out['dose'] = datadict['Dose']
+            if 'CT' in self.config['DATA']['module']: out['img'] = datadict['CT']
+                
+
         out['loss'] = loss
         return out
 
@@ -74,8 +63,7 @@ class MixModel(LightningModule):
         training_prediction = torch.cat([out['prediction'] for i, out in enumerate(training_step_outputs)], dim=0)
 
         prefix = 'train_epoch_'
-        # self.logger.log_metrics({prefix+'loss': self.loss_fcn(training_prediction.squeeze(), training_labels)},
-        # self.current_epoch)
+        # self.logger.log_metrics({prefix+'loss': self.loss_fcn(training_prediction.squeeze(), training_labels)}, self.current_epoch)
         self.logger.report_epoch(training_prediction.squeeze(), training_labels,
                                  training_step_outputs, self.current_epoch, prefix)
 
@@ -91,7 +79,7 @@ class MixModel(LightningModule):
     def validation_step(self, batch, batch_idx):
         out = {}
         datadict, label = batch
-        prediction = self.classifier(self.forward(datadict, label))
+        prediction = self.forward(datadict, label)
         val_loss = self.loss_fcn(prediction.squeeze(), batch[-1])
         self.log("val_loss", val_loss, on_step=False, on_epoch=True, sync_dist=True)
         # prefix = 'val_step_'
@@ -113,14 +101,13 @@ class MixModel(LightningModule):
         val_labels = torch.cat([out['label'] for i, out in enumerate(validation_step_outputs)], dim=0)
         val_prediction = torch.cat([out['prediction'] for i, out in enumerate(validation_step_outputs)], dim=0)
         prefix = 'val_epoch_'
-        # self.logger.log_metrics({prefix + 'loss': self.loss_fcn(val_prediction.squeeze(), val_labels)},
-        #                         self.current_epoch)
+        # self.logger.log_metrics({prefix + 'loss': self.loss_fcn(val_prediction.squeeze(), val_labels)},self.current_epoch)
         self.logger.report_epoch(val_prediction.squeeze(), val_labels,
                                  validation_step_outputs, self.current_epoch, prefix)
 
     def test_step(self, batch, batch_idx):
         datadict, label = batch
-        prediction = self.classifier(self.forward(datadict, label))
+        prediction = self.forward(datadict, label)
         test_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
         test_out = {}
         if self.config['MODEL']['Prediction_type'] == 'Regression':
