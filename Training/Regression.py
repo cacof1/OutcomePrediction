@@ -21,6 +21,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import toml
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution, get_module
 from Utils.PredictionReports import PredictionReports
+from pathlib import Path
 
 config = toml.load(sys.argv[1])
 s_module = config['DATA']['module']
@@ -128,28 +129,29 @@ else:
     weights = None
     label_range = None
 
-for iter in range(10):
+for iter in range(1):
 
     if 'CT' in s_module:
         if 'Dose' in s_module:
-            total_backbone = config['MODEL']['Prediction_type'] + '_' + config['MODEL']['CT_Backbone'] + '_' + config['MODEL']['Dose_Backbone']
+            total_backbone = config['MODEL']['Prediction_type'] + '_' + 'CT_' + config['MODEL']['CT_Backbone'] + '_' + \
+                             'Dose_' + config['MODEL']['Dose_Backbone']
             logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
         else:
-            total_backbone = config['MODEL']['Prediction_type'] + '_' + config['MODEL']['CT_Backbone']
+            total_backbone = config['MODEL']['Prediction_type'] + '_' + 'CT_' + config['MODEL']['CT_Backbone']
             logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
     else:
         if 'Dose' in s_module:
-            total_backbone = config['MODEL']['Prediction_type'] + '_' + config['MODEL']['Dose_Backbone']
+            total_backbone = config['MODEL']['Prediction_type'] + '_' + 'Dose_' + config['MODEL']['Dose_Backbone']
             logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
 
     logger.log_text()
 
-    filename = config['MODEL']['Prediction_type'] + '_' + total_backbone + '_' + '_'.join(config['DATA']['module'])
+    ckpt_dirpath = Path('./', total_backbone + '_ckpt')
 
     callbacks = [
-        ModelCheckpoint(dirpath='./',
+        ModelCheckpoint(dirpath=ckpt_dirpath,
                         monitor='val_loss',
-                        filename=filename,
+                        filename='0',
                         save_top_k=1,
                         mode='min'),
 
@@ -158,7 +160,7 @@ for iter in range(10):
     ]
 
     ngpu = torch.cuda.device_count()
-    trainer = Trainer(gpus=1, max_epochs=20, logger=logger, log_every_n_steps=10, callbacks=callbacks, auto_lr_find=True)
+    trainer = Trainer(gpus=1, max_epochs=1, logger=logger, log_every_n_steps=10, callbacks=callbacks, auto_lr_find=True)
     model = MixModel(module_dict, config, label_range=label_range, weights=weights)
 
     i = 0
