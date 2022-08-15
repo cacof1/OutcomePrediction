@@ -8,11 +8,15 @@ import xnat
 import SimpleITK as sitk
 from pathlib import Path
 from Utils.DicomTools import *
+from Utils.XNATXML import XMLCreator
+from io import StringIO
+import requests
+import pandas as pd
 
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList,
-                 target="pCR", selected_channel=['CT','RTDose','Records'], targetROI='PTV', ROIRange=[60,60,20],
-                 dicom_folder=None, transform=None, inference=False, **kwargs):
+                 target="pCR", selected_channel=['CT','RTDose','Records'], targetROI='PTV', ROIRange=[60,60,10],
+                 dicom_folder=None, transform=None, inference=False, clinical_cols=None,**kwargs):
 
         super().__init__()
         self.PatientList = PatientList
@@ -23,16 +27,14 @@ class DataGenerator(torch.utils.data.Dataset):
         self.dicom_folder = dicom_folder
         self.transform = transform
         self.inference = inference
-
-        self.n_norm = kwargs['numerical_norm']
-        self.c_norm = kwargs['category_norm']
+        self.clinical_cols = clinical_cols
 
     def __len__(self):
-        return int(len(self.PatientList))
+        return int(self.PatientList.shape[0])
 
     def __getitem__(self, i):
         data = {}
-        patient_id = self.PatientList[id].label
+        patient_id = self.PatientList.loc[i,'subject_label']
         DicomPath = os.path.join(self.dicom_folder, patient_id, patient_id, 'scans/')
         if self.targetROI is not None:
             RTSSPath = glob.glob(DicomPath + '*Structs')
@@ -75,17 +77,14 @@ class DataGenerator(torch.utils.data.Dataset):
                 data['PET'] = torch.as_tensor(data['PET'], dtype=torch.float32)
 
             if channel == 'Records':
-                category_feat, numerical_feat = LoadClinicalData(self.config, [self.PatientList[id]])
-                n_category_feat = self.c_norm.transform(category_feat).toarray()
-                n_numerical_feat = self.n_norm.transform(numerical_feat)
-                records = np.concatenate((n_numerical_feat, n_category_feat), axis=1)
-                records = np.squeeze(records)
+                records = self.PatientList.loc[:,self.clinical_cols].toarray()
+                records = torch.as_tensor(records, dtype=torch.float32)
                 data['Records'] = records
 
         if self.inference:
             return data
         else:
-            label = self.PatientList[id].fields[self.target]
+            llabel = self.PatientList.loc[i,self.target]
             label = torch.as_tensor(label, dtype=torch.int64)
             return data, label
 
@@ -93,7 +92,7 @@ class DataGenerator(torch.utils.data.Dataset):
 class DataModule(LightningDataModule):
     def __init__(self, PatientList, train_transform=None, val_transform=None, batch_size=8, train_size=0.7, val_size=0.2, test_size=0.1,
                  target="pCR",selected_channel=['CT','RTDose','Records'], targetROI='PTV',ROIRange=[60,60,20],
-                 dicom_folder=None, num_workers=0, **kwargs):
+                 dicom_folder=None, num_workers=0, clinical_cols=None,**kwargs):
         super().__init__()
 
         self.batch_size = batch_size
@@ -102,15 +101,19 @@ class DataModule(LightningDataModule):
         train_list, val_list = train_test_split(PatientList, test_size=(val_size+test_size), train_size=train_size)
         val_list, test_list = train_test_split(val_list, test_size=(test_size/val_size), train_size=(1-test_size/val_size))
         
+        train_list.reset_index(inplace=True,drop=True)
+        val_list.reset_index(inplace=True, drop=True)
+        test_list.reset_index(inplace=True, drop=True)
+        
         self.train_data = DataGenerator(train_list, target=target, selected_channel=selected_channel,
                                         targetROI=targetROI,ROIRange=ROIRange,dicom_folder=dicom_folder,
-                                        transform=train_transform, **kwargs)
+                                        transform=train_transform, clinical_cols=clinical_cols, **kwargs)
         self.val_data = DataGenerator(val_list, target=target, selected_channel=selected_channel,
                                         targetROI=targetROI,ROIRange=ROIRange,dicom_folder=dicom_folder,
-                                        transform=val_transform, **kwargs)
+                                        transform=val_transform, clinical_cols=clinical_cols, **kwargs)
         self.test_data = DataGenerator(test_list, target=target, selected_channel=selected_channel,
                                       targetROI=targetROI, ROIRange=ROIRange, dicom_folder=dicom_folder,
-                                      transform=val_transform, **kwargs)
+                                      transform=val_transform, clinical_cols=clinical_cols, **kwargs)
 
     def train_dataloader(self):
         return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=True)
@@ -123,74 +126,25 @@ class DataModule(LightningDataModule):
 
 def QueryFromServer(config, **kwargs):
     print("Querying from Server")
-    ## Get List of Patients
-    session = xnat.connect('http://128.16.11.124:8080/xnat/', user=config["SERVER"]["User"],
-                           password=config["SERVER"]["Password"])
-    project = session.projects[config["SERVER"]["Project"]]
-    ## Verify fit with clinical criteria
-    subject_list = []
-    clinical_keys = list(config['CRITERIA'].keys())
-    target = config['DATA']['target']
 
-    for nb, subject in enumerate(project.subjects.values()):
-        # print("Criteria", subject, nb)
-        # if(nb>10): break
-        subject_keys = subject.fields.keys()  # .key_map
-        # print(set(subject_dict))
-        # subject_keys = list(subject_dict.keys())
-        if set(clinical_keys).issubset(subject_keys):
-            if (all(subject.fields[k] in str(v) for k, v in config['CRITERIA'].items())):  subject_list.append(subject)
+    search_field = [{"element_name": "xnat:subjectData", "field_ID": "SUBJECT_LABEL", "sequence": "1", "type": "1"}]
+    search_where = [
+        {"schema_field": "xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP=survival_status", "comparison_type": "=",
+         "value": "1"},
+        {"schema_field": "xnat:ctSessionData.SCAN_COUNT_TYPE=Dose", "comparison_type": ">=", "value": "1"}, ]
 
-    # Verify availability of images
-    rm_subject_list = []
-    for k, v in config['MODALITY'].items():
-        for nb, subject in enumerate(subject_list):
-            # if(nb>10): break
-            # print("Modality", subject, nb)
-            # keys = np.concatenate([list(experiment.scans.key_map.keys()) for experiment in subject.experiments.values()]
-            #                       , axis=0)
+    root_element = "xnat:subjectData"
+    test = XMLCreator(root_element, search_field, search_where)
+    params = {'format': 'csv'}
 
-            # remove the target is nan
-            if subject.fields[target] == 'nan':
-                rm_subject_list.append(subject)
-                break
-
-            # verity the images
-            if len(config['ImageSession'].items()) > 1:
-                for experiment in subject.experiments.values():
-                    if config['ImageSession'].get(k) in experiment.label:
-                        keys = experiment.scans.key_map.keys()
-            else:
-                keys = np.concatenate([list(experiment.scans.key_map.keys()) for experiment in
-                                       subject.experiments.values()], axis=0)
-
-            if v not in keys:
-                # if v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys():
-                rm_subject_list.append(subject)
-    # Verify the clinical features
-    if 'Clinical' in config['DATA']['module']:
-        clinical_feat = np.concatenate([feat for feat in config['CLINICAL'].values()])
-        for v in clinical_feat:
-            for nb, subject in enumerate(subject_list):
-                if v not in subject.fields.keys():
-                    if subject not in rm_subject_list:
-                        rm_subject_list.append(subject)
-
-    rm_subject_list = list(set(rm_subject_list))
-    for subject in rm_subject_list:
-        subject_list.remove(subject)
-
-    # for k, v in config['MODALITY'].items():
-    #     for nb, subject in enumerate(subject_list):
-    #         # if(nb>10): break
-    #         # print("Modality", subject, nb)
-    #         for experiment in subject.experiments.values():
-    #             scan_dict = experiment.scans.key_map
-    #             if (v not in scan_dict.keys() and 'Fx1Dose' not in scan_dict.keys()):
-    #                 subject_list.remove(subject)
-    #                 break
+    files = {'file': open('example.xml', 'rb')}
+    response = requests.post('http://128.16.11.124:8080/xnat/data/search/', params=params, files=files,
+                             auth=(config['SERVER']['User'], config['SERVER']['Password']))
+    PatientList = pd.read_csv(StringIO(response.text))
+    print(PatientList)
     print("Queried from Server")
-    return subject_list
+
+    return PatientList
 
 def SynchronizeData(config, subject_list):
     ## Data Storage Format --> Idem as XNAT
