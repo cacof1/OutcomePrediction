@@ -1,88 +1,54 @@
-from abc import ABC
-
 import matplotlib.pyplot as plt
+from pytorch_lightning import LightningDataModule, LightningModule
 import numpy as np
-from torchinfo import summary
-import torchmetrics
-from monai.networks import blocks, nets
 import torch
-from torch import nn
+from collections import Counter
+import torchvision
+from torchvision import datasets, models, transforms
+from torchvision import transforms
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
-import sys, os
+from torchsummary import summary
+import sys
 import torchio as tio
-torch.cuda.empty_cache()
-torch.cuda.memory_summary(device=None, abbreviated=False)
-## Module - Dataloaders
-from DataGenerator.DataGenerator import DataModule, DataGenerator, QueryFromServer, SynchronizeData
-from Models.MixModel import MixModel
+import sklearn
+from pytorch_lightning import loggers as pl_loggers
+import torchmetrics
 
-## Main
-import toml
-from Utils.PredictionReports import PredictionReports
-from pathlib import Path
-from UnetEDcoder import UnetEDcoder
+## Module - Dataloaders
+from Dataloader.Dataloader import DataModule, DataGenerator, LoadSortDataLabel
 
 
 ## Model
-class AutoEncoder3D(LightningModule, ABC):
-    def __init__(self, config):
+class Classifier2D(LightningModule):
+    def __init__(self):
         super().__init__()
         self.n_classes = 1
-        module_str = config['MODEL']['Backbone']
-        parameters = config['MODEL_PARAMETERS']
-        self.config = config
-
-        # model_str = 'nets.' + module_str + '(**parameters)'
-        # self.model = eval(model_str)
-        self.model = UnetEDcoder(config)
-
-        # only use network for features
-
-        summary(self.model.to('cuda'), (config['MODEL']['batch_size'], 1, *config['DATA']['dim']))
+        self.backbone = models.resnet50(pretrained=True)
+        self.model = torch.nn.Sequential(
+            self.unet_model,
+            torch.nn.LazyLinear(128),
+            torch.nn.LazyLinear(self.n_classes)
+        )
+        summary(self.model.to('cuda'), (2, 160, 160, 40))
         self.accuracy = torchmetrics.AUC(reorder=True)
-        self.loss_fcn = torch.nn.MSELoss()
+        self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
-    def forward(self, datadict):
-        key = list(datadict.keys())[0]
-        return self.model(datadict[key])
+    def forward(self, x):
+        return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        image_dict, label = batch
-        prediction = self.forward(image_dict)
-        key = list(image_dict.keys())[0]
-        loss = self.loss_fcn(prediction, image_dict[key])
+        image, label = batch
+        prediction = self.forward(image)
+        loss = self.loss_fcn(prediction.squeeze(), label)
         self.log("loss", loss)
-        return loss
+        return {"loss": loss, "prediction": prediction.squeeze(), "label": label}
 
     def validation_step(self, batch, batch_idx):
-        image_dict, label = batch
-        prediction = self.forward(image_dict)
-        key = list(image_dict.keys())[0]
-        loss = self.loss_fcn(prediction, image_dict[key])
-
-        if batch_idx < 3:
-            im_st = image_dict[key][0, :, :, :, :]
-            self.logger.log_image(im_st, 'standard image', self.current_epoch)
-            plt.imshow(im_st[0, 5, :, :].cpu(), cmap='gray')
-            plt.title('standard image')
-            plt.show()
-            im = prediction[0, :, :, :, :]
-            self.logger.log_image(im, 'generated image', self.current_epoch)
-            plt.imshow(im[0, 5, :, :].cpu(), cmap='gray')
-            plt.title('generated image')
-            plt.show()
-        self.log("val_loss", loss)
-        return loss
-
-    def predict_step(self, batch, batch_idx):
-        image_dict, label = batch
-        prediction = self.forward(image_dict)
-        self.logger.log_image(prediction[0, :, :, :, :], 'generated image')
-        im = prediction[0, 0, 5, :, :].cpu()
-        plt.imshow(im, cmap='gray')
-        plt.show()
-        return prediction
+        image, label = batch
+        prediction = self.forward(image)
+        loss = self.loss_fcn(prediction.squeeze(), label)
+        return {"loss": loss, "prediction": prediction.squeeze(), "label": label}
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
@@ -91,83 +57,35 @@ class AutoEncoder3D(LightningModule, ABC):
 
 
 if __name__ == "__main__":
-    config = toml.load(sys.argv[1])
-    s_module = config['DATA']['module']
-    img_dim = config['DATA']['dim']
 
-    train_transform = tio.Compose([
-        tio.transforms.ZNormalization(),
-        tio.RandomAffine(),
-        tio.RandomFlip(),
-        tio.RandomNoise(),
-        tio.RandomMotion(),
-        tio.transforms.Resize(img_dim),
-        tio.RescaleIntensity(out_min_max=(0, 1))
-    ])
+## Main
+train_transform = tio.Compose([
+    tio.RandomAffine(),
+    # tio.RescaleIntensity(out_min_max=(0, 1))
+])
 
-    val_transform = tio.Compose([
-        tio.transforms.ZNormalization(),
-        tio.transforms.Resize(img_dim),
-        tio.RescaleIntensity(out_min_max=(0, 1))
-    ])
+val_transform = tio.Compose([
+    tio.RandomAffine(),
+    # tio.RescaleIntensity(out_min_max=(0, 1))
+])
+callbacks = [
+    ModelCheckpoint(
+        dirpath='./',
+        monitor='val_loss',
+        filename="model_DeepSurv",
+        # .{epoch:02d}-{val_loss:.2f}.h5",
+        save_top_k=1,
+        mode='min'),
+    EarlyStopping(monitor='val_loss')
+]
 
-    label = config['DATA']['target']
+data_file = np.load(sys.argv[1])
+label_file = sys.argv[2]
+label_name = sys.argv[3]
 
-    module_dict = nn.ModuleDict()
-
-    s_module = config['DATA']['module'][0]
-    module_dict[s_module] = AutoEncoder3D(config)
-
-    PatientList = QueryFromServer(config)
-    SynchronizeData(config, PatientList)
-    print(PatientList)
-
-    dataloader = DataModule(PatientList, config=config, keys=module_dict.keys(), train_transform=train_transform,
-                            val_transform=val_transform, batch_size=config['MODEL']['batch_size'],
-                            numerical_norm=None,
-                            category_norm=None,
-                            inference=False)
-
-    for iter in range(1):
-        total_backbone = config['MODEL']['Prediction_type'] + '_' + s_module + '_' + config['MODEL']['Backbone']
-        logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
-        logger.log_text()
-
-        ckpt_dirpath = Path('./', total_backbone + '_ckpt')
-
-        callbacks = [
-            ModelCheckpoint(dirpath=ckpt_dirpath,
-                            monitor='val_loss',
-                            filename='Iter',
-                            save_top_k=1,
-                            mode='min'),
-        ]
-
-        ngpu = torch.cuda.device_count()
-        trainer = Trainer(gpus=1, max_epochs=1, logger=logger, log_every_n_steps=10, #callbacks=callbacks,
-                          auto_lr_find=True)
-        model = AutoEncoder3D(config)
-
-        i = 0
-        for param in model.parameters():
-            i = i + 1
-            print(param.requires_grad)
-
-        trainer.fit(model, dataloader)
-
-        print('start testing...')
-        worstCase = 0
-        with torch.no_grad():
-            outs = []
-            for i, data in enumerate(dataloader.test_dataloader()):
-                truth = data[1]
-                x = data[0]
-                output = model.predict_step(data, i)
-                key = list(x.keys())[0]
-                im_st = x[key][0, :, :, :, :]
-                logger.log_image(im_st,'standard image')
-                plt.imshow(im_st[0, 5, :, :].cpu(), cmap='gray')
-                plt.title('standard image')
-                plt.show()
-        print('finish test')
-
+data, label = LoadSortDataLabel(label_name, label_file, data_file)
+trainer = Trainer(gpus=1, max_epochs=20)  # ,callbacks=callbacks)
+model = DeepSurv()
+dataloader = DataModule(data, label, train_transform=train_transform, val_transform=val_transform, batch_size=4,
+                        inference=False)
+trainer.fit(model, dataloader)
