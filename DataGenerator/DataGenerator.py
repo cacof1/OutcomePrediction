@@ -38,19 +38,25 @@ class DataGenerator(torch.utils.data.Dataset):
 
     def __getitem__(self, i):
         data = {}
-        patient_id = self.PatientList.loc[i,'subject_label']
-        DicomPath = os.path.join(self.dicom_folder, patient_id, patient_id, 'scans/')
+        patient_id = self.PatientList.loc[i,'PatientID']
+        DicomPath = os.path.join(self.dicom_folder, patient_id, self.PatientList.loc[i,'subject_label'], 'scans/')
+        # DicomPath = os.path.join(self.dicom_folder, patient_id, patient_id, 'scans/')
+        CTPath = glob.glob(DicomPath + '*CT')
+        CTPath = os.path.join(CTPath[0], 'resources/DICOM/files/')
+        CTSession = ReadDicom(CTPath)
+        CTSession.SetOrigin(CTSession.GetOrigin())
+        CTArray = sitk.GetArrayFromImage(CTSession)
         if self.targetROI is not None:
             RTSSPath = glob.glob(DicomPath + '*Structs')
             RTSSPath = os.path.join(RTSSPath[0], 'resources/secondary/files/')
             contours = RTSStoContour(RTSSPath, targetROI=self.targetROI)
-            CTPath = glob.glob(DicomPath + '*CT')
-            CTPath = os.path.join(CTPath[0], 'resources/DICOM/files/')
-            CTSession = ReadDicom(CTPath)
-            CTSession.SetOrigin(CTSession.GetOrigin())
-            CTArray = sitk.GetArrayFromImage(CTSession)
             mask_voxel, bbox_voxel, ROI_voxel, img_indices = get_ROI_voxel(contours, CTPath, roi_range=self.ROIRange)
-
+        else:
+            mask_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
+            bbox_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
+            ROI_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
+            img_indices = range(self.ROIRange[-1])
+                
         for channel in self.selected_channel:
             if channel == 'CT':
                 data['CT'] = get_masked_img_voxel(CTArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
