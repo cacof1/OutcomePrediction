@@ -14,7 +14,7 @@ class Classifier3D(LightningModule):
         backbone_name = config['MODEL'][module_str + '_Backbone']
         parameters = config[module_str + '_MODEL_PARAMETERS']
 
-        if backbone_name == '3DUnet':
+        if backbone_name == 'Unet':
             self.backbone = UnetEncoder(**parameters)
         else:
             model_str = 'nets.' + backbone_name + '(**parameters)'

@@ -21,6 +21,7 @@ from Models.MixModel import MixModel
 import toml
 from Utils.PredictionReports import PredictionReports
 from pathlib import Path
+from UnetEDcoder import UnetEDcoder
 
 
 ## Model
@@ -32,8 +33,10 @@ class AutoEncoder3D(LightningModule, ABC):
         parameters = config['MODEL_PARAMETERS']
         self.config = config
 
-        model_str = 'nets.' + module_str + '(**parameters)'
-        self.model = eval(model_str)
+        # model_str = 'nets.' + module_str + '(**parameters)'
+        # self.model = eval(model_str)
+        self.model = UnetEDcoder(config)
+
         # only use network for features
 
         summary(self.model.to('cuda'), (config['MODEL']['batch_size'], 1, *config['DATA']['dim']))
@@ -59,12 +62,14 @@ class AutoEncoder3D(LightningModule, ABC):
         loss = self.loss_fcn(prediction, image_dict[key])
 
         if batch_idx < 3:
-            im_st = image_dict[key][0, 0, 5, :, :]
-            plt.imshow(im_st.cpu())
+            im_st = image_dict[key][0, :, :, :, :]
+            self.logger.log_image(im_st, 'standard image', self.current_epoch)
+            plt.imshow(im_st[0, 5, :, :].cpu(), cmap='gray')
             plt.title('standard image')
             plt.show()
-            im = prediction[0, 0, 5, :, :]
-            plt.imshow(im.cpu())
+            im = prediction[0, :, :, :, :]
+            self.logger.log_image(im, 'generated image', self.current_epoch)
+            plt.imshow(im[0, 5, :, :].cpu(), cmap='gray')
             plt.title('generated image')
             plt.show()
         self.log("val_loss", loss)
@@ -73,8 +78,9 @@ class AutoEncoder3D(LightningModule, ABC):
     def predict_step(self, batch, batch_idx):
         image_dict, label = batch
         prediction = self.forward(image_dict)
+        self.logger.log_image(prediction[0, :, :, :, :], 'generated image')
         im = prediction[0, 0, 5, :, :].cpu()
-        plt.imshow(im)
+        plt.imshow(im, cmap='gray')
         plt.show()
         return prediction
 
@@ -113,7 +119,6 @@ if __name__ == "__main__":
     module_dict[s_module] = AutoEncoder3D(config)
 
     PatientList = QueryFromServer(config)
-    PatientList = [p for p in PatientList if p.label not in config['FILTER']['patient_id']]
     SynchronizeData(config, PatientList)
     print(PatientList)
 
@@ -128,18 +133,18 @@ if __name__ == "__main__":
         logger = PredictionReports(config=config, save_dir='lightning_logs', name=total_backbone)
         logger.log_text()
 
-        # ckpt_dirpath = Path('./', total_backbone + '_ckpt')
-        #
-        # callbacks = [
-        #     ModelCheckpoint(dirpath=ckpt_dirpath,
-        #                     monitor='val_loss',
-        #                     filename='Iter',
-        #                     save_top_k=1,
-        #                     mode='min'),
-        # ]
+        ckpt_dirpath = Path('./', total_backbone + '_ckpt')
+
+        callbacks = [
+            ModelCheckpoint(dirpath=ckpt_dirpath,
+                            monitor='val_loss',
+                            filename='Iter',
+                            save_top_k=1,
+                            mode='min'),
+        ]
 
         ngpu = torch.cuda.device_count()
-        trainer = Trainer(gpus=1, max_epochs=15, logger=logger, log_every_n_steps=10, #callbacks=callbacks,
+        trainer = Trainer(gpus=1, max_epochs=1, logger=logger, log_every_n_steps=10, #callbacks=callbacks,
                           auto_lr_find=True)
         model = AutoEncoder3D(config)
 
@@ -159,8 +164,9 @@ if __name__ == "__main__":
                 x = data[0]
                 output = model.predict_step(data, i)
                 key = list(x.keys())[0]
-                im_st = x[key][0, 0, 5, :, :]
-                plt.imshow(im_st.cpu())
+                im_st = x[key][0, :, :, :, :]
+                logger.log_image(im_st,'standard image')
+                plt.imshow(im_st[0, 5, :, :].cpu(), cmap='gray')
                 plt.title('standard image')
                 plt.show()
         print('finish test')
