@@ -70,6 +70,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 DoseSession = ReadDicom(DosePath)[..., 0]
                 DoseSession = ResamplingITK(DoseSession, CTSession)
                 DoseArray = sitk.GetArrayFromImage(DoseSession)
+                DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
                 data['RTDose'] = get_masked_img_voxel(DoseArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
                 data['RTDose'] = np.expand_dims(data['RTDose'], 0)
                 if self.transform is not None: data['RTDose'] = self.transform(data['RTDose'])
