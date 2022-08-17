@@ -16,6 +16,7 @@ import requests
 import pandas as pd
 from io import StringIO
 
+import xml.etree.ElementTree as ET
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList, config, keys, inference=False, transform=None, c_norm = None, n_norm = None, **kwargs):
         super().__init__()
@@ -222,6 +223,7 @@ def QueryFromServer(config, **kwargs):
     for value in config['DATA']['target']:
         dict_temp = {"element_name":"xnat:subjectData","field_ID":"XNAT_SUBJECTDATA_FIELD_MAP="+str(value),"sequence":"1", "type":"int"}
         search_field.append(dict_temp)
+
     ##Project
     search_field.append({"element_name":"xnat:subjectData","field_ID":"PROJECT","sequence":"1", "type":"string"})
     ##Label
@@ -242,9 +244,7 @@ def QueryFromServer(config, **kwargs):
     XML = XMLCreator(root_element, search_field, search_where)
     xmlstr= XML.ConstructTree()
     params = {'format': 'csv'}
-    files = {'file': open('example.xml', 'rb')}
-
-    response    = requests.post('http://128.16.11.124:8080/xnat/data/search/', params=params, files=files, auth=(config['SERVER']['User'], config['SERVER']['Password']))
+    response    = requests.post('http://128.16.11.124:8080/xnat/data/search/', params=params, data=xmlstr, auth=(config['SERVER']['User'], config['SERVER']['Password']))
     PatientList = pd.read_csv(StringIO(response.text))
     print(PatientList)
     print("Queried from Server")
@@ -276,8 +276,20 @@ def DoseMatchCT(DoseObj, DoseVolume, CTObj):
     return Vf
 
 def SynchronizeData(config, subject_list):
-    ## Data Storage Format --> Idem as XNAT
-
+    params    = {'format': 'csv'}
+    response = requests.get('http://128.16.11.124:8080/xnat/data/subjects/XNAT01_S00800', params=params, auth=(config['SERVER']['User'], config['SERVER']['Password']))
+    #print(response.text)
+    import xmltodict
+    subject_dict = xmltodict.parse(response.text)
+    print(subject_dict['xnat:Subject']["xnat:experiments"]["xnat:experiment"])
+    #subject_query = ET.fromstring(response.text)
+    
+    #for experiments in subject_query:
+    #    print(experiments)
+    #    for experiment in experiments:
+    #        print(experiment.tag)
+    #        for scan in experiment:
+    #            print(scan.tag)
     ## Verify if data exists in data folder
     for subject in subject_list:
         # print(subject.label, subject.fulluri, dir(subject), subject.uri)

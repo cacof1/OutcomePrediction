@@ -37,11 +37,8 @@ class XMLCreator():
         for search_where in self.search_where_list:
             self.search_where_query(search_where_clause, search_where)            
                 
-        tree = ET.ElementTree(self.bundle)                    
-        ET.indent(tree, '  ')
-                    
-        #writing xml
-        tree.write("example.xml", encoding="utf-8", xml_declaration=True)
+        return ET.tostring(self.bundle)
+
 
     def search_field_query(self,bundle,search_field):
         root = ET.SubElement(bundle,"xdat:search_field")

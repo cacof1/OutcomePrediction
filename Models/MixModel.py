@@ -53,7 +53,6 @@ class MixModel(LightningModule):
             out['MAE'] = MAE.detach()
             if 'Dose' in self.config['DATA']['module']: out['dose'] = datadict['Dose']
             if 'CT' in self.config['DATA']['module']: out['img'] = datadict['CT']
-                
 
         out['loss'] = loss
         return out
