@@ -17,6 +17,7 @@ from sklearn.preprocessing import OneHotEncoder,MinMaxScaler,LabelEncoder,Ordina
 from sklearn.compose import ColumnTransformer
 
 import xml.etree.ElementTree as ET
+
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList,
                  target="pCR", selected_channel=['CT','RTDose','Records'], targetROI='PTV', ROIRange=[60,60,10],
@@ -121,15 +122,18 @@ class DataModule(LightningDataModule):
         self.val_data = DataGenerator(val_list, transform=val_transform, **kwargs)
         self.test_data = DataGenerator(test_list, transform=val_transform, **kwargs)
 
+        # Convert regression value to histogram class
+        train_val, test = train_test_split(PatientList, train_size=0.85, random_state=42, shuffle=False)
+        train, val = train_test_split(train_val, test_size=0.7, random_state=np.random.randint(25, 50), shuffle=True)
+        
     def train_dataloader(self):
-        return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=True)
+        return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, drop_last=True, shuffle=True, collate_fn=None)
 
     def val_dataloader(self):
-        return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True)
+        return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, drop_last=True, pin_memory=True, collate_fn=None)
     
     def test_dataloader(self):
-        return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True)
-
+        return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, drop_last=True, pin_memory=True, collate_fn=None)
                                                   
 def QueryFromServer(config, **kwargs):
 
@@ -154,6 +158,12 @@ def QueryFromServer(config, **kwargs):
     for key,value in config['CRITERIA'].items():
         dict_temp = {"schema_field":"xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP="+key, "comparison_type":"=","value":str(value)}
         search_where.append(dict_temp)
+
+    for value in config['FILTER']['patient_id']:
+        dict_temp = {"schema_field": "xnat:subjectData.SUBJECT_LABEL", "comparison_type": "!=",
+                     "value": str(value)}
+        search_where.append(dict_temp)
+
     for key,value in config['MODALITY'].items():
         dict_temp = {"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE="+key,"comparison_type":">=","value":str(value)}
         search_where.append(dict_temp)
@@ -166,9 +176,7 @@ def QueryFromServer(config, **kwargs):
     PatientList = pd.read_csv(StringIO(response.text))
     print(PatientList)
     print("Queried from Server")
-        
     return PatientList
-
 
 def SynchronizeData(config, subject_list):
     params    = {'format': 'csv'}
@@ -186,10 +194,10 @@ def SynchronizeData(config, subject_list):
     #        for scan in experiment:
     #            print(scan.tag)
     ## Verify if data exists in data folder
-    for subject in subject_list:
+    for subject in subject_list['subject_label']:
         # print(subject.label, subject.fulluri, dir(subject), subject.uri)
         # scans = subject.experiments[subject.label].scans['CT'].fulldata
-        if (not Path(config['DATA']['DataFolder'], subject.label).is_dir()):
+        if (not Path(config['DATA']['DataFolder'], subject).is_dir()):
             print("Synchronizing ", subject.id, subject.label)
             subject.download_dir(config['DATA']['DataFolder'])
 
@@ -239,7 +247,6 @@ def LoadClinicalData(config, PatientList, ClinicalDataset):
 
     patient_list = PatientList['subject_label'].tolist()
     ClinicalDataset = ClinicalDataset[ClinicalDataset.PatientID.isin(patient_list)].reset_index(drop=True)
-
     ct = ColumnTransformer(
         [("CatTrans", OneHotEncoder(), category_cols),
          ("NumTrans", MinMaxScaler(), numerical_cols), ])

@@ -14,7 +14,7 @@ class Classifier3D(LightningModule):
         backbone_name = config['MODEL'][module_str + '_Backbone']
         parameters = config[module_str + '_MODEL_PARAMETERS']
 
-        if backbone_name == '3DUnet':
+        if backbone_name == 'Unet':
             self.backbone = UnetEncoder(**parameters)
         else:
             model_str = 'nets.' + backbone_name + '(**parameters)'
@@ -27,8 +27,6 @@ class Classifier3D(LightningModule):
             torch.nn.Flatten(),
         )
         self.model.apply(self.weights_init)
-        # summary(self.model.to('cuda'), (config['MODEL']['batch_size'], 1, *config['DATA']['dim']),
-        #         col_names=["input_size", "output_size"], depth=5)
         self.accuracy = torchmetrics.AUC(reorder=True)
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 

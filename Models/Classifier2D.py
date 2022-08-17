@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torchvision import models
 from monai.networks import nets
+from Models.UnetEncoder import UnetEncoder
 
 class Classifier2D(pl.LightningModule):
     def __init__(self, config, module_str):
@@ -10,12 +11,14 @@ class Classifier2D(pl.LightningModule):
         self.config = config
         self.module_str = module_str
         model = config['MODEL'][module_str + '_Backbone']
-
+        parameters = config[module_str + '_MODEL_PARAMETERS']
         self.linear1 = nn.LazyLinear(72)
         if model == 'Vit':
             self.backbone = models.vit_b_16(pretrained=True).eval()
+        if model == 'Unet':
+            self.backbone = UnetEncoder(**parameters)
         else:
-            parameters = config[module_str + '_MODEL_PARAMETERS']
+
             model_str = 'nets.' + model + '(**parameters)'
             self.backbone = eval(model_str)
             # self.backbone = loaded_model.features
