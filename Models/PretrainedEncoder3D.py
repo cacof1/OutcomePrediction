@@ -45,9 +45,7 @@ class PretrainedEncoder3D(LightningModule):
 
         self.accuracy = torchmetrics.AUC(reorder=True)
 
-    def forward(self, datadict):
-        key = list(datadict.keys())[0]
-        img = datadict[key]
+    def forward(self, img):
         out1 = self.backbone(img)
         enc1 = self.encoder1(img)
         f1 = nn.AdaptiveMaxPool3d((1, 1, 48))(enc1)
