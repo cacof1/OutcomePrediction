@@ -118,34 +118,26 @@ if 'Dose' in config['DATA']['module']:
         Dose_Backbone = Classifier2D(config, 'Dose')
     module_dict['RTDose'] = Dose_Backbone
 
-if config['MODEL']['Clinical_Backbone']:
+if config['MODEL']['Records_Backbone']:
     Clinical_backbone = Linear()
 
-if 'Clinical' in config['DATA']['module']:
-    module_dict['Clinical'] = Clinical_backbone
+if 'Records' in config['DATA']['module']:
+    module_dict['Records'] = Clinical_backbone
+    PatientList, clinical_cols = LoadClinicalData(config, PatientList)
 
-if "Clinical" in config['DATA']['module']:
-    category_feats, numerical_feats = LoadClinicalData(config, PatientList)
-    if len(category_feats) > 0:
-        c_norm = OneHotEncoder()
-        c_norm.fit(category_feats)
-    else:
-        c_norm = None
-    if len(numerical_feats) > 0:
-        n_norm = StandardScaler()
-        n_norm.fit_transform(numerical_feats)
-    else:
-        n_norm = None
+if config['MODEL']['Prediction_type'] == 'Classification':
+    threshold = config['MODEL']['Classification_threshold']
 else:
-    c_norm = None
-    n_norm = None
+    threshold = None
 
 dataloader = DataModule(PatientList,
                         target=config['DATA']['target'],
                         selected_channel=module_dict.keys(),
                         dicom_folder=config['DATA']['DataFolder'],
                         train_transform=train_transform,
-                        val_transform=val_transform
+                        val_transform=val_transform,
+                        threshold = threshold,
+                        clinical_cols = clinical_cols
                         )
 
 """

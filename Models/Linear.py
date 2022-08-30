@@ -22,7 +22,6 @@ class Linear(pl.LightningModule):
         self.model = nn.Sequential(
             nn.LazyLinear(64),
             nn.LayerNorm(64),
-            nn.LazyLinear(8),
             nn.ReLU()
         )
         self.loss_fcn = nn.CrossEntropyLoss()
