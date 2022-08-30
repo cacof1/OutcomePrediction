@@ -55,3 +55,10 @@ class PretrainedEncoder3D(LightningModule):
         f2f = f2.flatten(start_dim=1)
         connect_features = torch.cat((f1f, f2f), dim=1)
         return connect_features
+
+    def proj_feat(self, x, hidden_size, feat_size):
+        new_view = (x.size(0), *feat_size, hidden_size)
+        x = x.view(new_view)
+        new_axes = (0, len(x.shape) - 1) + tuple(d + 1 for d in range(len(feat_size)))
+        x = x.permute(new_axes).contiguous()
+        return x

@@ -20,7 +20,7 @@ class MixModel(LightningModule):
         self.activation = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         # self.FDS = FDS(feature_dim=1032, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
         self.classifier = nn.Sequential(
-            nn.LazyLinear(128),
+            # nn.LazyLinear(128),
             nn.LazyLinear(1),
             self.activation
         )

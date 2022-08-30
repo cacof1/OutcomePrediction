@@ -22,23 +22,23 @@ class Classifier2D(pl.LightningModule):
             self.backbone = eval(model_str)
             # self.backbone = loaded_model.features
 
-        self.backbone.eval()
-        for param in self.backbone.parameters():
-            param.requires_grad = False
+        # self.backbone.eval()
+        # for param in self.backbone.parameters():
+        #     param.requires_grad = False
 
         self.middle_layer = nn.AdaptiveAvgPool1d(128)
 
-        # layers = list(self.backbone.children())[:-1]
-        # self.feature_extractor = nn.Sequential(*layers)
-        # self.feature_extractor.eval()
+        layers = list(self.backbone.children())[:-1]
+        self.feature_extractor = nn.Sequential(*layers)
 
-        # for param in self.feature_extractor[0:int(len(self.feature_extractor)/2)].parameters():
-        #     param.requires_grad = False
+        self.feature_extractor.eval()
+        for param in self.feature_extractor[0:int(len(self.feature_extractor)/2)].parameters():
+            param.requires_grad = False
 
     def convert2d(self, x):
         if self.config[self.module_str +'_MODEL_PARAMETERS']['in_channels'] == 3:
             x = x.repeat(1, 3, 1, 1)
-        features = self.backbone(x)
+        features = self.feature_extractor(x)
         features = features.flatten(1)
         features = self.linear1(features)
         features = features.unsqueeze(0)

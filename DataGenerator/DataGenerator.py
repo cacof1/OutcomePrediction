@@ -17,7 +17,6 @@ from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, LabelEncoder, Ord
 from sklearn.compose import ColumnTransformer, make_column_transformer
 import xml.etree.ElementTree as ET
 
-
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList,
                  target="pCR", selected_channel=['CT', 'RTDose', 'Records'], targetROI='PTV', ROIRange=[60, 60, 10],
@@ -63,7 +62,7 @@ class DataGenerator(torch.utils.data.Dataset):
             if channel == 'CT':
                 data['CT'] = get_masked_img_voxel(CTArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
                 data['CT'] = np.expand_dims(data['CT'], 0)
-                if self.transform is not None: data['CT'] = self.transform(data['CT'])
+                if self.transform is not None: data['CT'] = self.transform['CT'](data['CT'])
                 data['CT'] = torch.as_tensor(data['CT'], dtype=torch.float32)
 
             if channel == 'RTDose':
@@ -77,7 +76,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 # DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
                 data['RTDose'] = get_masked_img_voxel(DoseArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
                 data['RTDose'] = np.expand_dims(data['RTDose'], 0)
-                if self.transform is not None: data['RTDose'] = self.transform(data['RTDose'])
+                if self.transform is not None: data['RTDose'] = self.transform['Dose'](data['RTDose'])
                 data['RTDose'] = torch.as_tensor(data['RTDose'], dtype=torch.float32)
 
             if channel == 'PET':
@@ -100,7 +99,7 @@ class DataGenerator(torch.utils.data.Dataset):
         else:
             label = self.PatientList.loc[i, self.target[0]]
             if self.threshold is not None:  label = np.array(label > self.threshold)
-            label = torch.as_tensor(label, dtype=torch.int64)
+            label = torch.as_tensor(label, dtype=torch.float32)
             return data, label
 
 

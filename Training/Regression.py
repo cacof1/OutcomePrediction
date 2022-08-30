@@ -22,6 +22,7 @@ import toml
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution, get_module
 from Utils.PredictionReports import PredictionReports
 from pathlib import Path
+from Utils.DicomTools import img_train_transform, img_val_transform
 
 config = toml.load(sys.argv[1])
 s_module = config['DATA']['module']
@@ -33,23 +34,12 @@ filename = total_backbone + '_' + '_'.join(config['DATA']['module'])
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
 logger.log_text()
 
-img_dim = config['DATA']['dim']
+train_transform = {}
+val_transform = {}
 
-train_transform = tio.Compose([
-    tio.transforms.ZNormalization(),
-    tio.RandomAffine(),
-    tio.RandomFlip(),
-    tio.RandomNoise(),
-    tio.RandomMotion(),
-    tio.transforms.Resize(img_dim),
-    tio.RescaleIntensity(out_min_max=(0, 1))
-])
-
-val_transform = tio.Compose([
-    tio.transforms.ZNormalization(),
-    tio.transforms.Resize(img_dim),
-    tio.RescaleIntensity(out_min_max=(0, 1))
-])
+for module in config['MODALITY'].keys():
+    train_transform[module] = img_train_transform(config['DATA'][module + '_dim'])
+    val_transform[module] = img_val_transform(config['DATA'][module + '_dim'])
 
 ckpt_dirpath = Path('./', total_backbone + '_ckpt')
 callbacks = [
@@ -136,8 +126,9 @@ dataloader = DataModule(PatientList,
                         dicom_folder=config['DATA']['DataFolder'],
                         train_transform=train_transform,
                         val_transform=val_transform,
-                        threshold = threshold,
-                        clinical_cols = clinical_cols
+                        batch_size=config['MODEL']['batch_size'],
+                        threshold=threshold,
+                        clinical_cols=clinical_cols
                         )
 
 """

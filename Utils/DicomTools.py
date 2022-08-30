@@ -11,6 +11,8 @@ from matplotlib.path import Path
 from skimage.measure import regionprops
 from monai.data import image_reader
 from scipy.ndimage import map_coordinates
+import torchio as tio
+
 
 def get_bbox_from_mask(mask, img_shape, roi_range=[64, 64]):
     pos = np.where(mask)
@@ -223,3 +225,25 @@ def DoseMatchCT(DoseObj, DoseVolume, CTObj):
     Vf = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
     Vf = Vf.transpose(2, 1, 0)
     return Vf
+
+
+def img_train_transform(img_dim):
+    transform = tio.Compose([
+        tio.transforms.ZNormalization(),
+        tio.RandomAffine(),
+        tio.RandomFlip(),
+        tio.RandomNoise(),
+        tio.RandomMotion(),
+        tio.transforms.Resize(img_dim),
+        tio.RescaleIntensity(out_min_max=(0, 1))
+    ])
+    return transform
+
+
+def img_val_transform(img_dim):
+    transform = tio.Compose([
+        tio.transforms.ZNormalization(),
+        tio.transforms.Resize(img_dim),
+        tio.RescaleIntensity(out_min_max=(0, 1))
+    ])
+    return transform
