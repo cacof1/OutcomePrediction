@@ -15,21 +15,23 @@ class Classifier2D(pl.LightningModule):
         self.linear1 = nn.LazyLinear(72)
         if model == 'Vit':
             self.backbone = models.vit_b_16(pretrained=True).eval()
-        if model == 'Unet':
+        elif model == 'Unet':
             self.backbone = UnetEncoder(**parameters)
         else:
-
             model_str = 'nets.' + model + '(**parameters)'
             self.backbone = eval(model_str)
             # self.backbone = loaded_model.features
 
-        # self.backbone.eval()
-        # for param in self.backbone.parameters():
-        #     param.requires_grad = False
+        self.backbone.eval()
+        for param in self.backbone.parameters():
+            param.requires_grad = False
 
-        layers = list(self.backbone.children())[:-1]
-        self.feature_extractor = nn.Sequential(*layers)
-        self.feature_extractor.eval()
+        self.middle_layer = nn.AdaptiveAvgPool1d(128)
+
+        # layers = list(self.backbone.children())[:-1]
+        # self.feature_extractor = nn.Sequential(*layers)
+        # self.feature_extractor.eval()
+
         # for param in self.feature_extractor[0:int(len(self.feature_extractor)/2)].parameters():
         #     param.requires_grad = False
 
@@ -47,6 +49,7 @@ class Classifier2D(pl.LightningModule):
     def forward(self, x):
         features = torch.cat([self.convert2d(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
         features = features.flatten(start_dim=1)
+        features = self.middle_layer(features)
         return features
 
     def weights_init(self, m):

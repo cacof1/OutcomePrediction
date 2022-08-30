@@ -25,18 +25,10 @@ from pathlib import Path
 
 config = toml.load(sys.argv[1])
 s_module = config['DATA']['module']
-"""
-if 'CT' in s_module:
-    if 'Dose' in s_module:
-        total_backbone = config['MODEL']['Prediction_type'] + '_' + 'CT_' + config['MODEL']['CT_Backbone'] + '_' + \
-                         'Dose_' + config['MODEL']['Dose_Backbone']
-    else:
-        total_backbone = config['MODEL']['Prediction_type'] + '_' + 'CT_' + config['MODEL']['CT_Backbone']
-else:
-    if 'Dose' in s_module:
-        total_backbone = config['MODEL']['Prediction_type'] + '_' + 'Dose_' + config['MODEL']['Dose_Backbone']
-"""
-total_backbone = ''
+total_backbone = config['MODEL']['Prediction_type']
+for module in s_module:
+    total_backbone = total_backbone + '_' + module + '_' + config['MODEL'][module + '_Backbone']
+
 filename = total_backbone + '_' + '_'.join(config['DATA']['module'])
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
 logger.log_text()
@@ -74,7 +66,7 @@ label = config['DATA']['target']
 module_dict = nn.ModuleDict()
 
 PatientList = QueryFromServer(config)
-SynchronizeData(config, PatientList)
+# SynchronizeData(config, PatientList)
 print(len(PatientList))
 
 if 'CT' in config['DATA']['module']:

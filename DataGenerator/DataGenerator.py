@@ -13,14 +13,15 @@ from io import StringIO
 import requests
 import pandas as pd
 
-from sklearn.preprocessing import OneHotEncoder,MinMaxScaler,LabelEncoder,OrdinalEncoder
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, LabelEncoder, OrdinalEncoder
 from sklearn.compose import ColumnTransformer
 
 import xml.etree.ElementTree as ET
 
+
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList,
-                 target="pCR", selected_channel=['CT','RTDose','Records'], targetROI='PTV', ROIRange=[60,60,10],
+                 target="pCR", selected_channel=['CT', 'RTDose', 'Records'], targetROI='PTV', ROIRange=[60, 60, 10],
                  dicom_folder=None, transform=None, inference=False, clinical_cols=None, threshold=None, **kwargs):
 
         super().__init__()
@@ -40,8 +41,8 @@ class DataGenerator(torch.utils.data.Dataset):
 
     def __getitem__(self, i):
         data = {}
-        patient_id = self.PatientList.loc[i,'PatientID']
-        DicomPath = os.path.join(self.dicom_folder, patient_id, self.PatientList.loc[i,'subject_label'], 'scans/')
+        patient_id = self.PatientList.loc[i, 'PatientID']
+        DicomPath = os.path.join(self.dicom_folder, patient_id, self.PatientList.loc[i, 'subject_label'], 'scans/')
         # DicomPath = os.path.join(self.dicom_folder, patient_id, patient_id, 'scans/')
         CTPath = glob.glob(DicomPath + '*CT')
         CTPath = os.path.join(CTPath[0], 'resources/DICOM/files/')
@@ -58,7 +59,7 @@ class DataGenerator(torch.utils.data.Dataset):
             bbox_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
             ROI_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
             img_indices = range(self.ROIRange[-1])
-                
+
         for channel in self.selected_channel:
             if channel == 'CT':
                 data['CT'] = get_masked_img_voxel(CTArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
@@ -90,73 +91,87 @@ class DataGenerator(torch.utils.data.Dataset):
                 data['PET'] = torch.as_tensor(data['PET'], dtype=torch.float32)
 
             if channel == 'Records':
-                records = self.PatientList.loc[:,self.clinical_cols].to_numpy()
+                records = self.PatientList.loc[:, self.clinical_cols].to_numpy()
                 data['Records'] = torch.as_tensor(records, dtype=torch.float32)
 
         if self.inference:
             return data
         else:
-            label = self.PatientList.loc[i,self.target]
+            label = self.PatientList.loc[i, self.target]
             if self.threshold is not None:  label = np.array(label > self.threshold)
             label = torch.as_tensor(label, dtype=torch.int64)
             return data, label
 
+
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, PatientList, train_transform=None, val_transform=None, 
+    def __init__(self, PatientList, train_transform=None, val_transform=None,
                  batch_size=8, train_size=0.7, val_size=0.2, test_size=0.1, num_workers=10, **kwargs):
-        
         super().__init__()
 
         self.batch_size = batch_size
         self.num_workers = num_workers
-        
-        train_val_list, test_list = train_test_split(PatientList, train_size = (train_size+val_size), random_state=42, shuffle=False)
-        train_list, val_list = train_test_split(train_val_list, test_size=(val_size/train_size), random_state=np.random(), shuffle=True)
-        
-        train_list.reset_index(inplace=True,drop=True)
+
+        train_val_list, test_list = train_test_split(PatientList, train_size=(train_size + val_size), random_state=42,
+                                                     shuffle=False)
+        train_list, val_list = train_test_split(train_val_list, test_size=(val_size / train_size),
+                                                random_state=np.random(), shuffle=True)
+
+        train_list.reset_index(inplace=True, drop=True)
         val_list.reset_index(inplace=True, drop=True)
         test_list.reset_index(inplace=True, drop=True)
-        
+
         self.train_data = DataGenerator(train_list, transform=train_transform, **kwargs)
         self.val_data = DataGenerator(val_list, transform=val_transform, **kwargs)
         self.test_data = DataGenerator(test_list, transform=val_transform, **kwargs)
 
         # Convert regression value to histogram class
-        train_val, test = train_test_split(PatientList, train_size=0.85, random_state=42, shuffle=False)
-        train, val = train_test_split(train_val, test_size=0.7, random_state=np.random.randint(25, 50), shuffle=True)
-        
+        train_val, test = train_test_split(PatientList, train_size=0.85, random_state=40, shuffle=True)
+        train, val = train_test_split(train_val, test_size=0.2, random_state=np.random.randint(25, 50), shuffle=True)
+
     def train_dataloader(self):
-        return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, drop_last=True, shuffle=True, collate_fn=None)
+        return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,
+                          drop_last=True, shuffle=True, collate_fn=None)
 
     def val_dataloader(self):
-        return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, drop_last=True, pin_memory=True, collate_fn=None)
-    
-    def test_dataloader(self):
-        return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, drop_last=True, pin_memory=True, collate_fn=None)
-                                                  
-def QueryFromServer(config, **kwargs):
+        return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, drop_last=True,
+                          pin_memory=True, collate_fn=None)
 
+    def test_dataloader(self):
+        return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, drop_last=True,
+                          pin_memory=True, collate_fn=None)
+
+
+def QueryFromServer(config, **kwargs):
     print("Querying from Server")
     search_field = []
     search_where = []
 
+    if 'Clinical' in config['DATA']['module']:
+        for value in config['DATA']['clinical_columns']:
+            dict_temp = {"element_name": "xnat:subjectData", "field_ID": "XNAT_SUBJECTDATA_FIELD_MAP=" + str(value),
+                         "sequence": "1", "type": "int"}
+            search_field.append(dict_temp)
+
     ## ITEMS TO QUERY
     for value in config['DATA']['target']:
-        dict_temp = {"element_name":"xnat:subjectData","field_ID":"XNAT_SUBJECTDATA_FIELD_MAP="+str(value),"sequence":"1", "type":"int"}
+        dict_temp = {"element_name": "xnat:subjectData", "field_ID": "XNAT_SUBJECTDATA_FIELD_MAP=" + str(value),
+                     "sequence": "1", "type": "int"}
         search_field.append(dict_temp)
 
     ##Project
-    search_field.append({"element_name":"xnat:subjectData","field_ID":"PROJECT","sequence":"1", "type":"string"})
+    search_field.append({"element_name": "xnat:subjectData", "field_ID": "PROJECT", "sequence": "1", "type": "string"})
     ##Label
-    search_field.append({"element_name":"xnat:subjectData","field_ID":"SUBJECT_LABEL","sequence":"1", "type":"string"})
+    search_field.append(
+        {"element_name": "xnat:subjectData", "field_ID": "SUBJECT_LABEL", "sequence": "1", "type": "string"})
 
     ## WHERE CONDITION
     for value in config['SERVER']['Projects']:
-        dict_temp = {"schema_field":"xnat:subjectData.PROJECT","comparison_type":"=","value":str(value)}
+        dict_temp = {"schema_field": "xnat:subjectData.PROJECT", "comparison_type": "=", "value": str(value)}
         search_where.append(dict_temp)
-    for key,value in config['CRITERIA'].items():
-        dict_temp = {"schema_field":"xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP="+key, "comparison_type":"=","value":str(value)}
+    for key, value in config['CRITERIA'].items():
+        dict_temp = {"schema_field": "xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP=" + key, "comparison_type": "=",
+                     "value": str(value)}
         search_where.append(dict_temp)
 
     for value in config['FILTER']['patient_id']:
@@ -164,30 +179,34 @@ def QueryFromServer(config, **kwargs):
                      "value": str(value)}
         search_where.append(dict_temp)
 
-    for key,value in config['MODALITY'].items():
-        dict_temp = {"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE="+key,"comparison_type":">=","value":str(value)}
+    for key, value in config['MODALITY'].items():
+        dict_temp = {"schema_field": "xnat:ctSessionData.SCAN_COUNT_TYPE=" + key, "comparison_type": ">=",
+                     "value": str(value)}
         search_where.append(dict_temp)
 
     root_element = "xnat:subjectData"
     XML = XMLCreator(root_element, search_field, search_where)
-    xmlstr= XML.ConstructTree()
+    xmlstr = XML.ConstructTree()
     params = {'format': 'csv'}
-    response    = requests.post('http://128.16.11.124:8080/xnat/data/search/', params=params, data=xmlstr, auth=(config['SERVER']['User'], config['SERVER']['Password']))
+    response = requests.post('http://128.16.11.124:8080/xnat/data/search/', params=params, data=xmlstr,
+                             auth=(config['SERVER']['User'], config['SERVER']['Password']))
     PatientList = pd.read_csv(StringIO(response.text))
     print(PatientList)
     print("Queried from Server")
     return PatientList
 
+
 def SynchronizeData(config, subject_list):
-    params    = {'format': 'csv'}
-    response = requests.get('http://128.16.11.124:8080/xnat/data/subjects/XNAT01_S00800', params=params, auth=(config['SERVER']['User'], config['SERVER']['Password']))
-    #print(response.text)
+    params = {'format': 'csv'}
+    response = requests.get('http://128.16.11.124:8080/xnat/data/subjects/XNAT01_S00800', params=params,
+                            auth=(config['SERVER']['User'], config['SERVER']['Password']))
+    # print(response.text)
     import xmltodict
     subject_dict = xmltodict.parse(response.text)
     print(subject_dict['xnat:Subject']["xnat:experiments"]["xnat:experiment"])
-    #subject_query = ET.fromstring(response.text)
-    
-    #for experiments in subject_query:
+    # subject_query = ET.fromstring(response.text)
+
+    # for experiments in subject_query:
     #    print(experiments)
     #    for experiment in experiments:
     #        print(experiment.tag)
@@ -251,12 +270,12 @@ def LoadClinicalData(config, PatientList, ClinicalDataset):
         [("CatTrans", OneHotEncoder(), category_cols),
          ("NumTrans", MinMaxScaler(), numerical_cols), ])
 
-    X = ClinicalDataset.loc[:,category_cols+numerical_cols]
+    X = ClinicalDataset.loc[:, category_cols + numerical_cols]
     X.loc[:, category_cols] = X.loc[:, category_cols].astype('str')
     X.loc[:, numerical_cols] = X.loc[:, numerical_cols].astype('float32')
     X_trans = ct.fit_transform(X)
     df_trans = pd.DataFrame(X_trans, index=X.index, columns=ct.get_feature_names_out())
-    df_trans[target] = ClinicalDataset.loc[:,target]
-    df_trans['subject_label'] = ClinicalDataset.loc[:,'PatientID']
+    df_trans[target] = ClinicalDataset.loc[:, target]
+    df_trans['subject_label'] = ClinicalDataset.loc[:, 'PatientID']
 
     return df_trans
