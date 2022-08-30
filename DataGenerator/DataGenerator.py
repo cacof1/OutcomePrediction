@@ -41,19 +41,19 @@ class DataGenerator(torch.utils.data.Dataset):
 
     def __getitem__(self, i):
         data = {}
-        patient_id = self.PatientList.loc[i, 'PatientID']
+        patient_id = self.PatientList.loc[i, 'subject_label']
         DicomPath = os.path.join(self.dicom_folder, patient_id, self.PatientList.loc[i, 'subject_label'], 'scans/')
         # DicomPath = os.path.join(self.dicom_folder, patient_id, patient_id, 'scans/')
         CTPath = glob.glob(DicomPath + '*CT')
-        CTPath = os.path.join(CTPath[0], 'resources/DICOM/files/')
+        CTPath = os.path.join(CTPath[0], 'resources', 'DICOM', 'files/')
         CTSession = ReadDicom(CTPath)
         CTSession.SetOrigin(CTSession.GetOrigin())
         CTArray = sitk.GetArrayFromImage(CTSession)
         if self.targetROI is not None:
             RTSSPath = glob.glob(DicomPath + '*Structs')
-            RTSSPath = os.path.join(RTSSPath[0], 'resources/secondary/files/')
+            RTSSPath = os.path.join(RTSSPath[0], 'resources', 'secondary', 'files/')
             contours = RTSStoContour(RTSSPath, targetROI=self.targetROI)
-            mask_voxel, bbox_voxel, ROI_voxel, img_indices = get_ROI_voxel(contours, CTPath, roi_range=self.ROIRange)
+            mask_voxel, bbox_voxel, ROI_voxel, image_voxel, img_indices = get_ROI_voxel(contours, CTPath, roi_range=self.ROIRange)
         else:
             mask_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
             bbox_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
@@ -69,11 +69,11 @@ class DataGenerator(torch.utils.data.Dataset):
 
             if channel == 'RTDose':
                 DosePath = glob.glob(DicomPath + '*Dose')
-                DosePath = os.path.join(DosePath[0], 'resources/DICOM/files/')
+                DosePath = os.path.join(DosePath[0], 'resources', 'DICOM', 'files/')
                 DoseSession = ReadDicom(DosePath)[..., 0]
                 DoseSession = ResamplingITK(DoseSession, CTSession)
                 DoseArray = sitk.GetArrayFromImage(DoseSession)
-                DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
+                # DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
                 data['RTDose'] = get_masked_img_voxel(DoseArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
                 data['RTDose'] = np.expand_dims(data['RTDose'], 0)
                 if self.transform is not None: data['RTDose'] = self.transform(data['RTDose'])
@@ -81,7 +81,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
             if channel == 'PET':
                 PETPath = glob.glob(DicomPath + '*PET')
-                PETPath = os.path.join(PETPath[0], 'resources/DICOM/files/')
+                PETPath = os.path.join(PETPath[0], 'resources', 'DICOM', 'files/')
                 PETSession = ReadDicom(PETPath)
                 PETSession = ResamplingITK(PETSession, CTSession)
                 PETArray = sitk.GetArrayFromImage(PETSession)
@@ -97,7 +97,7 @@ class DataGenerator(torch.utils.data.Dataset):
         if self.inference:
             return data
         else:
-            label = self.PatientList.loc[i, self.target]
+            label = self.PatientList.loc[i, 'xnat_subjectdata_field_map_' +self.target]
             if self.threshold is not None:  label = np.array(label > self.threshold)
             label = torch.as_tensor(label, dtype=torch.int64)
             return data, label
@@ -106,16 +106,15 @@ class DataGenerator(torch.utils.data.Dataset):
 ### DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, PatientList, train_transform=None, val_transform=None,
-                 batch_size=8, train_size=0.7, val_size=0.2, test_size=0.1, num_workers=10, **kwargs):
+                 batch_size=8, train_size=0.7, val_size=0.2, test_size=0.1, num_workers=0, **kwargs):
         super().__init__()
 
         self.batch_size = batch_size
         self.num_workers = num_workers
 
-        train_val_list, test_list = train_test_split(PatientList, train_size=(train_size + val_size), random_state=42,
-                                                     shuffle=False)
-        train_list, val_list = train_test_split(train_val_list, test_size=(val_size / train_size),
-                                                random_state=np.random(), shuffle=True)
+        # Convert regression value to histogram class
+        train_val, test_list = train_test_split(PatientList, train_size=0.85, random_state=40, shuffle=True)
+        train_list, val_list = train_test_split(train_val, test_size=0.2, random_state=np.random.randint(25, 50), shuffle=True)
 
         train_list.reset_index(inplace=True, drop=True)
         val_list.reset_index(inplace=True, drop=True)
@@ -125,9 +124,7 @@ class DataModule(LightningDataModule):
         self.val_data = DataGenerator(val_list, transform=val_transform, **kwargs)
         self.test_data = DataGenerator(test_list, transform=val_transform, **kwargs)
 
-        # Convert regression value to histogram class
-        train_val, test = train_test_split(PatientList, train_size=0.85, random_state=40, shuffle=True)
-        train, val = train_test_split(train_val, test_size=0.2, random_state=np.random.randint(25, 50), shuffle=True)
+
 
     def train_dataloader(self):
         return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,

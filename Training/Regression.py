@@ -116,7 +116,7 @@ if 'Dose' in config['DATA']['module']:
         Dose_Backbone = Classifier3D(config, 'Dose')
     if config['MODEL']['Dose_spatial_dims'] == 2:
         Dose_Backbone = Classifier2D(config, 'Dose')
-    module_dict['Dose'] = Dose_Backbone
+    module_dict['RTDose'] = Dose_Backbone
 
 if config['MODEL']['Clinical_Backbone']:
     Clinical_backbone = Linear()
@@ -141,14 +141,12 @@ else:
     n_norm = None
 
 dataloader = DataModule(PatientList,
-                        config=config,
-                        keys=module_dict.keys(),
+                        target=config['DATA']['target'],
+                        selected_channel=module_dict.keys(),
+                        dicom_folder=config['DATA']['DataFolder'],
                         train_transform=train_transform,
-                        val_transform=val_transform,
-                        batch_size=config['MODEL']['batch_size'],
-                        n_norm=n_norm,
-                        c_norm=c_norm,
-                        inference=False)
+                        val_transform=val_transform
+                        )
 
 """
 if config['REGULARIZATION']['Label_smoothing']:
