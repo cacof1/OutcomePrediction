@@ -97,7 +97,7 @@ class DataGenerator(torch.utils.data.Dataset):
         if self.inference:
             return data
         else:
-            label = self.PatientList.loc[i, self.target[0]]
+            label = self.PatientList.loc[i, 'xnat_subjectdata_field_map_'+self.target[0]]
             if self.threshold is not None:  label = np.array(label > self.threshold)
             label = torch.as_tensor(label, dtype=torch.float32)
             return data, label
@@ -277,7 +277,7 @@ def LoadClinicalData(config, PatientList):
     X_trans = ct.fit_transform(X)
     df_trans = pd.DataFrame(X_trans, index=X.index, columns=ct.get_feature_names_out())
     clinical_col = list(df_trans.columns)
-    df_trans[target] = PatientList.loc[:, 'xnat_subjectdata_field_map_'+target]
+    df_trans['xnat_subjectdata_field_map_'+target] = PatientList.loc[:, 'xnat_subjectdata_field_map_'+target]
     df_trans['subject_label'] = PatientList.loc[:, 'subject_label']
 
     return df_trans, clinical_col

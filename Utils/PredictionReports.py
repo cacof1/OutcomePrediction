@@ -140,7 +140,7 @@ class PredictionReports(TensorBoardLogger):
         # lw = 2
         # plt.plot(fpr.cpu(), tpr.cpu(), color='darkorange', lw=lw)
         plt.plot(fpr.cpu(), tpr.cpu(), color='darkorange')
-        plt.title('ROC curve')
+        plt.title(prefix + '_roc_curve')
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive rate')
         plt.show()

@@ -30,7 +30,7 @@ total_backbone = config['MODEL']['Prediction_type']
 for module in s_module:
     total_backbone = total_backbone + '_' + module + '_' + config['MODEL'][module + '_Backbone']
 
-filename = total_backbone + '_' + '_'.join(config['DATA']['module'])
+filename = total_backbone
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
 logger.log_text()
 
