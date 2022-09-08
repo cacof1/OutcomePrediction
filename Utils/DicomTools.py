@@ -60,18 +60,21 @@ def ReadDicom(dicom_path, view_image=False):
 
 
 def ResamplingITK(Session, Reference, is_label=False, pad_value=0):
+
     resample = sitk.ResampleImageFilter()
-    resample.SetReferenceImage(Reference)
-    resample.SetDefaultPixelValue(pad_value)
+    resample.SetOutputSpacing(Reference.GetSpacing())
+    resample.SetSize(Reference.GetSize())
+    resample.SetOutputDirection(Reference.GetDirection())
+    resample.SetOutputOrigin(Reference.GetOrigin())
+    resample.SetTransform(sitk.Transform())
+    resample.SetDefaultPixelValue(Session.GetPixelIDValue())
+
     if is_label:
         resample.SetInterpolator(sitk.sitkNearestNeighbor)
     else:
-        # resample.SetInterpolator(sitk.sitkBSpline)
-        resample.SetInterpolator(sitk.sitkLinear)
+        resample.SetInterpolator(sitk.sitkBSpline)
 
-    Resampled = resample.Execute(Session)
-
-    return Resampled
+    return resample.Execute(Session)
 
 
 def RTSStoContour(rtss_path, targetROI='PTV'):
