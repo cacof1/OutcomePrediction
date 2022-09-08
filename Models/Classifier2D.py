@@ -59,7 +59,6 @@ class Classifier2D(pl.LightningModule):
     def forward(self, x):
         features = torch.cat([self.convert2d(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
         features = features.flatten(start_dim=1)
-        features = self.middle_layer(features)
         return features
 
     def weights_init(self, m):
