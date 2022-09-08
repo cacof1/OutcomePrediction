@@ -182,54 +182,6 @@ def get_masked_img_voxel(ImageVoxel, mask_voxel, bbox_voxel, ROI_voxel, visImage
     return np.array(input_voxel)
 
 
-def interp3(x, y, z, v, xi, yi, zi, **kwargs):
-    """Sample a 3D array "v" with pixel corner locations at "x","y","z" at the
-    points in "xi", "yi", "zi" using linear interpolation. Additional kwargs
-    are passed on to ``scipy.ndimage.map_coordinates``."""
-
-    def index_coords(corner_locs, interp_locs):
-        index = np.arange(len(corner_locs))
-        if np.all(np.diff(corner_locs) < 0):
-            corner_locs, index = corner_locs[::-1], index[::-1]
-        return np.interp(interp_locs, corner_locs, index)
-
-    orig_shape = np.asarray(xi).shape
-    xi, yi, zi = np.atleast_1d(xi, yi, zi)
-    for arr in [xi, yi, zi]:
-        arr.shape = -1
-
-    output = np.empty(xi.shape, dtype=float)
-    coords = [index_coords(*item) for item in zip([x, y, z], [xi, yi, zi])]
-
-    map_coordinates(v, coords, order=1, output=output, **kwargs)
-
-    return output.reshape(orig_shape)
-
-
-def DoseMatchCT(DoseObj, DoseVolume, CTObj):
-    DoseVolume = DoseVolume.transpose(2, 1, 0)
-    originD = DoseObj.GetOrigin()
-    spaceD = DoseObj.GetSpacing()
-    origin = CTObj.GetOrigin()
-    space = CTObj.GetSpacing()
-
-    dx = np.arange(0, DoseObj.GetSize()[0]) * spaceD[0] + originD[0]
-    dy = np.arange(0, DoseObj.GetSize()[1]) * spaceD[1] + originD[1]
-    dz = -np.arange(0, DoseObj.GetSize()[2]) * spaceD[2] + originD[2]
-    dz.sort()
-
-    cx = np.arange(0, CTObj.GetSize()[0]) * space[0] + origin[0]
-    cy = np.arange(0, CTObj.GetSize()[1]) * space[1] + origin[1]
-    cz = -np.arange(0, CTObj.GetSize()[2]) * space[2] + origin[2]
-    cz.sort()
-
-    cxv, cyv, czv = np.meshgrid(cx, cy, cz, indexing='ij')
-
-    Vf = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
-    Vf = Vf.transpose(2, 1, 0)
-    return Vf
-
-
 def img_train_transform(img_dim):
     transform = tio.Compose([
         tio.transforms.ZNormalization(),
