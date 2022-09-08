@@ -12,7 +12,6 @@ class Classifier2D(pl.LightningModule):
         self.module_str = module_str
         model = config['MODEL'][module_str + '_Backbone']
         parameters = config[module_str + '_MODEL_PARAMETERS']
-        self.linear1 = nn.LazyLinear(72)
         if model == 'Vit':
             self.backbone = models.vit_b_16(pretrained=True).eval()
         elif model == 'Unet':
@@ -26,21 +25,32 @@ class Classifier2D(pl.LightningModule):
         # for param in self.backbone.parameters():
         #     param.requires_grad = False
 
-        self.middle_layer = nn.AdaptiveAvgPool1d(128)
+        # self.pool1 = nn.AdaptiveMaxPool2d((1, 1))
+        self.pool2 = nn.AdaptiveAvgPool1d(256)
 
         layers = list(self.backbone.children())[:-1]
         self.feature_extractor = nn.Sequential(*layers)
 
-        self.feature_extractor.eval()
-        for param in self.feature_extractor[0:int(len(self.feature_extractor)/2)].parameters():
-            param.requires_grad = False
+        # self.feature_extractor.eval()
+        # for param in self.feature_extractor[0:int(len(self.feature_extractor)/2)].parameters():
+        #     param.requires_grad = False
 
     def convert2d(self, x):
         if self.config[self.module_str +'_MODEL_PARAMETERS']['in_channels'] == 3:
             x = x.repeat(1, 3, 1, 1)
+        mid_layer = int(x.shape[0] / 2)
+        x = x[mid_layer - 2:mid_layer + 2, :, :, :]
+        # x = x[mid_layer, :, :, :].unsqueeze(0)
         features = self.feature_extractor(x)
+        '''
+        ft = self.addtional(features)
+        ft = ft.transpose(0, 3)
+        ft = ft.transpose(1, 2)
+        f1 = self.addtional2(ft)
+        features = f1.transpose(1, 2)
+        '''
         features = features.flatten(1)
-        features = self.linear1(features)
+        features = self.pool2(features)
         features = features.unsqueeze(0)
         features = features.unsqueeze(1)
         # features = features.permute(2, 3, 0, 1)

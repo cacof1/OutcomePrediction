@@ -41,10 +41,11 @@ for module in config['MODALITY'].keys():
     train_transform[module] = img_train_transform(config['DATA'][module + '_dim'])
     val_transform[module] = img_val_transform(config['DATA'][module + '_dim'])
 
-ckpt_dirpath = Path('./', total_backbone + '_ckpt')
+ckpt_path = Path('./', total_backbone + '_ckpt')
+
 callbacks = [
-    ModelCheckpoint(dirpath=ckpt_dirpath,
-                    monitor='val_loss_' + str(getattr(torch.nn, config["MODEL"]["Loss_Function"])()),
+    ModelCheckpoint(dirpath=ckpt_path,
+                    monitor='val_loss',
                     filename=total_backbone,
                     save_top_k=1,
                     mode='min'),
@@ -114,6 +115,8 @@ if config['MODEL']['Records_Backbone']:
 if 'Records' in config['DATA']['module']:
     module_dict['Records'] = Clinical_backbone
     PatientList, clinical_cols = LoadClinicalData(config, PatientList)
+else:
+    clinical_cols = None
 
 if config['MODEL']['Prediction_type'] == 'Classification':
     threshold = config['MODEL']['Classification_threshold']
@@ -140,17 +143,26 @@ else:
 """
 
 trainer = Trainer(gpus=torch.cuda.device_count(),
-                  max_epochs=20,
+                  max_epochs=25,
                   logger=logger,
                   callbacks=callbacks)
 
 model = MixModel(module_dict, config, label_range=None, weights=None)
+for i, data in enumerate(dataloader.train_dataloader(), 0):
+    x, y = data
+    dummy_input = {}
+    for key in x.keys():
+        dummy_input[key] = torch.randn(x[key].shape)
+    break
+
+_ = model(dummy_input, y)
+
 
 for param in model.parameters(): print(param.requires_grad)
 
 logger.log_text()
 trainer.fit(model, dataloader)
-"""
+
 print('start testing...')
 worstCase = 0
 with torch.no_grad():
@@ -185,8 +197,9 @@ with torch.no_grad():
         if 'ROC' in config['CHECKPOINT']['matrix']:
             logger.plot_AUROC(prediction_labels, validation_labels, prefix)
             logger.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
+            print('test_AUROC: ', str(classification_out[prefix + 'roc']))
         if 'Specificity' in config['CHECKPOINT']['matrix']:
             logger.experiment.add_text('Specificity:', str(classification_out[prefix + 'specificity']))
 
 print('finish test')
-"""
+

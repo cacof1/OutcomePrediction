@@ -69,12 +69,10 @@ class DataGenerator(torch.utils.data.Dataset):
                 DosePath = glob.glob(DicomPath + '*-Dose')
                 DosePath = os.path.join(DosePath[0], 'resources', 'DICOM', 'files/')
                 DoseSession = ReadDicom(DosePath)[..., 0]
-                # DoseSession = ResamplingITK(DoseSession, CTSession)
                 DoseArray = sitk.GetArrayFromImage(DoseSession)
                 DoseArray = DoseMatchCT(DoseSession, DoseArray, CTSession)
-
-                # DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
-                data['RTDose'] = get_masked_img_voxel(DoseArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
+                DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
+                data['RTDose'] = get_masked_img_voxel(DoseArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel, visImage=True)
                 data['RTDose'] = np.expand_dims(data['RTDose'], 0)
                 if self.transform is not None: data['RTDose'] = self.transform['Dose'](data['RTDose'])
                 data['RTDose'] = torch.as_tensor(data['RTDose'], dtype=torch.float32)
@@ -83,8 +81,8 @@ class DataGenerator(torch.utils.data.Dataset):
                 PETPath = glob.glob(DicomPath + '*PET')
                 PETPath = os.path.join(PETPath[0], 'resources', 'DICOM', 'files/')
                 PETSession = ReadDicom(PETPath)
-                PETSession = ResamplingITK(PETSession, CTSession)
                 PETArray = sitk.GetArrayFromImage(PETSession)
+                PETArray = DoseMatchCT(PETSession, PETArray, CTSession)
                 data['PET'] = get_masked_img_voxel(PETArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
                 data['PET'] = np.expand_dims(data['PET'], 0)
                 if self.transform is not None: data['PET'] = self.transform(data['PET'])
@@ -114,7 +112,7 @@ class DataModule(LightningDataModule):
 
         # Convert regression value to histogram class
         train_val, test_list = train_test_split(PatientList, train_size=0.85, random_state=40, shuffle=True)
-        train_list, val_list = train_test_split(train_val, test_size=0.2, random_state=np.random.randint(25, 50), shuffle=True)
+        train_list, val_list = train_test_split(train_val, test_size=0.2, random_state=33, shuffle=True)
 
         train_list.reset_index(inplace=True, drop=True)
         val_list.reset_index(inplace=True, drop=True)
