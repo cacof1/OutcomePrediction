@@ -69,9 +69,9 @@ class DataGenerator(torch.utils.data.Dataset):
                 DosePath = glob.glob(DicomPath + '*-Dose')
                 DosePath = os.path.join(DosePath[0], 'resources', 'DICOM', 'files/')
                 DoseSession = ReadDicom(DosePath)[..., 0]
+                DoseSession = ResamplingITK(DoseSession, CTSession)
                 DoseArray = sitk.GetArrayFromImage(DoseSession)
-                DoseArray = DoseMatchCT(DoseSession, DoseArray, CTSession)
-                DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
+                #DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
                 data['RTDose'] = get_masked_img_voxel(DoseArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel, visImage=True)
                 data['RTDose'] = np.expand_dims(data['RTDose'], 0)
                 if self.transform is not None: data['RTDose'] = self.transform['Dose'](data['RTDose'])
@@ -81,8 +81,9 @@ class DataGenerator(torch.utils.data.Dataset):
                 PETPath = glob.glob(DicomPath + '*PET')
                 PETPath = os.path.join(PETPath[0], 'resources', 'DICOM', 'files/')
                 PETSession = ReadDicom(PETPath)
+                PETSession = ResamplingITK(PETSession, CTSession)
                 PETArray = sitk.GetArrayFromImage(PETSession)
-                PETArray = DoseMatchCT(PETSession, PETArray, CTSession)
+ 
                 data['PET'] = get_masked_img_voxel(PETArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
                 data['PET'] = np.expand_dims(data['PET'], 0)
                 if self.transform is not None: data['PET'] = self.transform(data['PET'])
@@ -111,18 +112,21 @@ class DataModule(LightningDataModule):
         self.num_workers = num_workers
 
         # Convert regression value to histogram class
-        train_val, test_list = train_test_split(PatientList, train_size=0.85, random_state=40, shuffle=True)
-        train_list, val_list = train_test_split(train_val, test_size=0.2, random_state=33, shuffle=True)
-
-        train_list.reset_index(inplace=True, drop=True)
-        val_list.reset_index(inplace=True, drop=True)
-        test_list.reset_index(inplace=True, drop=True)
+        PatientList_pos = PatientList[PatientList['xnat_subjectdata_field_map_'+self.target[0]]==1]
+        PatientList_neg = PatientList[PatientList['xnat_subjectdata_field_map_'+self.target[0]]==0]
+        
+        train_val_pos, test_list_pos = train_test_split(PatientList_pos, test_size=test_size, random_state=888, shuffle=False)
+        train_val_neg, test_list_neg = train_test_split(PatientList_neg, test_size=test_size, random_state=888, shuffle=False)
+        test_list = pd.concat([test_list_pos,test_list_neg]).reset_index(drop=True)
+        
+        train_list_pos, val_list_pos = train_test_split(train_val_pos, test_size=val_size/(1-test_size), random_state=np.random.randint(10, 100), shuffle=True)
+        train_list_neg, val_list_neg = train_test_split(train_val_neg, test_size=val_size/(1-test_size), random_state=np.random.randint(10, 100), shuffle=True)
+        train_list = pd.concat([train_list_pos,train_list_neg]).reset_index(drop=True)
+        val_list = pd.concat([val_list_pos,val_list_neg]).reset_index(drop=True)
 
         self.train_data = DataGenerator(train_list, transform=train_transform, **kwargs)
         self.val_data = DataGenerator(val_list, transform=val_transform, **kwargs)
         self.test_data = DataGenerator(test_list, transform=val_transform, **kwargs)
-
-
 
     def train_dataloader(self):
         return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,
