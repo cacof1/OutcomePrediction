@@ -118,17 +118,17 @@ class DataModule(LightningDataModule):
         self.num_workers = num_workers
 
         # Convert regression value to histogram class
-        sss_test = StratifiedShuffleSplit(n_splits=1, test_size=0.15, random_state=42)
-        r_test = sss_test.split(PatientList, PatientList['xnat_subjectdata_field_map_' + target[0]] >= threshold)
-        train_test_index = r_test.__next__()
-        train_val_list = PatientList.loc[train_test_index[0], :].reset_index()
-        test_list = PatientList.loc[train_test_index[1], :].reset_index()
+        train_val_list, test_list = train_test_split(PatientList, test_size=0.15, random_state=42,
+                                                     stratify=PatientList['xnat_subjectdata_field_map_' + target[
+                                                         0]] >= threshold)
 
-        sss_val = StratifiedShuffleSplit(n_splits=1, test_size=0.25, random_state=np.random.randint(1, 10000))
-        r_val = sss_val.split(train_val_list, train_val_list['xnat_subjectdata_field_map_' + target[0]] >= threshold)
-        train_val_index = r_val.__next__()
-        train_list = train_val_list.loc[train_val_index[0], :].reset_index()
-        val_list = train_val_list.loc[train_val_index[1], :].reset_index()
+        train_list, val_list = train_test_split(train_val_list, test_size=0.15, random_state=np.random.randint(1, 10000),
+                                                stratify=train_val_list['xnat_subjectdata_field_map_' + target[
+                                                    0]] >= threshold)
+        
+        train_list.reset_index(drop=True)
+        val_list.reset_index(drop=True)
+        test_list.reset_index(drop=True)
 
         self.train_data = DataGenerator(train_list, transform=train_transform, target=target, threshold=threshold, **kwargs)
         self.val_data = DataGenerator(val_list, transform=val_transform, target=target, threshold=threshold, **kwargs)
