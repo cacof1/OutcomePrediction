@@ -195,6 +195,33 @@ class PredictionReports(TensorBoardLogger):
             self.log_metrics(classification_out, current_epoch)
             if 'ROC' in self.config['CHECKPOINT']['matrix']:
                 self.plot_AUROC(prediction.squeeze(), label, prefix, current_epoch)
+     
+     def report_test(self, config, outs, model, prediction_labels, validation_labels, prefix):
+        if config['MODEL']['Prediction_type'] == 'Regression':
+            self.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels)))
+            self.generate_cumulative_dynamic_auc(prediction_labels, validation_labels, 0, prefix)
+            regression_out = self.regression_matrix(prediction_labels, validation_labels, prefix)
+            self.experiment.add_text('test_cindex: ', str(regression_out[prefix + 'cindex']))
+            self.experiment.add_text('test_r2: ', str(regression_out[prefix + 'r2']))
+            if 'WorstCase' in config['CHECKPOINT']['matrix']:
+                worst_record = self.worst_case_show(outs, prefix)
+                self.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
+                if 'CT' in config['DATA']['module']:
+                    text = 'test_worst_case_img'
+                    self.log_image(worst_record[prefix + 'worst_img'], text)
+                if 'Dose' in config['DATA']['module']:
+                    text = 'test_worst_case_dose'
+                    self.log_image(worst_record[prefix + 'worst_dose'], text)
+            return regression_out[prefix + 'r2']
+
+        if config['MODEL']['Prediction_type'] == 'Classification':
+            classification_out = self.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
+            if 'ROC' in config['CHECKPOINT']['matrix']:
+                self.plot_AUROC(prediction_labels, validation_labels, prefix)
+                self.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
+            if 'Specificity' in config['CHECKPOINT']['matrix']:
+                self.experiment.add_text('Specificity:', str(classification_out[prefix + 'specificity']))
+            return classification_out[prefix + 'roc']
 
 
 def r2_index(prediction, label):
