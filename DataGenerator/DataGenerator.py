@@ -12,6 +12,7 @@ from Utils.XNATXML import XMLCreator
 from io import StringIO
 import requests
 import pandas as pd
+from rt_utils import RTStructBuilder
 
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, LabelEncoder, OrdinalEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer, make_column_transformer
@@ -51,18 +52,25 @@ class DataGenerator(torch.utils.data.Dataset):
         if self.targetROI is not None:
             RTSSPath = glob.glob(DicomPath + '*Structs')
             RTSSPath = os.path.join(RTSSPath[0], 'resources', 'secondary', 'files/')
-            contours = RTSStoContour(RTSSPath, targetROI=self.targetROI)
-            mask_voxel, bbox_voxel, ROI_voxel, image_voxel, img_indices = get_ROI_voxel(contours, CTPath,
-                                                                                        roi_range=self.ROIRange)
-        else:
-            mask_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
-            bbox_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
-            ROI_voxel = np.ones((self.ROIRange[0], self.ROIRange[1]))
-            img_indices = range(self.ROIRange[-1])
+            RTSSPath = glob.glob(RTSSPath + '*dcm')
+            rtstruct = RTStructBuilder.create_from(
+                dicom_series_path=CTPath,
+                rt_struct_path=RTSSPath[0]
+            )
+            roi_names = rtstruct.get_roi_names()
+            if self.targetROI in roi_names:
+                mask_img = rtstruct.get_roi_mask_by_name(self.targetROI)
+                mask_img = mask_img.transpose(2, 0, 1)
+                mask_img = np.flip(mask_img, 0)
+                properties = regionprops(mask_img.astype(np.int8), mask_img)
+                cropbox = properties[0].bbox
+            else:
+                mask_img = np.ones_like(CTArray)
+                cropbox = [0, 0, 0, CTArray.shape[0], CTArray.shape[1], CTArray.shape[2]]
 
         for channel in self.selected_channel:
             if channel == 'CT':
-                data['CT'] = get_masked_img_voxel(CTArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
+                data['CT'] = np.expand_dims(MaskCrop(CTArray, cropbox), 0)
                 data['CT'] = np.expand_dims(data['CT'], 0)
                 if self.transform is not None: data['CT'] = self.transform['CT'](data['CT'])
                 data['CT'] = torch.as_tensor(data['CT'], dtype=torch.float32)
@@ -74,8 +82,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 DoseSession = ResamplingITK(DoseSession, CTSession)
                 DoseArray = sitk.GetArrayFromImage(DoseSession)
                 # DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
-                data['RTDose'] = get_masked_img_voxel(DoseArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel,
-                                                      visImage=True)
+                data['RTDose'] = np.expand_dims(MaskCrop(DoseArray, cropbox), 0)
                 data['RTDose'] = np.expand_dims(data['RTDose'], 0)
                 if self.transform is not None: data['RTDose'] = self.transform['Dose'](data['RTDose'])
                 data['RTDose'] = torch.as_tensor(data['RTDose'], dtype=torch.float32)
@@ -87,7 +94,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 PETSession = ResamplingITK(PETSession, CTSession)
                 PETArray = sitk.GetArrayFromImage(PETSession)
 
-                data['PET'] = get_masked_img_voxel(PETArray[img_indices], mask_voxel, bbox_voxel, ROI_voxel)
+                data['PET'] = np.expand_dims(MaskCrop(PETArray, cropbox), 0)
                 data['PET'] = np.expand_dims(data['PET'], 0)
                 if self.transform is not None: data['PET'] = self.transform(data['PET'])
                 data['PET'] = torch.as_tensor(data['PET'], dtype=torch.float32)
@@ -104,6 +111,8 @@ class DataGenerator(torch.utils.data.Dataset):
             label = torch.as_tensor(label, dtype=torch.float32)
             return data, label
 
+def MaskCrop(img, bbox):
+    return img[bbox[0]:bbox[3], bbox[1]:bbox[4], bbox[2]:bbox[5]]
 
 ### DataLoader
 class DataModule(LightningDataModule):
@@ -126,9 +135,9 @@ class DataModule(LightningDataModule):
                                                 stratify=train_val_list['xnat_subjectdata_field_map_' + target[
                                                     0]] >= threshold)
         
-        train_list.reset_index(drop=True)
-        val_list.reset_index(drop=True)
-        test_list.reset_index(drop=True)
+        train_list = train_list.reset_index(drop=True)
+        val_list = val_list.reset_index(drop=True)
+        test_list = test_list.reset_index(drop=True)
 
         self.train_data = DataGenerator(train_list, transform=train_transform, target=target, threshold=threshold, **kwargs)
         self.val_data = DataGenerator(val_list, transform=val_transform, target=target, threshold=threshold, **kwargs)
