@@ -71,7 +71,6 @@ class DataGenerator(torch.utils.data.Dataset):
         for channel in self.selected_channel:
             if channel == 'CT':
                 data['CT'] = np.expand_dims(MaskCrop(CTArray, cropbox), 0)
-                data['CT'] = np.expand_dims(data['CT'], 0)
                 if self.transform is not None: data['CT'] = self.transform['CT'](data['CT'])
                 data['CT'] = torch.as_tensor(data['CT'], dtype=torch.float32)
 
@@ -83,7 +82,6 @@ class DataGenerator(torch.utils.data.Dataset):
                 DoseArray = sitk.GetArrayFromImage(DoseSession)
                 # DoseArray = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
                 data['RTDose'] = np.expand_dims(MaskCrop(DoseArray, cropbox), 0)
-                data['RTDose'] = np.expand_dims(data['RTDose'], 0)
                 if self.transform is not None: data['RTDose'] = self.transform['Dose'](data['RTDose'])
                 data['RTDose'] = torch.as_tensor(data['RTDose'], dtype=torch.float32)
 
@@ -95,7 +93,6 @@ class DataGenerator(torch.utils.data.Dataset):
                 PETArray = sitk.GetArrayFromImage(PETSession)
 
                 data['PET'] = np.expand_dims(MaskCrop(PETArray, cropbox), 0)
-                data['PET'] = np.expand_dims(data['PET'], 0)
                 if self.transform is not None: data['PET'] = self.transform(data['PET'])
                 data['PET'] = torch.as_tensor(data['PET'], dtype=torch.float32)
 
