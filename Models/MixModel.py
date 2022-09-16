@@ -21,9 +21,9 @@ class MixModel(LightningModule):
         # self.FDS = FDS(feature_dim=1032, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
         self.classifier = nn.Sequential(
             nn.Dropout(0.2),
-            nn.LazyLinear(32),
+            nn.Linear(8192, 32),
             nn.Dropout(0.2),
-            nn.LazyLinear(1),
+            nn.Linear(32, 1),
             self.activation
         )
 
@@ -120,7 +120,7 @@ class MixModel(LightningModule):
         test_out['prediction'] = prediction.squeeze(dim=1)
         test_out['label'] = label
         test_out['loss'] = test_loss
-        return self.all_gather(test_out)
+        return test_out
 
     def weights_init(self, m):
         if isinstance(m, nn.Conv3d) or isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):

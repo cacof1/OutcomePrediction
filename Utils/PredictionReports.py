@@ -4,7 +4,9 @@ import os
 from pytorch_lightning.loggers.base import rank_zero_experiment
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
+
 import matplotlib.pyplot as plt
+plt.switch_backend('agg')
 import torchvision
 from pytorch_lightning.loggers import LightningLoggerBase
 from sksurv.metrics import cumulative_dynamic_auc
@@ -48,7 +50,8 @@ class PredictionReports(TensorBoardLogger):
 
         sub_str = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module'])
         self._version = self._get_next_version(sub_str)
-        description = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module']) + '_' + str(self._version)
+        description = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module']) + '_' + str(
+            self._version)
 
         return description
 
@@ -129,9 +132,8 @@ class PredictionReports(TensorBoardLogger):
         plt.xlabel("survival months")
         plt.ylabel("time-dependent AUC")
         plt.grid(True)
-        plt.show()
-        self.experiment.add_figure(prefix+"AUC", fig, current_epoch)
-
+        self.experiment.add_figure(prefix + "AUC", fig, current_epoch)
+        plt.close(fig)
 
     def plot_AUROC(self, prediction, label, prefix, current_epoch=None) -> None:
         roc = torchmetrics.ROC()
@@ -143,8 +145,8 @@ class PredictionReports(TensorBoardLogger):
         plt.title(prefix + '_roc_curve')
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive rate')
-        plt.show()
         self.experiment.add_figure(prefix + "AUC", fig, current_epoch)
+        plt.close(fig)
 
     def worst_case_show(self, validation_step_outputs, prefix):
         out = {}
@@ -195,8 +197,8 @@ class PredictionReports(TensorBoardLogger):
             self.log_metrics(classification_out, current_epoch)
             if 'ROC' in self.config['CHECKPOINT']['matrix']:
                 self.plot_AUROC(prediction.squeeze(), label, prefix, current_epoch)
-     
-     def report_test(self, config, outs, model, prediction_labels, validation_labels, prefix):
+
+    def report_test(self, config, outs, model, prediction_labels, validation_labels, prefix):
         if config['MODEL']['Prediction_type'] == 'Regression':
             self.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels)))
             self.generate_cumulative_dynamic_auc(prediction_labels, validation_labels, 0, prefix)

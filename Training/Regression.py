@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
 import torchio as tio
@@ -53,7 +54,7 @@ label = config['DATA']['target']
 module_dict = nn.ModuleDict()
 
 PatientList = QueryFromServer(config)
-SynchronizeData(config, PatientList)
+# SynchronizeData(config, PatientList)
 
 if 'CT' in config['DATA']['module']:
     """
@@ -136,44 +137,38 @@ else:
     weights = None
     label_range = None
 """
-
-trainer = Trainer(gpus=torch.cuda.device_count(),
-                  max_epochs=25,
-                  logger=logger,
-                  callbacks=callbacks)
-
 model = MixModel(module_dict, config, label_range=None, weights=None)
 
-roc_list =[]
-for iter in range(1):
+# roc_list =[]
+for iter in range(50):
     filename = total_backbone
     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
     logger.log_text()
     trainer = Trainer(
                       # gpus=1,
                       accelerator="gpu",
-                      devices=[0,1,2,3],
+                      devices=[2,3],
                       strategy=DDPStrategy(find_unused_parameters=True),
-                      max_epochs=0,
+                      max_epochs=30,
                       logger=logger,
                       # callbacks=callbacks
                       )
     trainer.fit(model, dataloader)
 
-    print('start testing...')
-    worstCase = 0
-    with torch.no_grad():
-        outs = []
-        for i, data in enumerate(dataloader.test_dataloader()):
-            truth = data[1]
-            x = data[0]
-            output = model.test_step(data, i)
-            outs.append(output)
-        validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
-        prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
-        prefix = 'test_'
-        roc_list.append(logger.report_test(config, outs, model, prediction_labels, validation_labels, prefix))
-    print('finish test')
+    # print('start testing...')
+    # worstCase = 0
+    # with torch.no_grad():
+    #     outs = []
+    #     for i, data in enumerate(dataloader.test_dataloader()):
+    #         truth = data[1]
+    #         x = data[0]
+    #         output = model.test_step(data, i)
+    #         outs.append(output)
+    #     validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
+    #     prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
+    #     prefix = 'test_'
+    #     roc_list.append(logger.report_test(config, outs, model, prediction_labels, validation_labels, prefix))
+    # print('finish test')
 
-roc_avg = torch.mean(torch.tensor(roc_list))
-print('avg_roc', str(roc_avg))
+# roc_avg = torch.mean(torch.tensor(roc_list))
+# print('avg_roc', str(roc_avg))

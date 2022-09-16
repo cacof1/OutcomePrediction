@@ -50,7 +50,7 @@ class Classifier2D(pl.LightningModule):
         features = f1.transpose(1, 2)
         '''
         features = features.flatten(1)
-        features = self.pool2(features)
+        # features = self.pool2(features)
         features = features.unsqueeze(0)
         features = features.unsqueeze(1)
         # features = features.permute(2, 3, 0, 1)
