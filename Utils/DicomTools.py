@@ -85,8 +85,10 @@ def ContourtoROI(contour, CTPath):
     contour_coord = np.array(contour.ContourData)
     contour_coord = contour_coord.reshape(int(contour.NumberOfContourPoints), 3)
     filenames = glob.glob(CTPath + '*.dcm')
-    img_path, img = FindMatchedImage(filenames, contour_coord)
-    img_index = filenames.index(img_path)
+    img_uid =contour.ContourImageSequence[0].ReferencedSOPInstanceUID
+    img_file = glob.glob(CTPath + '*{}.dcm'.format(img_uid))
+    img_index = filenames.index(img_file[0])
+    img = dicom.read_file(img_file[0])
     img_array = img.pixel_array
     x_spacing, y_spacing = float(img.PixelSpacing[0]), float(img.PixelSpacing[1])
     origin_x, origin_y, _ = img.ImagePositionPatient
