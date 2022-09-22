@@ -75,12 +75,6 @@ def RTSStoContour(rtss_path, targetROI='PTV'):
             contours = [contour for contour in ROI.ContourSequence]
             return contours
 
-def FindMatchedImage(filenames,contour_coord):
-    for i in range(len(filenames)):
-        img = dicom.read_file(filenames[i])
-        z = int(img.ImagePositionPatient[-1])
-        if z == int(contour_coord[0][-1]): return filenames[i], img
-
 def ContourtoROI(contour, CTPath):
     contour_coord = np.array(contour.ContourData)
     contour_coord = contour_coord.reshape(int(contour.NumberOfContourPoints), 3)
