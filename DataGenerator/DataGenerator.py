@@ -20,7 +20,6 @@ class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, PatientList, config=None,
                  target="pCR", selected_channel=['CT','RTDose','Records'], targetROI='PTV', ROIRange=[60,60,10],
                  dicom_folder=None, transform=None, inference=False, clinical_cols=None, **kwargs):
-
         super().__init__()
         self.config = config
         self.PatientList = PatientList

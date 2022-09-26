@@ -21,20 +21,26 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import toml
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution, get_module
 from Utils.PredictionReports import PredictionReports
+from pathlib import Path
 
 config = toml.load(sys.argv[1])
+s_module = config['DATA']['module']
 """
-if 'CT' in config['DATA']['module']:
-    if 'Dose' in config['DATA']['module']: total_backbone = config['MODEL']['CT_Backbone'] + '_' + config['MODEL']['Dose_Backbone']
-    else: total_backbone = config['MODEL']['CT_Backbone']
+if 'CT' in s_module:
+    if 'Dose' in s_module:
+        total_backbone = config['MODEL']['Prediction_type'] + '_' + 'CT_' + config['MODEL']['CT_Backbone'] + '_' + \
+                         'Dose_' + config['MODEL']['Dose_Backbone']
+    else:
+        total_backbone = config['MODEL']['Prediction_type'] + '_' + 'CT_' + config['MODEL']['CT_Backbone']
 else:
-    if 'Dose' in config['DATA']['module']: total_backbone = config['MODEL']['Dose_Backbone']
+    if 'Dose' in s_module:
+        total_backbone = config['MODEL']['Prediction_type'] + '_' + 'Dose_' + config['MODEL']['Dose_Backbone']
 """
-
 total_backbone = ''
 filename = total_backbone
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
 logger.log_text()
+
 img_dim = config['DATA']['dim']
 
 train_transform = tio.Compose([
@@ -53,11 +59,11 @@ val_transform = tio.Compose([
     tio.RescaleIntensity(out_min_max=(0, 1))
 ])
 
-
+ckpt_dirpath = Path('./', total_backbone + '_ckpt')
 callbacks = [
-    ModelCheckpoint(dirpath='./',
-                    monitor='val_loss',
-                    filename=filename,
+    ModelCheckpoint(dirpath=ckpt_dirpath,
+                    monitor='val_loss_' + str(getattr(torch.nn, config["MODEL"]["Loss_Function"])()),
+                    filename=total_backbone,
                     save_top_k=1,
                     mode='min'),
     # EarlyStopping(monitor='val_loss',
@@ -68,8 +74,8 @@ callbacks = [
 
 module_dict = nn.ModuleDict()
 PatientList = QueryFromServer(config)
-#SynchronizeData(config, PatientList)
-
+SynchronizeData(config, PatientList)
+print(len(PatientList))
 
 """
 if 'CT' in config['DATA']['module']:
@@ -90,6 +96,7 @@ if 'CT' in config['DATA']['module']:
         module_dict['CT'] = CT_Backbone
 
     #else:
+
     if config['MODEL']['CT_spatial_dims'] == 3:
         CT_Backbone = Classifier3D(config, 'CT')
     if config['MODEL']['CT_spatial_dims'] == 2:
@@ -127,29 +134,35 @@ if config['MODEL']['Clinical_Backbone']:
 if 'Clinical' in config['DATA']['module']:
     module_dict['Clinical'] = Clinical_backbone
 
-
-
 if "Clinical" in config['DATA']['module']:
     category_feats, numerical_feats = LoadClinicalData(config, PatientList)
-    n_norm = StandardScaler()
-    n_norm.fit_transform(numerical_feats)
-    c_norm = OneHotEncoder()
-    c_norm.fit(category_feats)
+    if len(category_feats) > 0:
+        c_norm = OneHotEncoder()
+        c_norm.fit(category_feats)
+    else:
+        c_norm = None
+    if len(numerical_feats) > 0:
+        n_norm = StandardScaler()
+        n_norm.fit_transform(numerical_feats)
+    else:
+        n_norm = None
 else:
+
 """
 c_norm = None
 n_norm = None
     
+
 dataloader = DataModule(PatientList,
                         config=config,
                         keys=module_dict.keys(),
                         train_transform=train_transform,
                         val_transform=val_transform,
                         batch_size=config['MODEL']['batch_size'],
-                        numerical_norm=n_norm,
-                        category_norm=c_norm,
+                        n_norm=n_norm,
+                        c_norm=c_norm,
                         inference=False)
-                        
+
 """
 if config['REGULARIZATION']['Label_smoothing']:
     weights, label_range = get_smoothed_label_distribution(PatientList, config)
@@ -163,12 +176,12 @@ trainer = Trainer(gpus=torch.cuda.device_count(),
                   logger=logger,
                   callbacks=callbacks)
 
-model   = MixModel(module_dict, config, label_range=label_range, weights=weights)
+model = MixModel(module_dict, config, label_range=None, weights=None)
 
 for param in model.parameters(): print(param.requires_grad)
 
+logger.log_text()
 trainer.fit(model, dataloader)
-
 """
 print('start testing...')
 worstCase = 0
