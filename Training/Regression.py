@@ -10,7 +10,7 @@ torch.cuda.empty_cache()
 torch.cuda.memory_summary(device=None, abbreviated=False)
 
 ## Module - Dataloaders
-from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
+from DataGenerator.DataGenerator import *  # DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
 
 from Models.Classifier3D import Classifier3D
 from Models.Classifier2D import Classifier2D
@@ -27,6 +27,7 @@ from Utils.DicomTools import img_train_transform, img_val_transform
 
 config = toml.load(sys.argv[1])
 s_module = config['DATA']['module']
+
 total_backbone = config['MODEL']['Prediction_type']
 for module in s_module:
     total_backbone = total_backbone + '_' + module + '_' + config['MODEL'][module + '_Backbone']
@@ -41,28 +42,10 @@ for module in config['MODALITY'].keys():
 label = config['DATA']['target']
 
 module_dict = nn.ModuleDict()
-
 PatientList = QueryFromServer(config)
-# SynchronizeData(config, PatientList)
+SynchronizeData(config, PatientList)
 
 if 'CT' in config['DATA']['module']:
-    """
-    if 'CT' in config['MODEL']['Finetune']:
-        CT_config = toml.load(config['Finetune']['CT_config'])
-        CT_module_dict = get_module(CT_config)
-        CT_model = MixModel(CT_module_dict, CT_config)
-        pretrained_CT_model = CT_model.load_from_checkpoint(checkpoint_path=config['Finetune']['CT_ckpt'], module_dict=CT_module_dict, config=CT_config)
-    
-        if config['MODEL']['CT_spatial_dims'] == 3:
-            CT_Backbone = pretrained_CT_model.module_dict['CT'].model
-        if config['MODEL']['CT_spatial_dims'] == 2:
-            CT_Backbone = pretrained_CT_model.module_dict['CT'].backbone
-        CT_Backbone.eval()
-        for param in CT_Backbone.parameters():
-            param.requires_grad = False
-        module_dict['CT'] = CT_Backbone
-    """
-    # else:
     if config['MODEL']['CT_spatial_dims'] == 3:
         CT_Backbone = Classifier3D(config, 'CT')
     if config['MODEL']['CT_spatial_dims'] == 2:
@@ -70,24 +53,6 @@ if 'CT' in config['DATA']['module']:
     module_dict['CT'] = CT_Backbone
 
 if 'Dose' in config['DATA']['module']:
-    """
-    if 'Dose' in config['MODEL']['Finetune']:
-        Dose_config = toml.load(config['Finetune']['Dose_config'])
-        Dose_module_dict = get_module(Dose_config)
-        Dose_model = MixModel(Dose_module_dict, Dose_config)
-        pretrained_Dose_model = Dose_model.load_from_checkpoint(checkpoint_path=config['Finetune']['Dose_ckpt'],
-                                                                module_dict=Dose_module_dict, config=Dose_config)
-        if config['MODEL']['Dose_spatial_dims'] == 3:
-            Dose_Backbone = pretrained_Dose_model.module_dict['Dose'].model
-        if config['MODEL']['Dose_spatial_dims'] == 2:
-            Dose_Backbone = pretrained_Dose_model.module_dict['Dose'].backbone
-        Dose_Backbone.eval()
-        for param in Dose_Backbone.parameters():
-            param.requires_grad = False
-        module_dict['Dose'] = Dose_Backbone
-
-    else:
-    """
     if config['MODEL']['Dose_spatial_dims'] == 3:
         Dose_Backbone = Classifier3D(config, 'Dose')
     if config['MODEL']['Dose_spatial_dims'] == 2:
@@ -108,24 +73,24 @@ if config['MODEL']['Prediction_type'] == 'Classification':
 else:
     threshold = None
 
-roc_list =[]
+roc_list = []
 for iter in range(50):
     seed_everything(42)
     dataloader = DataModule(PatientList,
-                        target=config['DATA']['target'],
-                        selected_channel=module_dict.keys(),
-                        dicom_folder=config['DATA']['DataFolder'],
-                        train_transform=train_transform,
-                        val_transform=val_transform,
-                        batch_size=config['MODEL']['batch_size'],
-                        threshold=threshold,
-                        clinical_cols=clinical_cols
-                        )
+                            config=config,
+                            selected_channel=module_dict.keys(),
+                            dicom_folder=config['DATA']['DataFolder'],
+                            train_transform=train_transform,
+                            val_transform=val_transform,
+                            batch_size=config['MODEL']['batch_size'],
+                            threshold=threshold,
+                            clinical_cols=clinical_cols
+                            )
 
     model = MixModel(module_dict, config, label_range=None, weights=None)
     model.apply(model.weights_init)
 
-    filename = total_backbone +  '_test2'
+    filename = total_backbone + '_test2'
     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
     logger.log_text()
 
@@ -134,7 +99,7 @@ for iter in range(50):
     callbacks = [
         ModelCheckpoint(dirpath=ckpt_path,
                         monitor='val_loss',
-                        filename='Iter_'+str(iter),
+                        filename='Iter_' + str(iter),
                         save_top_k=1,
                         mode='min'),
         # EarlyStopping(monitor='val_loss',
@@ -142,14 +107,14 @@ for iter in range(50):
     ]
 
     trainer = Trainer(
-                      # gpus=1,
-                      accelerator="gpu",
-                      devices=[2,3],
-                      strategy=DDPStrategy(find_unused_parameters=True),
-                      max_epochs=2,
-                      logger=logger,
-                      callbacks=callbacks
-                      )
+        # gpus=1,
+        accelerator="gpu",
+        devices=[2,3],
+        strategy=DDPStrategy(find_unused_parameters=True),
+        max_epochs=30,
+        logger=logger,
+        callbacks=callbacks
+    )
     trainer.fit(model, dataloader)
 
     print('start testing...')

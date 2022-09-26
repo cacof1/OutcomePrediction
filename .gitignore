@@ -7,5 +7,6 @@ Training/*.ckpt
 Training/DeepSurv*.ckpt
 *.ckpt
 *.ini
+*.txt
 wandb/
 Training/*.xml
