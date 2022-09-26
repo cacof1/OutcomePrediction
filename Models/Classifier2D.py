@@ -26,10 +26,11 @@ class Classifier2D(pl.LightningModule):
         #     param.requires_grad = False
 
         # self.pool1 = nn.AdaptiveMaxPool2d((1, 1))
-        self.pool2 = nn.AdaptiveAvgPool1d(256)
+        self.pool2 = nn.AdaptiveMaxPool1d(8192)
 
         layers = list(self.backbone.children())[:-1]
         self.feature_extractor = nn.Sequential(*layers)
+        self.feature_extractor.apply(self.weights_reset)
 
         # self.feature_extractor.eval()
         # for param in self.feature_extractor[0:int(len(self.feature_extractor)/2)].parameters():
@@ -60,9 +61,4 @@ class Classifier2D(pl.LightningModule):
         features = torch.cat([self.convert2d(b.transpose(0, 1)) for i, b in enumerate(x)], dim=0)
         features = features.flatten(start_dim=1)
         return features
-
-    def weights_init(self, m):
-        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-            nn.init.xavier_uniform_(m.weight.data)
-
 

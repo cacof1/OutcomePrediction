@@ -38,17 +38,6 @@ for module in config['MODALITY'].keys():
     train_transform[module] = img_train_transform(config['DATA'][module + '_dim'])
     val_transform[module] = img_val_transform(config['DATA'][module + '_dim'])
 
-ckpt_path = Path('./', total_backbone + '_ckpt')
-
-callbacks = [
-    ModelCheckpoint(dirpath=ckpt_path,
-                    monitor='val_loss',
-                    filename=total_backbone,
-                    save_top_k=1,
-                    mode='min'),
-    # EarlyStopping(monitor='val_loss',
-    #               check_finite=True),
-]
 label = config['DATA']['target']
 
 module_dict = nn.ModuleDict()
@@ -119,7 +108,10 @@ if config['MODEL']['Prediction_type'] == 'Classification':
 else:
     threshold = None
 
-dataloader = DataModule(PatientList,
+roc_list =[]
+for iter in range(50):
+    seed_everything(42)
+    dataloader = DataModule(PatientList,
                         target=config['DATA']['target'],
                         selected_channel=module_dict.keys(),
                         dicom_folder=config['DATA']['DataFolder'],
@@ -130,45 +122,50 @@ dataloader = DataModule(PatientList,
                         clinical_cols=clinical_cols
                         )
 
-"""
-if config['REGULARIZATION']['Label_smoothing']:
-    weights, label_range = get_smoothed_label_distribution(PatientList, config)
-else:
-    weights = None
-    label_range = None
-"""
-model = MixModel(module_dict, config, label_range=None, weights=None)
+    model = MixModel(module_dict, config, label_range=None, weights=None)
+    model.apply(model.weights_init)
 
-# roc_list =[]
-for iter in range(50):
-    filename = total_backbone
+    filename = total_backbone +  '_test2'
     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
     logger.log_text()
+
+    ckpt_path = Path('./', total_backbone + '_ckpt')
+
+    callbacks = [
+        ModelCheckpoint(dirpath=ckpt_path,
+                        monitor='val_loss',
+                        filename='Iter_'+str(iter),
+                        save_top_k=1,
+                        mode='min'),
+        # EarlyStopping(monitor='val_loss',
+        #               check_finite=True),
+    ]
+
     trainer = Trainer(
                       # gpus=1,
                       accelerator="gpu",
                       devices=[2,3],
                       strategy=DDPStrategy(find_unused_parameters=True),
-                      max_epochs=30,
+                      max_epochs=2,
                       logger=logger,
-                      # callbacks=callbacks
+                      callbacks=callbacks
                       )
     trainer.fit(model, dataloader)
 
-    # print('start testing...')
-    # worstCase = 0
-    # with torch.no_grad():
-    #     outs = []
-    #     for i, data in enumerate(dataloader.test_dataloader()):
-    #         truth = data[1]
-    #         x = data[0]
-    #         output = model.test_step(data, i)
-    #         outs.append(output)
-    #     validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
-    #     prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
-    #     prefix = 'test_'
-    #     roc_list.append(logger.report_test(config, outs, model, prediction_labels, validation_labels, prefix))
-    # print('finish test')
+    print('start testing...')
+    worstCase = 0
+    with torch.no_grad():
+        outs = []
+        for i, data in enumerate(dataloader.test_dataloader()):
+            truth = data[1]
+            x = data[0]
+            output = model.test_step(data, i)
+            outs.append(output)
+        validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
+        prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
+        prefix = 'test_'
+        roc_list.append(logger.report_test(config, outs, model, prediction_labels, validation_labels, prefix))
+    print('finish test')
 
-# roc_avg = torch.mean(torch.tensor(roc_list))
-# print('avg_roc', str(roc_avg))
+roc_avg = torch.mean(torch.tensor(roc_list))
+print('avg_roc', str(roc_avg))

@@ -26,6 +26,7 @@ class MixModel(LightningModule):
             nn.Linear(32, 1),
             self.activation
         )
+        self.classifier.apply(self.weights_init)
 
     def forward(self, datadict, labels):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
@@ -126,7 +127,12 @@ class MixModel(LightningModule):
         if isinstance(m, nn.Conv3d) or isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
             nn.init.xavier_uniform_(m.weight.data)
 
+    def weights_reset(self, m):
+        if isinstance(m, nn.Conv3d) or isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+            m.reset_parameters()
+
+
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
         return [optimizer], [scheduler]

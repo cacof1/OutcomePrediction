@@ -114,7 +114,7 @@ def MaskCrop(img, bbox):
 ### DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, PatientList, train_transform=None, val_transform=None,
-                 batch_size=8, train_size=0.7, val_size=0.2, test_size=0.1, num_workers=0,
+                 batch_size=8, train_size=0.7, val_size=0.2, test_size=0.1, num_workers=64,
                  threshold = 24,
                  target='survival_month',
                  **kwargs):
