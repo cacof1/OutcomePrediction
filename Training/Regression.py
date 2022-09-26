@@ -9,7 +9,7 @@ torch.cuda.empty_cache()
 torch.cuda.memory_summary(device=None, abbreviated=False)
 
 ## Module - Dataloaders
-from DataGenerator.DataGenerator import DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
+from DataGenerator.DataGenerator import *#DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
 
 from Models.Classifier3D import Classifier3D
 from Models.Classifier2D import Classifier2D
@@ -32,7 +32,7 @@ else:
 """
 
 total_backbone = ''
-filename = total_backbone + '_' + '_'.join(config['DATA']['module'])
+filename = total_backbone
 logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
 logger.log_text()
 img_dim = config['DATA']['dim']
@@ -64,18 +64,16 @@ callbacks = [
     #               check_finite=True),
 ]
 
-label = config['DATA']['target']
+#label = config['DATA']['target']
 
 module_dict = nn.ModuleDict()
-
 PatientList = QueryFromServer(config)
-PatientList = [p for p in PatientList if p.label not in config['FILTER']['patient_id']]
-SynchronizeData(config, PatientList)
-print(PatientList)
+#SynchronizeData(config, PatientList)
 
 
+"""
 if 'CT' in config['DATA']['module']:
-    """
+
     if 'CT' in config['MODEL']['Finetune']:
         CT_config = toml.load(config['Finetune']['CT_config'])
         CT_module_dict = get_module(CT_config)
@@ -90,7 +88,7 @@ if 'CT' in config['DATA']['module']:
         for param in CT_Backbone.parameters():
             param.requires_grad = False
         module_dict['CT'] = CT_Backbone
-    """
+
     #else:
     if config['MODEL']['CT_spatial_dims'] == 3:
         CT_Backbone = Classifier3D(config, 'CT')
@@ -99,7 +97,7 @@ if 'CT' in config['DATA']['module']:
     module_dict['CT'] = CT_Backbone
 
 if 'Dose' in config['DATA']['module']:
-    """
+
     if 'Dose' in config['MODEL']['Finetune']:
         Dose_config = toml.load(config['Finetune']['Dose_config'])
         Dose_module_dict = get_module(Dose_config)
@@ -116,7 +114,7 @@ if 'Dose' in config['DATA']['module']:
         module_dict['Dose'] = Dose_Backbone
 
     else:
-    """
+
     if config['MODEL']['Dose_spatial_dims'] == 3:
         Dose_Backbone = Classifier3D(config, 'Dose')
     if config['MODEL']['Dose_spatial_dims'] == 2:
@@ -138,8 +136,10 @@ if "Clinical" in config['DATA']['module']:
     c_norm = OneHotEncoder()
     c_norm.fit(category_feats)
 else:
-    c_norm = None
-    n_norm = None
+"""
+c_norm = None
+n_norm = None
+    
 dataloader = DataModule(PatientList,
                         config=config,
                         keys=module_dict.keys(),

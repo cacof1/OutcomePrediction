@@ -46,9 +46,9 @@ class PredictionReports(TensorBoardLogger):
             description = description + param + '+' + '+'.join(clinical_criteria)
         # Return the experiment version, int or str.
 
-        sub_str = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module'])
-        self._version = self._get_next_version(sub_str)
-        description = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module']) + '_' + str(self._version)
+        sub_str = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['target'])
+        #self._version = self._get_next_version(sub_str)
+        description = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['target']) + '_' + str(self._version)
 
         return description
 
@@ -80,7 +80,7 @@ class PredictionReports(TensorBoardLogger):
         return grid
 
     def log_text(self) -> None:
-        configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' + str(self.config['DATA']['module'])
+        configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' + str(self.config['DATA']['target'])
         self.experiment.add_text('configurations:', configurations)
 
     def regression_matrix(self, prediction, label, prefix):
@@ -150,15 +150,15 @@ class PredictionReports(TensorBoardLogger):
             loss = data['MAE']
             idx = torch.argmax(loss)
             if loss[idx] > worst_AE:
-                if 'CT' in self.config['DATA']['module']:
+                if 'CT' in self.config['DATA']['target']:
                     worst_img = data['img'][idx]
-                if 'Dose' in self.config['DATA']['module']:
+                if 'Dose' in self.config['DATA']['target']:
                     worst_dose = data['dose'][idx]
                 worst_AE = loss[idx]
         out[prefix + 'worst_AE'] = worst_AE
-        if 'CT' in self.config['DATA']['module']:
+        if 'CT' in self.config['DATA']['target']:
             out[prefix + 'worst_img'] = worst_img
-        if 'Dose' in self.config['DATA']['module']:
+        if 'Dose' in self.config['DATA']['target']:
             out[prefix + 'worst_dose'] = worst_dose
         return out
 
@@ -180,10 +180,10 @@ class PredictionReports(TensorBoardLogger):
             if 'WorstCase' in self.config['CHECKPOINT']['matrix']:
                 worst_record = self.worst_case_show(validation_step_outputs, prefix)
                 self.log_metrics({prefix + 'worst_AE': worst_record[prefix + 'worst_AE']}, current_epoch)
-                if 'CT' in self.config['DATA']['module']:
+                if 'CT' in self.config['DATA']['target']:
                     text = 'validate_worst_case_img'
                     self.log_image(worst_record[prefix + 'worst_img'], text, current_epoch)
-                if 'Dose' in self.config['DATA']['module']:
+                if 'Dose' in self.config['DATA']['target']:
                     text = 'validate_worst_case_dose'
                     self.log_image(worst_record[prefix + 'worst_dose'], text, current_epoch)
 

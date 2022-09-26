@@ -117,9 +117,9 @@ def ViewROI(patient_id,img_array,mask_array,ROIbox,Inputbox):
     plt.show()
 
 def get_ROI_voxel(contours, dicom_path, roi_range=[64,64,10]):
-    mask_voxel = []
-    bbox_voxel = []
-    ROI_voxel = []
+    mask_voxel  = []
+    bbox_voxel  = []
+    ROI_voxel   = []
     image_voxel = []
     img_indices = []
     N_slices = len(contours)
@@ -137,9 +137,9 @@ def get_ROI_voxel(contours, dicom_path, roi_range=[64,64,10]):
         image_voxel.append(img_array)
         img_indices.append(img_index)
 
-    mask_voxel = mask_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
-    bbox_voxel = bbox_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
-    ROI_voxel = ROI_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
+    mask_voxel  = mask_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
+    bbox_voxel  = bbox_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
+    ROI_voxel   = ROI_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
     image_voxel = image_voxel[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
     img_indices = img_indices[int((N_slices - roi_range[-1]) / 2): int((N_slices + roi_range[-1]) / 2)]
 
