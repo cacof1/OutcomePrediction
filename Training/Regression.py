@@ -73,6 +73,7 @@ if config['MODEL']['Prediction_type'] == 'Classification':
 else:
     threshold = None
 
+ckpt_path = Path('./', total_backbone + '_ckpt')
 roc_list = []
 for iter in range(50):
     seed_everything(42)
@@ -93,9 +94,6 @@ for iter in range(50):
     filename = total_backbone + '_test2'
     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
     logger.log_text()
-
-    ckpt_path = Path('./', total_backbone + '_ckpt')
-
     callbacks = [
         ModelCheckpoint(dirpath=ckpt_path,
                         monitor='val_loss',

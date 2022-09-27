@@ -34,7 +34,7 @@ class DataGenerator(torch.utils.data.Dataset):
         self.transform = transform
         self.inference = inference
         self.clinical_cols = clinical_cols
-    
+
     def __len__(self):
         return int(self.PatientList.shape[0])
 
@@ -45,6 +45,7 @@ class DataGenerator(torch.utils.data.Dataset):
         resp = xmltodict.parse(response.text, force_list=True)
         subject = resp['xnat:Subject'][0]
         subject_label = subject['@label']
+        project = subject['@project']
         experiments = subject['xnat:experiments'][0]['xnat:experiment']
         ## Won't work with many experiments
         for experiment in experiments:
@@ -55,7 +56,7 @@ class DataGenerator(torch.utils.data.Dataset):
                     scan_label = scan['@ID'] + '-' + scan['@type']
                     resources_label = scan['xnat:file'][0]['@label']
                     break
-        ModalityPath = Path(self.config['DATA']['DataFolder'], subject_label, experiment_label, 'scans', scan_label,
+        ModalityPath = Path(self.config['DATA']['DataFolder'], project, subject_label, experiment_label, 'scans', scan_label,
                             'resources', resources_label, 'files')
         return ModalityPath
 
@@ -159,11 +160,11 @@ class DataModule(LightningDataModule):
                                                      test_size=0.15,
                                                      random_state=np.random.randint(1, 10000),
                                                      stratify=train_val_list['xnat_subjectdata_field_map_' + config['DATA']['target']] >= config['MODEL']['Classification_threshold'])
-            
+
         train_list = train_list.reset_index(drop=True)
         val_list   = val_list.reset_index(drop=True)
         test_list  = test_list.reset_index(drop=True)
-        
+
         self.train_data = DataGenerator(train_list, config = config, transform=train_transform, **kwargs)
         self.val_data   = DataGenerator(val_list,   config = config, transform=val_transform, **kwargs)
         self.test_data  = DataGenerator(test_list,  config = config, transform=val_transform, **kwargs)
@@ -172,8 +173,8 @@ class DataModule(LightningDataModule):
         return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, drop_last=True, shuffle=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, drop_last=True, shuffle=True)
-    
+        return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, drop_last=True, shuffle=False)
+
     def test_dataloader(self):
         return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, drop_last = True)
 
@@ -182,7 +183,7 @@ def QueryFromServer(config, **kwargs):
     print("Querying from Server")
     search_field = []
     search_where = []
-
+    # add search field for clinical features
     if 'Records' in config['DATA']['module']:
         for value in config['DATA']['clinical_columns']:
             dict_temp = {"element_name": "xnat:subjectData", "field_ID": "XNAT_SUBJECTDATA_FIELD_MAP=" + str(value),
@@ -203,6 +204,9 @@ def QueryFromServer(config, **kwargs):
         dict_temp = {"schema_field": "xnat:subjectData.PROJECT", "comparison_type": "=", "value": str(value)}
         search_where.append(dict_temp)
 
+    # dict_temp = {"schema_field": "xnat:subjectData.PROJECT", "comparison_type": "!=", "value": "tciaradiogenomics"}
+    # search_where.append(dict_temp)
+
     for key, value in config['CRITERIA'].items():
         dict_temp = {"schema_field": "xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP=" + key, "comparison_type": "=",
                      "value": str(value)}
@@ -213,6 +217,7 @@ def QueryFromServer(config, **kwargs):
                      "value": str(value)}
         search_where.append(dict_temp)
 
+    # here only include ctSessionData, petSessionData might be used
     for key, value in config['MODALITY'].items():
         dict_temp = {"schema_field": "xnat:ctSessionData.SCAN_COUNT_TYPE=" + key, "comparison_type": ">=",
                      "value": str(value)}
@@ -228,39 +233,13 @@ def QueryFromServer(config, **kwargs):
     print("Queried from Server")
     return PatientList
 
-def SynchronizeData(config, subject_list):
-    params = {'format': 'csv'}
-    response = requests.get('http://128.16.11.124:8080/xnat/data/subjects/XNAT01_S00800', params=params,
-                            auth=(config['SERVER']['User'], config['SERVER']['Password']))
-    # print(response.text)
-    import xmltodict
-    subject_dict = xmltodict.parse(response.text)
-    print(subject_dict['xnat:Subject']["xnat:experiments"]["xnat:experiment"])
-    # subject_query = ET.fromstring(response.text)
-
-    # for experiments in subject_query:
-    #    print(experiments)
-    #    for experiment in experiments:
-    #        print(experiment.tag)
-    #        for scan in experiment:
-    #            print(scan.tag)
-    ## Verify if data exists in data folder
-    for subject in subject_list['subject_label']:
-        # print(subject.label, subject.fulluri, dir(subject), subject.uri)
-        # scans = subject.experiments[subject.label].scans['CT'].fulldata
-        if (not Path(config['DATA']['DataFolder'], subject).is_dir()):
-            print("Synchronizing ", subject.id, subject.label)
-            subject.download_dir(config['DATA']['DataFolder'])
-
-    ## Download data
-
 def SynchronizeData(config, PatientList):
     session = xnat.connect(config['SERVER']['Address'], user='admin', password='mortavar1977')
-    for patientlabel, patientid in zip(PatientList['subject_label'], PatientList['subjectid']):
-        if (not Path(config['DATA']['DataFolder'], patientlabel).is_dir()):
+    for patientlabel, patientid, project in zip(PatientList['subject_label'], PatientList['subjectid'], PatientList['project']):
+        if (not Path(config['DATA']['DataFolder'], project, patientlabel).is_dir()):
             xnatsubject = session.create_object('/data/subjects/'+patientid)
             print("Synchronizing ", patientid, patientlabel)
-            xnatsubject.download_dir(config['DATA']['DataFolder']) ## Download data
+            xnatsubject.download_dir(Path(config['DATA']['DataFolder'], project)) ## Download data
 
 def LoadClinicalData(config, PatientList):
     category_cols = []
