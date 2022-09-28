@@ -24,7 +24,7 @@ from Utils.PredictionReports import PredictionReports
 from pathlib import Path
 
 config = toml.load(sys.argv[1])
-s_module = config['DATA']['module']
+#s_module = config['DATA']['module']
 """
 if 'CT' in s_module:
     if 'Dose' in s_module:
@@ -74,9 +74,9 @@ callbacks = [
 
 module_dict = nn.ModuleDict()
 PatientList = QueryFromServer(config)
-SynchronizeData(config, PatientList)
-print(len(PatientList))
-
+#SynchronizeData(config, PatientList)
+PatientInfo = GeneratePath(config, PatientList, config["MODALITY"].keys())
+print("Paths Generated")
 """
 if 'CT' in config['DATA']['module']:
 
@@ -154,6 +154,7 @@ n_norm = None
     
 
 dataloader = DataModule(PatientList,
+                        PatientInfo,
                         config=config,
                         keys=module_dict.keys(),
                         train_transform=train_transform,

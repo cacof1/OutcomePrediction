@@ -15,14 +15,16 @@ import xmltodict
 from sklearn.preprocessing import OneHotEncoder,MinMaxScaler,LabelEncoder,OrdinalEncoder
 from sklearn.compose import ColumnTransformer
 from pathlib import Path
-import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
+import concurrent
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, PatientList, config=None,
+    def __init__(self, PatientList, PatientInfo, config=None,
                  target="pCR", selected_channel=['CT','RTDose','Records'], targetROI='PTV', ROIRange=[60,60,10],
                  dicom_folder=None, transform=None, inference=False, clinical_cols=None, **kwargs):
         super().__init__()
         self.config = config
         self.PatientList = PatientList
+        self.PatientInfo = PatientInfo
         self.target = target
         self.targetROI = targetROI
         self.ROIRange = ROIRange
@@ -31,12 +33,9 @@ class DataGenerator(torch.utils.data.Dataset):
         self.transform = transform
         self.inference = inference
         self.clinical_cols = clinical_cols
-        
-    def GeneratePath(self, patientid, Modality):
-        params        = {'format': 'xml'}
-        response      = requests.get(config['SERVER']['Address']+'/data/subjects/'+patientid, params=params, auth=(self.config['SERVER']['User'], self.config['SERVER']['Password']))
-        resp          = xmltodict.parse(response.text,force_list=True)
-        subject       = resp['xnat:Subject'][0]
+
+    def GeneratePath(patientid, Modality):
+        subject = PatientInfo[patientid]['xnat:Subject'][0]
         subject_label = subject['@label']
         experiments   = subject['xnat:experiments'][0]['xnat:experiment']
 
@@ -45,13 +44,12 @@ class DataGenerator(torch.utils.data.Dataset):
             experiment_label = experiment['@label']
             scans = experiment['xnat:scans'][0]['xnat:scan']
             for scan in scans:
-                if(scan['@type']==Modality):
+                if(scan['@type'] in Modality):
                     scan_label = scan['@ID']+'-'+scan['@type']
                     resources_label = scan['xnat:file'][0]['@label']
+                    patientpathdict[subjectid][scan["@type"]] =  Path(config['DATA']['DataFolder'],subject_label, experiment_label, 'scans',scan_label,'resources',resources_label,'files')
                     break
-        ModalityPath = Path(self.config['DATA']['DataFolder'],subject_label, experiment_label, 'scans',scan_label,'resources',resources_label,'files')
-        return ModalityPath
-    
+
     def __len__(self):
         return int(self.PatientList.shape[0])
 
@@ -116,10 +114,10 @@ class DataGenerator(torch.utils.data.Dataset):
             if self.config['DATA']['threshold'] is not None:  label = np.array(label > self.config['DATA']['threshold'])
             label = torch.as_tensor(label, dtype=torch.int64)
             return data, label
-
+       
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, PatientList, config=None,  train_transform=None, val_transform=None,  train_size=0.7, val_size=0.2, test_size=0.1, num_workers=10, **kwargs):
+    def __init__(self, PatientList, PatientInfo, config=None,  train_transform=None, val_transform=None,  train_size=0.7, val_size=0.2, test_size=0.1, num_workers=10, **kwargs):
                           
         super().__init__()
         self.batch_size  = config['MODEL']['batch_size']
@@ -139,9 +137,9 @@ class DataModule(LightningDataModule):
         val_list   = val_list.reset_index(drop=True)
         test_list  = test_list.reset_index(drop=True)
         
-        self.train_data = DataGenerator(train_list, config = config, transform=train_transform, **kwargs)
-        self.val_data   = DataGenerator(val_list,   config = config, transform=val_transform, **kwargs)
-        self.test_data  = DataGenerator(test_list,  config = config, transform=val_transform, **kwargs)
+        self.train_data = DataGenerator(train_list, PatientInfo, config = config, transform=train_transform, **kwargs)
+        self.val_data   = DataGenerator(val_list,   PatientInfo, config = config, transform=val_transform, **kwargs)
+        self.test_data  = DataGenerator(test_list,  PatientInfo, config = config, transform=val_transform, **kwargs)
 
     def train_dataloader(self):
         return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, drop_last=True, shuffle=True)
@@ -151,45 +149,39 @@ class DataModule(LightningDataModule):
     
     def test_dataloader(self):
         return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, drop_last = True)
-
                                                   
 def QueryFromServer(config, **kwargs):
-
+    root_element = "xnat:subjectData"
+    XML          = XMLCreator(root_element)#, search_field, search_where)    
     print("Querying from Server")
-    search_field = []
-    search_where = []
 
     ## Target
-    dict_temp = {"element_name":"xnat:subjectData","field_ID":"XNAT_SUBJECTDATA_FIELD_MAP="+str(config['DATA']['target']),"sequence":"1", "type":"int"}
-    search_field.append(dict_temp)
+    XML.Add_search_field({"element_name":"xnat:subjectData","field_ID":"XNAT_SUBJECTDATA_FIELD_MAP="+str(config['DATA']['target']),"sequence":"1", "type":"int"})
 
-    ##Project
-    search_field.append({"element_name":"xnat:subjectData","field_ID":"PROJECT","sequence":"1", "type":"string"})
-
-    ##Label
-    search_field.append({"element_name":"xnat:subjectData","field_ID":"SUBJECT_LABEL","sequence":"1", "type":"string"})
+    ## Label
+    XML.Add_search_field({"element_name":"xnat:subjectData","field_ID":"SUBJECT_LABEL","sequence":"1", "type":"string"})
 
     ## Where Condition
+    templist = []
     for value in config['SERVER']['Projects']:
-        dict_temp = {"schema_field":"xnat:subjectData.PROJECT","comparison_type":"=","value":str(value)}
-        search_where.append(dict_temp)
+        templist.append({"schema_field":"xnat:subjectData.PROJECT","comparison_type":"=","value":str(value)})
+    if(len(templist)): XML.Add_search_where(templist, "OR")
 
+    templist = []
     for key,value in config['CRITERIA'].items():
-        dict_temp = {"schema_field":"xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP="+key, "comparison_type":"=","value":str(value)}
-        search_where.append(dict_temp)
-        
+        templist.append({"schema_field":"xnat:subjectData.XNAT_SUBJECTDATA_FIELD_MAP="+key, "comparison_type":"=","value":str(value)})
+    if(len(templist)): XML.Add_search_where(templist, "AND") ## if any items in here
+    
+    templist = []
     for key,value in config['MODALITY'].items():
-        dict_temp = {"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE="+key,"comparison_type":">=","value":str(value)}
-        search_where.append(dict_temp)
-        
-    root_element = "xnat:subjectData"
-    XML          = XMLCreator(root_element, search_field, search_where)
+        templist.append({"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE="+key,"comparison_type":">=","value":str(value)})
+    if(len(templist)): XML.Add_search_where(templist, "AND") ## if any items in here
+
     xmlstr       = XML.ConstructTree()
     params       = {'format': 'csv'}
     response     = requests.post(config['SERVER']['Address']+'/data/search/', params=params, data=xmlstr, auth=(config['SERVER']['User'], config['SERVER']['Password']))
     PatientList  = pd.read_csv(StringIO(response.text))
     print(PatientList)
-    print("Queried from Server")        
     return PatientList
 
 
@@ -200,6 +192,28 @@ def SynchronizeData(config, PatientList):
             xnatsubject = session.create_object('/data/subjects/'+patientid)
             print("Synchronizing ", patientid, patientlabel)
             xnatsubject.download_dir(config['DATA']['DataFolder']) ## Download data
+
+
+def get_patient_info(config, session,  subjectid):
+    params = {'format':'xml'}
+    r = session.get(config['SERVER']['Address']+'/data/subjects/'+subjectid, params=params)
+    data = xmltodict.parse(r.text,force_list=True)
+    return data
+
+def GeneratePath(config, PatientList, Modalities):
+    params          = {'format': 'xml'}
+    PatientInfo = {}
+    with requests.Session() as session:
+        session.auth = (config['SERVER']['User'], config['SERVER']['Password'])
+        r = session.get(config['SERVER']['Address']+'/data/JSESSION')        
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            future_to_url = {executor.submit(get_patient_info, config, session, subjectid) for subjectid in PatientList['subjectid']}
+            executor.shutdown(wait=True)
+        for future in concurrent.futures.as_completed(future_to_url):
+            patientdata = future.result()
+            patientid   = patientdata["xnat:Subject"][0]["@ID"]
+            PatientInfo[patientid] = patientdata
+    return PatientInfo
 
 def LoadClinicalData(config, PatientList, ClinicalDataset):
     category_cols = config['CLINICAL']['category_feat']
