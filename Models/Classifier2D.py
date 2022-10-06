@@ -32,4 +32,5 @@ class Classifier2D(pl.LightningModule):
 
     def forward(self, x):
         x = x.repeat(1, 3, 1, 1)
-        return self.feature_extractor(x)
+        feature = self.feature_extractor(x)
+        return feature.flatten(start_dim=1)

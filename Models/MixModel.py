@@ -18,19 +18,17 @@ class MixModel(LightningModule):
 
         self.loss_fcn   = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
         self.activation = getattr(torch.nn, self.config["MODEL"]["Activation"])()
-        self.classifier = nets.Classifier((2, 2, 512), 1, (2, 4, 8), (2, 2, 2))
-        # self.classifier = nn.Sequential(
-        #     nn.Dropout(0.2),
-        #     nn.Linear(8192, 32),
-        #     nn.Dropout(0.2),
-        #     nn.Linear(32, 1),
-        #     self.activation
-        # )
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.2),
+            nn.Linear(8192, 32),
+            nn.Dropout(0.2),
+            nn.Linear(32, 1),
+            self.activation
+        )
         self.classifier.apply(self.weights_init)
 
     def forward(self, datadict, labels):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
-        features = features.transpose(1,3)
         prediction = self.classifier(features)
         return prediction
 
