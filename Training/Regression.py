@@ -1,17 +1,16 @@
 import torch
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
-from pytorch_lightning.strategies import DDPStrategy
+# from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
 import torchio as tio
-
+import monai
 torch.cuda.empty_cache()
 torch.cuda.memory_summary(device=None, abbreviated=False)
 
 ## Module - Dataloaders
-from DataGenerator.DataGenerator import *  # DataModule, DataGenerator, LoadClinicalData, QueryFromServer, SynchronizeData
-
+from DataGenerator.DataGenerator import *
 from Models.Classifier3D import Classifier3D
 from Models.Classifier2D import Classifier2D
 from Models.Linear import Linear
@@ -32,18 +31,35 @@ total_backbone = config['MODEL']['Prediction_type']
 for module in s_module:
     total_backbone = total_backbone + '_' + module + '_' + config['MODEL'][module + '_Backbone']
 
-train_transform = {}
-val_transform = {}
+# train_transform = {}
+# val_transform = {}
+#
+# for module in config['MODALITY'].keys():
+#     train_transform[module] = img_train_transform(config['DATA'][module + '_dim'])
+#     val_transform[module] = img_val_transform(config['DATA'][module + '_dim'])
 
-for module in config['MODALITY'].keys():
-    train_transform[module] = img_train_transform(config['DATA'][module + '_dim'])
-    val_transform[module] = img_val_transform(config['DATA'][module + '_dim'])
+## 2D transform
+train_transform = monai.transforms.Compose([
+    monai.transforms.NormalizeIntensity(),
+    monai.transforms.RandSpatialCrop(roi_size = [1,-1, -1], random_size = False),
+    monai.transforms.SqueezeDim(dim=1),
+    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['CT_dim'])
+])
+
+val_transform = monai.transforms.Compose([
+    monai.transforms.NormalizeIntensity(),
+    monai.transforms.RandSpatialCrop(roi_size = [1,-1,-1], random_size = False),
+    monai.transforms.SqueezeDim(dim=1),
+    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['CT_dim'])
+])
 
 label = config['DATA']['target']
 
+SubjectList = QuerySubjectList(config)
+SynchronizeData(config, SubjectList)
+SubjectInfo = QuerySubjectInfo(config, SubjectList)
+
 module_dict = nn.ModuleDict()
-PatientList = QueryFromServer(config)
-SynchronizeData(config, PatientList)
 
 if 'CT' in config['DATA']['module']:
     if config['MODEL']['CT_spatial_dims'] == 3:
@@ -64,7 +80,7 @@ if config['MODEL']['Records_Backbone']:
 
 if 'Records' in config['DATA']['module']:
     module_dict['Records'] = Clinical_backbone
-    PatientList, clinical_cols = LoadClinicalData(config, PatientList)
+    PatientList, clinical_cols = LoadClinicalData(config, SubjectList)
 else:
     clinical_cols = None
 
@@ -77,19 +93,18 @@ ckpt_path = Path('./', total_backbone + '_ckpt')
 roc_list = []
 for iter in range(50):
     seed_everything(42)
-    dataloader = DataModule(PatientList,
+
+    dataloader = DataModule(SubjectList,
+                            SubjectInfo,
                             config=config,
-                            selected_channel=module_dict.keys(),
-                            dicom_folder=config['DATA']['DataFolder'],
+                            keys=module_dict.keys(),
                             train_transform=train_transform,
                             val_transform=val_transform,
-                            batch_size=config['MODEL']['batch_size'],
-                            threshold=threshold,
-                            clinical_cols=clinical_cols
-                            )
+                            clinical_cols=clinical_cols,
+                            inference=False)
 
     model = MixModel(module_dict, config, label_range=None, weights=None)
-    model.apply(model.weights_init)
+    model.apply(model.weights_reset)
 
     filename = total_backbone + '_test2'
     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
@@ -105,30 +120,12 @@ for iter in range(50):
     ]
 
     trainer = Trainer(
-        # gpus=1,
-        accelerator="gpu",
-        devices=[2,3],
-        strategy=DDPStrategy(find_unused_parameters=True),
+        gpus=1,
+        # accelerator="gpu",
+        # devices=[2,3],
+        # strategy=DDPStrategy(find_unused_parameters=True),
         max_epochs=30,
         logger=logger,
         callbacks=callbacks
     )
     trainer.fit(model, dataloader)
-
-    print('start testing...')
-    worstCase = 0
-    with torch.no_grad():
-        outs = []
-        for i, data in enumerate(dataloader.test_dataloader()):
-            truth = data[1]
-            x = data[0]
-            output = model.test_step(data, i)
-            outs.append(output)
-        validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
-        prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
-        prefix = 'test_'
-        roc_list.append(logger.report_test(config, outs, model, prediction_labels, validation_labels, prefix))
-    print('finish test')
-
-roc_avg = torch.mean(torch.tensor(roc_list))
-print('avg_roc', str(roc_avg))

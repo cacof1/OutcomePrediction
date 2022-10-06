@@ -7,7 +7,7 @@ from io import StringIO
 ### To explore available data, use curl -u user:pass -X GET  http://128.16.11.124:8080/xnat/data/search/elements/?format=csv
 
 class XMLCreator():
-    def __init__(self, root_element, search_field_list, search_where_list):
+    def __init__(self, root_element):#, search_field_list, search_where_list):
 
         self.bundle = ET.Element("xdat:bundle",
                                  {"ID":"@xnat:subjectData",
@@ -23,31 +23,21 @@ class XMLCreator():
                                   "xmlns:xnat_a":"http://nrg.wustl.edu/xnat_assessments",
                                   "xmlns:xsi":"http://www.w3.org/2001/XMLSchema-instance"})        
         
-        self.search_field_list = search_field_list
         self.root_element      = root_element
-        self.search_where_list = search_where_list
-    def ConstructTree(self):
-        
-        root_element = ET.SubElement(self.bundle,"xdat:root_element_name").text = self.root_element ## Search uniquely against those 
-        
-        for search_field in self.search_field_list:
-            self.search_field_query(self.bundle, search_field)
-                
-        search_where_clause = ET.SubElement(self.bundle,"xdat:search_where", {"method":"AND"})                    
-        for search_where in self.search_where_list:
-            self.search_where_query(search_where_clause, search_where)            
-                
-        return ET.tostring(self.bundle)
+        ET.SubElement(self.bundle,"xdat:root_element_name").text = self.root_element ## Search uniquely against those         
+        self.search_where_clause = ET.SubElement(self.bundle,"xdat:search_where", {"method":"AND"})
+    def ConstructTree(self): return ET.tostring(self.bundle)
 
-
-    def search_field_query(self,bundle,search_field):
-        root = ET.SubElement(bundle,"xdat:search_field")
+    def Add_search_field(self,search_field):
+        root = ET.SubElement(self.bundle,"xdat:search_field")
         for key,value in search_field.items():
             ET.SubElement(root, "xdat:"+key).text = value
 
-    def search_where_query(self, search_where_clause, search_where):
-        criteria = ET.SubElement(search_where_clause, "xdat:criteria")
-        for key,value in search_where.items():
-            ET.SubElement(criteria, "xdat:"+key).text = value
+    def Add_search_where(self, search_where_list, search_where_method):
+        child_set_clause = ET.SubElement(self.search_where_clause,"xdat:child_set", {"method":search_where_method})
+        for search_where in search_where_list: ## All criterias
+            criteria = ET.SubElement(child_set_clause, "xdat:criteria")
+            for key,value in search_where.items():
+                ET.SubElement(criteria, "xdat:"+key).text = value
     
 

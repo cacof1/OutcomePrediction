@@ -5,7 +5,7 @@ from pytorch_lightning import LightningDataModule, LightningModule, Trainer, see
 from Models.fds import FDS
 from Losses.loss import WeightedMSE, CrossEntropy
 from sksurv.metrics import concordance_index_censored
-
+from monai.networks import nets
 
 class MixModel(LightningModule):
     def __init__(self, module_dict, config, label_range=None, weights=None, loss_fcn=torch.nn.BCEWithLogitsLoss()):
@@ -16,23 +16,21 @@ class MixModel(LightningModule):
         self.label_range = label_range
         self.weights = weights
 
-        self.loss_fcn = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
+        self.loss_fcn   = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
         self.activation = getattr(torch.nn, self.config["MODEL"]["Activation"])()
-        # self.FDS = FDS(feature_dim=1032, start_update=0, start_smooth=1, kernel='gaussian', ks=7, sigma=3)
-        self.classifier = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(8192, 32),
-            nn.Dropout(0.2),
-            nn.Linear(32, 1),
-            self.activation
-        )
+        self.classifier = nets.Classifier((2, 2, 512), 1, (2, 4, 8), (2, 2, 2))
+        # self.classifier = nn.Sequential(
+        #     nn.Dropout(0.2),
+        #     nn.Linear(8192, 32),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(32, 1),
+        #     self.activation
+        # )
         self.classifier.apply(self.weights_init)
 
     def forward(self, datadict, labels):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
-        # if self.config['REGULARIZATION']['Feature_smoothing']:
-        # if self.training and self.current_epoch >= 1:
-        # features = self.FDS.smooth(features, labels, self.current_epoch)
+        features = features.transpose(1,3)
         prediction = self.classifier(features)
         return prediction
 
@@ -47,8 +45,7 @@ class MixModel(LightningModule):
         self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             if self.config['REGULARIZATION']['Label_smoothing']:
-                loss = WeightedMSE(prediction.squeeze(dim=1), batch[-1], weights=self.weights,
-                                   label_range=self.label_range)
+                loss = WeightedMSE(prediction.squeeze(dim=1), batch[-1], weights=self.weights, label_range=self.label_range)
             MAE = torch.abs(prediction.flatten(0) - label)
             out['MAE'] = MAE.detach()
             if 'Dose' in self.config['DATA']['module']: out['dose'] = datadict['Dose']
@@ -60,38 +57,21 @@ class MixModel(LightningModule):
     def training_epoch_end(self, training_step_outputs):
         training_labels = torch.cat([out['label'] for i, out in enumerate(training_step_outputs)], dim=0)
         training_prediction = torch.cat([out['prediction'] for i, out in enumerate(training_step_outputs)], dim=0)
-
         prefix = 'train_epoch_'
-        # self.logger.log_metrics({prefix+'loss': self.loss_fcn(training_prediction.squeeze(), training_labels)},
-        # self.current_epoch)
-        self.logger.report_epoch(training_prediction.squeeze(), training_labels,
-                                 training_step_outputs, self.current_epoch, prefix)
-
-        # if self.config['REGULARIZATION']['Feature_smoothing']:
-        #     training_features = torch.cat([out['features'] for i, out in enumerate(training_step_outputs)], dim=0)
-        #     self.FDS = FDS(feature_dim=training_features.shape[1], start_update=0, start_smooth=1, kernel='gaussian',
-        #                    ks=7,
-        #                    sigma=3)
-        #     if self.current_epoch >= 0:
-        #         self.FDS.update_last_epoch_stats(self.current_epoch)
-        #         self.FDS.update_running_stats(training_features, training_labels, self.current_epoch)
-
+        self.logger.report_epoch(training_prediction.squeeze(), training_labels,training_step_outputs, self.current_epoch, prefix)
+                                 
     def validation_step(self, batch, batch_idx):
         out = {}
         datadict, label = batch
         prediction = self.forward(datadict, label)
         val_loss = self.loss_fcn(prediction.squeeze(), batch[-1])
         self.log("val_loss", val_loss, on_step=False, on_epoch=True, sync_dist=True)
-        # prefix = 'val_step_'
-        # self.logger.report_step(prediction, label, batch_idx, prefix)
-        # Finding worst case
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             MAE = torch.abs(prediction.flatten(0) - label)
             out['MAE'] = MAE
-            if 'Dose' in self.config['DATA']['module']:
-                out['dose'] = datadict['Dose']
-            if 'CT' in self.config['DATA']['module']:
-                out['img'] = datadict['CT']
+            if 'Dose' in self.config['DATA']['module']: out['dose'] = datadict['Dose']
+            if 'CT' in self.config['DATA']['module']: out['img'] = datadict['CT']
+                
         out['prediction'] = prediction.squeeze(dim=1)
         out['label'] = label
 
@@ -101,10 +81,7 @@ class MixModel(LightningModule):
         val_labels = torch.cat([out['label'] for i, out in enumerate(validation_step_outputs)], dim=0)
         val_prediction = torch.cat([out['prediction'] for i, out in enumerate(validation_step_outputs)], dim=0)
         prefix = 'val_epoch_'
-        # self.logger.log_metrics({prefix + 'loss': self.loss_fcn(val_prediction.squeeze(), val_labels)},
-        # self.current_epoch)
-        self.logger.report_epoch(val_prediction.squeeze(), val_labels,
-                                 validation_step_outputs, self.current_epoch, prefix)
+        self.logger.report_epoch(val_prediction.squeeze(), val_labels, validation_step_outputs, self.current_epoch, prefix)
 
     def test_step(self, batch, batch_idx):
         datadict, label = batch
@@ -130,7 +107,6 @@ class MixModel(LightningModule):
     def weights_reset(self, m):
         if isinstance(m, nn.Conv3d) or isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
             m.reset_parameters()
-
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
