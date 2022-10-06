@@ -29,7 +29,6 @@ def WeightedMSE(prediction, labels, weights=None, label_range=None):
     for i, label in enumerate(labels):
         idx = (label_range == int(label.cpu().numpy())).nonzero()
         if (idx is not None) and (idx[0][0] < 60):
-            # print(idx[0][0])
             loss = loss + (prediction[i] - label) ** 2 * weights[idx[0][0]]
         else:
             loss = loss + (prediction[i] - label) ** 2 * weights[-1]

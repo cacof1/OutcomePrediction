@@ -25,8 +25,8 @@ def get_lds_kernel_window(kernel, ks, sigma):
     return kernel_window
 
 
-def get_smoothed_label_distribution(PatientList, config):
-    label_all = get_train_label(PatientList, config)
+def get_smoothed_label_distribution(SubjectList, config):
+    label_all = get_train_label(SubjectList, config)
     range_max = np.max(label_all).astype(int) + 1
     range_min = np.min(label_all).astype(int)
 
@@ -41,19 +41,12 @@ def get_smoothed_label_distribution(PatientList, config):
 
     label_mean = np.mean(label_all)
     mse = ((label_all - label_mean) ** 2).mean()
-    print('MSE:', mse)
-
-    # _ = plt.hist(label_all, bins=label_range)
-    # plt.show()
-    #
-    # plt.bar(label_range[0:-1], eff_label_dist)
-    # plt.show()
     return weights, bin_index_per_label[1]
 
 
-def get_train_label(PatientList, config):
+def get_train_label(SubjectList, config):
     train_label = []
-    for patient in PatientList:
+    for patient in SubjectList:
         label = patient.fields[config['DATA']['target']]
         train_label.append(label)
     return train_label

@@ -9,41 +9,27 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
 
-def get_bbox_from_mask(mask,img_shape,roi_range=[64,64]):
+
+def get_bbox_from_mask(mask,img_shape):
     pos = np.where(mask)
     if pos[0].shape[0] == 0:
         bbox = np.zeros((0, 4))
-        ROI_region = np.zeros((0, 4))
-    else:
-        xmin = np.min(pos[1])
-        xmax = np.max(pos[1])
-        ymin = np.min(pos[0])
-        ymax = np.max(pos[0])
-        bbox = [xmin, ymin, xmax, ymax]
-        center = (int(0.5*(xmax+xmin)),int(0.5*(ymax+ymin)))
-        x1 = max(0, int(center[0] - roi_range[0]/2))
-        x2 = x1 + roi_range[0]
-        if x2 > img_shape[0]:
-            x2 = img_shape[0]
-            x1 = int(x2 - roi_range[0])
-        y1 = max(0, int(center[1] - roi_range[1]/2))
-        y2 = y1 + roi_range[1]
-        if y2 > img_shape[1]:
-            y2 = img_shape[1]
-            y1 = int(y2 - roi_range[1])
-        ROI_region = (x1, y1, x2, y2)
-
-    return bbox,ROI_region
-
-def ViewDicom(itk_item,AppPath='E:/Apps/Fiji.app/ImageJ-win64.exe'):
-    Viewer = sitk.ImageViewer()
-    Viewer.SetApplication(AppPath)
-    Viewer.Execute(itk_item)
+    else:        
+        xmin = np.min(pos[2])
+        xmax = np.max(pos[2])
+        ymin = np.min(pos[1])
+        ymax = np.max(pos[1])
+        zmin = np.min(pos[0])
+        zmax = np.max(pos[0])
+        bbox = [zmin, zmax, ymin, ymax, xmin, xmax]
+    return bbox
 
 def ReadDicom(dicom_path,view_image=False):
-    Reader = sitk.ImageSeriesReader()
-    filenames = glob.glob(dicom_path + '*.dcm')
+    Reader    = sitk.ImageSeriesReader()
+    filenames = sorted(glob.glob(dicom_path+'/*.dcm'))
+    print(len(filenames))
     Reader.SetFileNames(sorted(filenames))
+    
     assert len(filenames) > 0
     Session = Reader.Execute()
     if view_image: ViewDicom(Session)
@@ -57,16 +43,13 @@ def ResamplingITK(Session, Reference, is_label=False, pad_value=0):
     if is_label:
         resample.SetInterpolator(sitk.sitkNearestNeighbor)
     else:
-        #resample.SetInterpolator(sitk.sitkBSpline)
         resample.SetInterpolator(sitk.sitkLinear)
-
     Resampled = resample.Execute(Session)
-
     return Resampled
 
-def RTSStoContour(rtss_path, targetROI='PTV'):
-    rtss_file = glob.glob(rtss_path + '*.dcm')
-    ds = dcmread(rtss_file[0])
+def RStoContour(rs_path, targetROI='PTV'):
+    rs_file = glob.glob(rs_path + '*.dcm')
+    ds      = dcmread(rs_file[0])
     for item in ds.StructureSetROISequence:
         if item.ROIName == targetROI:
             ROI = ds.ROIContourSequence[item.ROINumber - 1]
@@ -145,22 +128,11 @@ def get_ROI_voxel(contours, dicom_path, roi_range=[64,64,10]):
 
     return mask_voxel, bbox_voxel, ROI_voxel, image_voxel, img_indices
 
-def get_masked_img_voxel(ImageVoxel, mask_voxel, bbox_voxel, ROI_voxel, visImage=False, PatientID=None):
-
+def get_masked_img_voxel(ImageVoxel, mask_voxel):
+    bbox = get_bbox_from_mask(mask_voxel, np.shape(ImageVoxel))
     assert len(mask_voxel) == ImageVoxel.shape[0]
-    input_voxel = []
-    for i in range(len(mask_voxel)):
-        img_array = ImageVoxel[i]
-        mask_array = mask_voxel[i]
-        bbox = bbox_voxel[i]
-        ROI_region = ROI_voxel[i]
-        img_masked = np.where(mask_array == True, img_array, mask_array)
-        img_croped_bbox = img_masked[bbox[1]:bbox[3], bbox[0]:bbox[2]]
-        img_croped_roi = img_masked[ROI_region[1]:ROI_region[3], ROI_region[0]:ROI_region[2]]
-        input_voxel.append(img_croped_roi.astype('float32'))
-        if visImage: ViewROI(PatientID, img_masked,mask_array,img_croped_bbox,img_croped_roi)
-
-    return np.array(input_voxel)
+    img_masked = ImageVoxel[bbox[0]:bbox[1], bbox[2]:bbox[3], bbox[4]:bbox[5]]
+    return img_masked
 
 
 

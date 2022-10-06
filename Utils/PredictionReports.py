@@ -205,7 +205,6 @@ def r2_index(prediction, label):
 
 def c_index(prediction, label):
     event_indicator = torch.ones(label.shape, dtype=torch.bool)
-    # print('prediction:', prediction)
     risk = 1 / prediction.squeeze()
     cindex = concordance_index_censored(event_indicator.cpu().detach().numpy(),
                                         event_time=label.cpu().detach().numpy(),
