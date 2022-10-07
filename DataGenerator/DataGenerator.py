@@ -18,13 +18,14 @@ from sklearn.compose import ColumnTransformer
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import concurrent
+
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, SubjectList, SubjectInfo, config=None,keys=['CT'], targetROI=None, transform=None, inference=False, clinical_cols=None, **kwargs):
         super().__init__()
         self.config = config
         self.SubjectList = SubjectList
         self.SubjectInfo = SubjectInfo
-        self.targetROI = targetROI
+        self.targetROI = config['DATA']['mask_name']
         self.keys = keys
         self.transform = transform
         self.inference = inference
@@ -36,7 +37,7 @@ class DataGenerator(torch.utils.data.Dataset):
         experiments   = subject['xnat:experiments'][0]['xnat:experiment']
 
         ## Won't work with many experiments
-        for experiment in experiments:            
+        for experiment in experiments:
             experiment_label = experiment['@label']
             scans = experiment['xnat:scans'][0]['xnat:scan']
             for scan in scans:
@@ -98,6 +99,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
             if channel == 'Records':
                 records         = self.SubjectList.loc[:,self.clinical_cols].to_numpy()
+                data['Records'] = torch.as_tensor(records, dtype=torch.float32)
 
         if self.inference: return data
 
@@ -109,8 +111,7 @@ class DataGenerator(torch.utils.data.Dataset):
        
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, SubjectList, SubjectInfo, config=None,  train_transform=None, val_transform=None,  train_size=0.7, val_size=0.2, test_size=0.1, num_workers=10, **kwargs):
-                          
+    def __init__(self, SubjectList, SubjectInfo, config=None,  train_transform=None, val_transform=None,  train_size=0.7, val_size=0.2, test_size=0.1, num_workers=0, **kwargs):
         super().__init__()
         self.batch_size  = config['MODEL']['batch_size']
         self.num_workers = num_workers
@@ -124,7 +125,7 @@ class DataModule(LightningDataModule):
                                                      test_size=0.15,
                                                      random_state=np.random.randint(1, 10000),
                                                      stratify=train_val_list['xnat_subjectdata_field_map_' + config['DATA']['target']] >= config['DATA']['threshold'])
-            
+
         train_list = train_list.reset_index(drop=True)
         val_list   = val_list.reset_index(drop=True)
         test_list  = test_list.reset_index(drop=True)
@@ -146,12 +147,16 @@ def QuerySubjectList(config, **kwargs):
     root_element = "xnat:subjectData"
     XML          = XMLCreator(root_element)#, search_field, search_where)    
     print("Querying from Server")
-
     ## Target
     XML.Add_search_field({"element_name":"xnat:subjectData","field_ID":"XNAT_SUBJECTDATA_FIELD_MAP="+str(config['DATA']['target']),"sequence":"1", "type":"int"})
-
     ## Label
     XML.Add_search_field({"element_name":"xnat:subjectData","field_ID":"SUBJECT_LABEL","sequence":"1", "type":"string"})
+
+    if 'Records' in config['DATA']['module']:
+        for value in config['DATA']['clinical_columns']:
+            dict_temp = {"element_name": "xnat:subjectData", "field_ID": "XNAT_SUBJECTDATA_FIELD_MAP=" + str(value),
+                         "sequence": "1", "type": "int"}
+            XML.Add_search_field(dict_temp)
 
     ## Where Condition
     templist = []
@@ -169,11 +174,20 @@ def QuerySubjectList(config, **kwargs):
         templist.append({"schema_field":"xnat:ctSessionData.SCAN_COUNT_TYPE="+key,"comparison_type":">=","value":str(value)})
     if(len(templist)): XML.Add_search_where(templist, "AND") ## if any items in here
 
+    templist = []
+    for value in config['FILTER']['patient_id']:
+        dict_temp = {"schema_field": "xnat:subjectData.SUBJECT_LABEL", "comparison_type": "!=",
+                     "value": str(value)}
+        templist.append(dict_temp)
+    if (len(templist)): XML.Add_search_where(templist, "AND")
+
+
+
     xmlstr       = XML.ConstructTree()
     params       = {'format': 'csv'}
     response     = requests.post(config['SERVER']['Address']+'/data/search/', params=params, data=xmlstr, auth=(config['SERVER']['User'], config['SERVER']['Password']))
     SubjectList  = pd.read_csv(StringIO(response.text))
-    print(SubjectList)
+    print('Query: ', SubjectList)
     return SubjectList
 
 def SynchronizeData(config, SubjectList):
@@ -206,23 +220,52 @@ def QuerySubjectInfo(config, SubjectList):
     return SubjectInfo
 
 
-def LoadClinicalData(config, SubjectList, ClinicalDataset):
-    category_cols = config['CLINICAL']['category_feat']
-    numerical_cols = config['CLINICAL']['numerical_feat']
-    target = config['DATA']['Target']
+def LoadClinicalData(config, PatientList):
+    category_cols = []
+    numerical_cols = []
+    for col in config['CLINICAL']['category_feat']:
+        category_cols.append('xnat_subjectdata_field_map_' + col)
 
-    subject_list = SubjectList['subject_label'].tolist()
-    ClinicalDataset = ClinicalDataset[ClinicalDataset.SubjectID.isin(subject_list)].reset_index(drop=True)
+    for row in config['CLINICAL']['numerical_feat']:
+        numerical_cols.append('xnat_subjectdata_field_map_' + row)
+
+    target = config['DATA']['target'][0]
 
     ct = ColumnTransformer(
         [("CatTrans", OneHotEncoder(), category_cols),
          ("NumTrans", MinMaxScaler(), numerical_cols), ])
 
-    X = ClinicalDataset.loc[:,category_cols+numerical_cols]
+    X = PatientList.loc[:, category_cols + numerical_cols]
     X.loc[:, category_cols] = X.loc[:, category_cols].astype('str')
     X.loc[:, numerical_cols] = X.loc[:, numerical_cols].astype('float32')
     X_trans = ct.fit_transform(X)
     df_trans = pd.DataFrame(X_trans, index=X.index, columns=ct.get_feature_names_out())
-    df_trans[target] = ClinicalDataset.loc[:,target]
-    df_trans['subject_label'] = ClinicalDataset.loc[:,'SubjectID']
-    return df_trans
+    clinical_col = list(df_trans.columns)
+    df_trans['xnat_subjectdata_field_map_' + target] = PatientList.loc[:, 'xnat_subjectdata_field_map_' + target]
+    df_trans['subject_label'] = PatientList.loc[:, 'subject_label']
+
+    return df_trans, clinical_col
+
+
+# def LoadClinicalData(config, SubjectList, ClinicalDataset):
+#     category_cols = config['CLINICAL']['category_feat']
+#     numerical_cols = config['CLINICAL']['numerical_feat']
+#     target = config['DATA']['Target']
+#
+#     subject_list = SubjectList['subject_label'].tolist()
+#     ClinicalDataset = ClinicalDataset[ClinicalDataset.SubjectID.isin(subject_list)].reset_index(drop=True)
+#
+#     ct = ColumnTransformer(
+#         [("CatTrans", OneHotEncoder(), category_cols),
+#          ("NumTrans", MinMaxScaler(), numerical_cols), ])
+#
+#     X = ClinicalDataset.loc[:, category_cols + numerical_cols]
+#     X.loc[:, category_cols] = X.loc[:, category_cols].astype('str')
+#     X.loc[:, numerical_cols] = X.loc[:, numerical_cols].astype('float32')
+#     X_trans = ct.fit_transform(X)
+#     df_trans = pd.DataFrame(X_trans, index=X.index, columns=ct.get_feature_names_out())
+#     df_trans[target] = ClinicalDataset.loc[:, target]
+#     df_trans['subject_label'] = ClinicalDataset.loc[:, 'SubjectID']
+#     return df_trans
+
+

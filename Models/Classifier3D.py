@@ -5,7 +5,7 @@ from torch import nn
 import torchmetrics
 from monai.networks import blocks, nets
 from Models.UnetEncoder import UnetEncoder
-
+from Models.PretrainedEncoder3D import PretrainedEncoder3D
 ## Model
 class Classifier3D(LightningModule):
     def __init__(self, config, module_str):
@@ -16,6 +16,8 @@ class Classifier3D(LightningModule):
 
         if backbone_name == 'Unet':
             self.backbone = UnetEncoder(**parameters)
+        elif backbone_name == 'UNETR':
+            self.backbone = PretrainedEncoder3D(config, module_str)
         else:
             model_str = 'nets.' + backbone_name + '(**parameters)'
             loaded_model = eval(model_str)
@@ -25,6 +27,7 @@ class Classifier3D(LightningModule):
         self.model = torch.nn.Sequential(
             self.backbone,
             torch.nn.Flatten(),
+            torch.nn.AdaptiveAvgPool1d(128),
         )
         self.model.apply(self.weights_init)
         self.accuracy = torchmetrics.AUC(reorder=True)
