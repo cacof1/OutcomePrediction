@@ -92,7 +92,7 @@ else:
     clinical_cols = None
 
 if config['MODEL']['Prediction_type'] == 'Classification':
-    threshold = config['MODEL']['Classification_threshold']
+    threshold = config['DATA']['threshold']
 else:
     threshold = None
 

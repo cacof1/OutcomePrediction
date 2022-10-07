@@ -21,9 +21,9 @@ class MixModel(LightningModule):
         # self.classifier = nets.Classifier((2, 2, 192), 1, (2, 4, 8), (2, 2, 2))
         self.classifier = nn.Sequential(
             nn.Dropout(0.5),
-            nn.Conv2d(512, 64, kernel_size=(1, 1), stride=(1, 1)),
+            nn.Conv2d(512, 256, kernel_size=(5, 5), stride=(3, 3)),
             nn.Dropout(0.3),
-            nn.Conv2d(64, 1, kernel_size=(1, 1), stride=(1, 1)),
+            nn.Conv2d(256, 1, kernel_size=(4, 4), stride=(4, 4)),
             self.activation,
             nn.AdaptiveAvgPool2d(output_size=(1, 1))
         )
