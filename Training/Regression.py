@@ -5,6 +5,7 @@ from pytorch_lightning import LightningDataModule, LightningModule, Trainer, see
 import sys, os
 import torchio as tio
 import monai
+from torchvision import transforms
 torch.cuda.empty_cache()
 torch.cuda.memory_summary(device=None, abbreviated=False)
 
@@ -33,18 +34,24 @@ logger.log_text()
 img_dim = config['DATA']['dim']
 
 ## 2D transform
-train_transform = monai.transforms.Compose([
-    monai.transforms.NormalizeIntensity(),
+train_transform = monai.transforms.Compose([    
+    monai.transforms.ToTensor(),
+    monai.transforms.AddChannel(),
+    monai.transforms.NormalizeIntensity(),    
     monai.transforms.RandSpatialCrop(roi_size = [1,-1, -1], random_size = False),
     monai.transforms.SqueezeDim(dim=1),
-    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['dim']) 
+    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['dim']),
+    monai.transforms.RepeatChannel(repeats=3)
 ])
 
-val_transform = monai.transforms.Compose([
-    monai.transforms.NormalizeIntensity(),
+val_transform = monai.transforms.Compose([    
+    monai.transforms.ToTensor(),
+    monai.transforms.AddChannel(),
+    monai.transforms.NormalizeIntensity(),    
     monai.transforms.RandSpatialCrop(roi_size = [1,-1,-1], random_size = False),
     monai.transforms.SqueezeDim(dim=1), 
-    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['dim']) 
+    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['dim']),
+    monai.transforms.RepeatChannel(repeats=3)    
 ])
 
 ckpt_dirpath = Path('./', total_backbone + '_ckpt')
@@ -78,6 +85,7 @@ dataloader = DataModule(SubjectList,
 trainer = Trainer(gpus=torch.cuda.device_count(),
                   max_epochs=20,
                   logger=logger,
+                  precision =16,
                   callbacks=callbacks)
 
 model = MixModel(module_dict, config, label_range=None, weights=None)

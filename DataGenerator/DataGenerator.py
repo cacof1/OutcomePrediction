@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 import xnat
+import matplotlib.pyplot as plt
 import SimpleITK as sitk
 from Utils.DicomTools import *
 from Utils.XNATXML import XMLCreator
@@ -56,7 +57,7 @@ class DataGenerator(torch.utils.data.Dataset):
         CTArray    = sitk.GetArrayFromImage(CTSession)
         ## First define the ROI based on target
         if self.targetROI:
-            RSPath    = glob.glob(self.GeneratePath(patient_id,'Structs') + '/*dcm')
+            RSPath    = glob.glob(self.GeneratePath(subject_id,'Structs') + '/*dcm')
             RS        = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
             roi_names = RS.get_roi_names()
             if self.targetROI in roi_names:
@@ -73,9 +74,10 @@ class DataGenerator(torch.utils.data.Dataset):
         for channel in self.keys:
             if channel == 'CT':
                 data['CT']      = get_masked_img_voxel(CTArray, mask_img)
-                data['CT']      = np.expand_dims(data['CT'], 0)
+                print(data['CT'].shape)
                 if self.transform: data['CT'] = self.transform(data['CT'])
-                data['CT']      = torch.as_tensor(data['CT'], dtype=torch.float32)
+                print(data['CT'].shape)
+                print(data['CT'].dtype)
 
             if channel == 'RTDose':
                 DosePath        = self.GeneratePath(subject_id, 'Dose')
@@ -84,9 +86,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 DoseArray       = sitk.GetArrayFromImage(DoseSession)
                 DoseArray       = DoseArray * np.double(DoseSession.GetMetaData('3004|000e'))
                 data['RTDose']  = get_masked_img_voxel(DoseArray, mask_img)
-                data['RTDose']  = np.expand_dims(data['RTDose'], 0)
                 if self.transform: data['RTDose'] = self.transform(data['RTDose'])
-                data['RTDose']  = torch.as_tensor(data['RTDose'], dtype=torch.float32)
 
             if channel == 'PET':
                 PETPath         = self.GeneratePath(subject_id, 'PET')
@@ -94,20 +94,17 @@ class DataGenerator(torch.utils.data.Dataset):
                 PETSession      = ResamplingITK(PETSession, CTSession)
                 PETArray        = sitk.GetArrayFromImage(PETSession)
                 data['PET']     = get_masked_img_voxel(PETArray, mask_img)
-                data['PET']     = np.expand_dims(data['PET'], 0)
                 if self.transform: data['PET'] = self.transform(data['PET'])
-                data['PET']     = torch.as_tensor(data['PET'], dtype=torch.float32)
 
             if channel == 'Records':
                 records         = self.SubjectList.loc[:,self.clinical_cols].to_numpy()
-                data['Records'] = torch.as_tensor(records, dtype=torch.float32)
 
         if self.inference: return data
 
         else:
             label = self.SubjectList.loc[i,"xnat_subjectdata_field_map_"+self.config['DATA']['target']]
-            if self.config['DATA']['threshold'] is not None:  label = np.array(label > self.config['DATA']['threshold'])
-            label = torch.as_tensor(label, dtype=torch.int64)
+            #if self.config['DATA']['threshold'] is not None:  label = np.array(label > self.config['DATA']['threshold'])
+            #label = torch.as_tensor(label, dtype=torch.int64)
             return data, label
        
 ### DataLoader
