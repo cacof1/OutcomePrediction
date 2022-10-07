@@ -4,7 +4,9 @@ import os
 from pytorch_lightning.loggers.base import rank_zero_experiment
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
+
 import matplotlib.pyplot as plt
+plt.switch_backend('agg')
 import torchvision
 from pytorch_lightning.loggers import LightningLoggerBase
 from sksurv.metrics import cumulative_dynamic_auc
@@ -46,10 +48,9 @@ class PredictionReports(TensorBoardLogger):
             description = description + param + '+' + '+'.join(clinical_criteria)
         # Return the experiment version, int or str.
 
-        sub_str = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['target'])
-        #self._version = self._get_next_version(sub_str)
-        description = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['target']) + '_' + str(self._version)
-
+        sub_str = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module'])
+        self._version = self._get_next_version(sub_str)
+        description = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module']) + '_' + str(self._version)
         return description
 
     def _get_next_version(self, sub_str):
@@ -80,7 +81,9 @@ class PredictionReports(TensorBoardLogger):
         return grid
 
     def log_text(self) -> None:
-        configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' + str(self.config['DATA']['target'])
+        configurations = 'The modules included are ' + str(self.config['DATA']['module'])
+        # configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' +
+        # str(self.config['DATA']['module'])
         self.experiment.add_text('configurations:', configurations)
 
     def regression_matrix(self, prediction, label, prefix):
@@ -126,9 +129,8 @@ class PredictionReports(TensorBoardLogger):
         plt.xlabel("survival months")
         plt.ylabel("time-dependent AUC")
         plt.grid(True)
-        plt.show()
-        self.experiment.add_figure(prefix+"AUC", fig, current_epoch)
-
+        self.experiment.add_figure(prefix + "AUC", fig, current_epoch)
+        plt.close(fig)
 
     def plot_AUROC(self, prediction, label, prefix, current_epoch=None) -> None:
         roc = torchmetrics.ROC()
@@ -137,11 +139,11 @@ class PredictionReports(TensorBoardLogger):
         # lw = 2
         # plt.plot(fpr.cpu(), tpr.cpu(), color='darkorange', lw=lw)
         plt.plot(fpr.cpu(), tpr.cpu(), color='darkorange')
-        plt.title('ROC curve')
+        plt.title(prefix + '_roc_curve')
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive rate')
-        plt.show()
         self.experiment.add_figure(prefix + "AUC", fig, current_epoch)
+        plt.close(fig)
 
     def worst_case_show(self, validation_step_outputs, prefix):
         out = {}
@@ -192,6 +194,33 @@ class PredictionReports(TensorBoardLogger):
             self.log_metrics(classification_out, current_epoch)
             if 'ROC' in self.config['CHECKPOINT']['matrix']:
                 self.plot_AUROC(prediction.squeeze(), label, prefix, current_epoch)
+
+    def report_test(self, config, outs, model, prediction_labels, validation_labels, prefix):
+        if config['MODEL']['Prediction_type'] == 'Regression':
+            self.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels)))
+            self.generate_cumulative_dynamic_auc(prediction_labels, validation_labels, 0, prefix)
+            regression_out = self.regression_matrix(prediction_labels, validation_labels, prefix)
+            self.experiment.add_text('test_cindex: ', str(regression_out[prefix + 'cindex']))
+            self.experiment.add_text('test_r2: ', str(regression_out[prefix + 'r2']))
+            if 'WorstCase' in config['CHECKPOINT']['matrix']:
+                worst_record = self.worst_case_show(outs, prefix)
+                self.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
+                if 'CT' in config['DATA']['module']:
+                    text = 'test_worst_case_img'
+                    self.log_image(worst_record[prefix + 'worst_img'], text)
+                if 'Dose' in config['DATA']['module']:
+                    text = 'test_worst_case_dose'
+                    self.log_image(worst_record[prefix + 'worst_dose'], text)
+            return regression_out[prefix + 'r2']
+
+        if config['MODEL']['Prediction_type'] == 'Classification':
+            classification_out = self.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
+            if 'ROC' in config['CHECKPOINT']['matrix']:
+                self.plot_AUROC(prediction_labels, validation_labels, prefix)
+                self.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
+            if 'Specificity' in config['CHECKPOINT']['matrix']:
+                self.experiment.add_text('Specificity:', str(classification_out[prefix + 'specificity']))
+            return classification_out[prefix + 'roc']
 
 
 def r2_index(prediction, label):
