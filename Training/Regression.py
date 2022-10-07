@@ -43,14 +43,21 @@ train_transform = monai.transforms.Compose([
     monai.transforms.NormalizeIntensity(),
     monai.transforms.RandSpatialCrop(roi_size = [1,-1, -1], random_size = False),
     monai.transforms.SqueezeDim(dim=1),
-    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['CT_dim'])
+    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['CT_dim']),
+    monai.transforms.RepeatChannel(repeats=3),
+    monai.transforms.RandAffine(),
+    monai.transforms.RandHistogramShift(),
+    monai.transforms.RandAdjustContrast(),
+    monai.transforms.RandGaussianNoise(),
+
 ])
 
 val_transform = monai.transforms.Compose([
     monai.transforms.NormalizeIntensity(),
     monai.transforms.RandSpatialCrop(roi_size = [1,-1,-1], random_size = False),
     monai.transforms.SqueezeDim(dim=1),
-    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['CT_dim'])
+    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['CT_dim']),
+    monai.transforms.RepeatChannel(repeats=3)
 ])
 
 label = config['DATA']['target']
@@ -91,7 +98,7 @@ else:
 
 ckpt_path = Path('./', total_backbone + '_ckpt')
 roc_list = []
-for iter in range(50):
+for iter in range(2):
     seed_everything(42)
 
     dataloader = DataModule(SubjectList,
@@ -106,7 +113,7 @@ for iter in range(50):
     model = MixModel(module_dict, config, label_range=None, weights=None)
     model.apply(model.weights_reset)
 
-    filename = total_backbone + '_test2'
+    filename = total_backbone
     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
     logger.log_text()
     callbacks = [
@@ -129,3 +136,20 @@ for iter in range(50):
         callbacks=callbacks
     )
     trainer.fit(model, dataloader)
+    print('start testing...')
+    worstCase = 0
+    with torch.no_grad():
+        outs = []
+        for i, data in enumerate(dataloader.test_dataloader()):
+            truth = data[1]
+            x = data[0]
+            output = model.test_step(data, i)
+            outs.append(output)
+        validation_labels = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
+        prediction_labels = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
+        prefix = 'test_'
+        roc_list.append(logger.report_test(config, outs, model, prediction_labels, validation_labels, prefix))
+    print('finish test')
+
+roc_avg = torch.mean(torch.tensor(roc_list))
+print('avg_roc', str(roc_avg))

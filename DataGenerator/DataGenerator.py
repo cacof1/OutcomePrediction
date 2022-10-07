@@ -35,15 +35,6 @@ class DataGenerator(torch.utils.data.Dataset):
         subject_label = subject['@label']
         experiments   = subject['xnat:experiments'][0]['xnat:experiment']
 
-
-    def __len__(self):
-        return int(self.PatientList.shape[0])
-
-    def GeneratePath(self, subjectid, Modality):
-        subject = self.SubjectInfo[subjectid]['xnat:Subject'][0]
-        subject_label = subject['@label']
-        experiments   = subject['xnat:experiments'][0]['xnat:experiment']
-
         ## Won't work with many experiments
         for experiment in experiments:
             experiment_label = experiment['@label']
@@ -115,8 +106,8 @@ class DataGenerator(torch.utils.data.Dataset):
 
         else:
             label = self.SubjectList.loc[i,"xnat_subjectdata_field_map_"+self.config['DATA']['target']]
-            if self.config['MODEL']['Classification_threshold'] is not None:  label = np.array(label > self.config['MODEL']['Classification_threshold'])
-            label = torch.as_tensor(label, dtype=torch.int64)
+            if self.config['DATA']['threshold'] is not None:  label = np.array(label > self.config['DATA']['threshold'])
+            label = torch.as_tensor(label, dtype=torch.float32)
             return data, label
        
 ### DataLoader
@@ -129,12 +120,12 @@ class DataModule(LightningDataModule):
         train_val_list, test_list = train_test_split(SubjectList,
                                                      test_size=0.15,
                                                      random_state=42,
-                                                     stratify=SubjectList['xnat_subjectdata_field_map_' + config['DATA']['target']] >= config['MODEL']['Classification_threshold'])
+                                                     stratify=SubjectList['xnat_subjectdata_field_map_' + config['DATA']['target']] >= config['DATA']['threshold'])
         ## Split train-val with random seed
         train_list, val_list      = train_test_split(train_val_list,
                                                      test_size=0.15,
                                                      random_state=np.random.randint(1, 10000),
-                                                     stratify=train_val_list['xnat_subjectdata_field_map_' + config['DATA']['target']] >= config['MODEL']['Classification_threshold'])
+                                                     stratify=train_val_list['xnat_subjectdata_field_map_' + config['DATA']['target']] >= config['DATA']['threshold'])
 
         train_list = train_list.reset_index(drop=True)
         val_list   = val_list.reset_index(drop=True)

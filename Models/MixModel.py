@@ -18,24 +18,27 @@ class MixModel(LightningModule):
 
         self.loss_fcn   = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
         self.activation = getattr(torch.nn, self.config["MODEL"]["Activation"])()
+        # self.classifier = nets.Classifier((2, 2, 192), 1, (2, 4, 8), (2, 2, 2))
         self.classifier = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(8192, 32),
-            nn.Dropout(0.2),
-            nn.Linear(32, 1),
-            self.activation
+            nn.Dropout(0.5),
+            nn.Conv2d(512, 64, kernel_size=(1, 1), stride=(1, 1)),
+            nn.Dropout(0.3),
+            nn.Conv2d(64, 1, kernel_size=(1, 1), stride=(1, 1)),
+            self.activation,
+            nn.AdaptiveAvgPool2d(output_size=(1, 1))
         )
         self.classifier.apply(self.weights_init)
 
-    def forward(self, datadict, labels):
+    def forward(self, datadict):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
+        # features = features.transpose(1, 3)
         prediction = self.classifier(features)
         return prediction
 
     def training_step(self, batch, batch_idx):
         out = {}
         datadict, label = batch
-        prediction = self.forward(datadict, label)
+        prediction = self.forward(datadict)
         loss = self.loss_fcn(prediction.squeeze(), batch[-1])
 
         out['label'] = label
@@ -61,7 +64,7 @@ class MixModel(LightningModule):
     def validation_step(self, batch, batch_idx):
         out = {}
         datadict, label = batch
-        prediction = self.forward(datadict, label)
+        prediction = self.forward(datadict)
         val_loss = self.loss_fcn(prediction.squeeze(), batch[-1])
         self.log("val_loss", val_loss, on_step=False, on_epoch=True, sync_dist=True)
         if self.config['MODEL']['Prediction_type'] == 'Regression':
@@ -107,6 +110,6 @@ class MixModel(LightningModule):
             m.reset_parameters()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
         return [optimizer], [scheduler]
