@@ -94,20 +94,6 @@ else:
     threshold = None
 
 ckpt_path = Path('./', total_backbone + '_ckpt')
-roc_list = []
-sp_list = []
-sensi_list = []
-acc_list = []
-pre_list = []
-
-tprs = []
-roc = torchmetrics.ROC()
-auroc = torchmetrics.AUROC()
-fig = plt.figure()
-base_fpr = np.linspace(0, 1, 19)
-
-arm_list = []
-cm = ConfusionMatrix(num_classes=2)
 for iter in range(20):
     seed_everything(np.random.randint(1, 10000))
     # seed_everything(4200)
@@ -137,10 +123,10 @@ for iter in range(20):
     ]
 
     trainer = Trainer(
-        gpus=1,
-        # accelerator="gpu",
-        # devices=[2, 3],
-        # strategy=DDPStrategy(find_unused_parameters=False),
+        # gpus=1,
+        accelerator="gpu",
+        devices=[2, 3],
+        strategy=DDPStrategy(find_unused_parameters=False),
         max_epochs=30,
         logger=logger,
         callbacks=callbacks
