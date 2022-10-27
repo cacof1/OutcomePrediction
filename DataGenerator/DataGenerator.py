@@ -78,12 +78,11 @@ class DataGenerator(torch.utils.data.Dataset):
         for channel in self.keys:
             if channel == 'CT':
                 data['CT'] = get_masked_img_voxel(CTArray, mask_img)
-                print(data['CT'].shape)
+                data['CT']      = np.expand_dims(data['CT'], 0)
                 if self.transform: data['CT'] = self.transform(data['CT'])
-                print(data['CT'].shape)
-                print(data['CT'].dtype)
+                data['CT']      = torch.as_tensor(data['CT'], dtype=torch.float32)
 
-            if channel == 'RTDose':
+            if channel == 'Dose':
                 DosePath = self.GeneratePath(subject_id, 'Dose')
                 DosePath = Path(DosePath, '1-1.dcm')
                 DoseObj = sitk.ReadImage(str(DosePath))
@@ -95,7 +94,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 data_dose = np.expand_dims(data_dose, 0)
 
                 if self.transform: data_dose = self.transform(data_dose)
-                data['RTDose'] = torch.as_tensor(data_dose, dtype=torch.float32)
+                data['Dose'] = torch.as_tensor(data_dose, dtype=torch.float32)
 
             if channel == 'PET':
                 PETPath = self.GeneratePath(subject_id, 'PET')
@@ -106,8 +105,8 @@ class DataGenerator(torch.utils.data.Dataset):
                 if self.transform: data['PET'] = self.transform(data['PET'])
 
             if channel == 'Records':
-                records = self.SubjectList.loc[:, self.clinical_cols].to_numpy()
-                data['Records'] = torch.as_tensor(records, dtype=torch.float32)
+                records = torch.tensor(self.SubjectList.loc[i,self.clinical_cols], dtype=torch.float32)
+                data['Records'] = records
 
         if self.inference:
             return data
@@ -255,20 +254,25 @@ def LoadClinicalData(config, PatientList):
     for row in config['CLINICAL']['numerical_feat']:
         numerical_cols.append('xnat_subjectdata_field_map_' + row)
 
-    target = config['DATA']['target'][0]
+    target = config['DATA']['target']
 
     ct = ColumnTransformer(
         [("CatTrans", OneHotEncoder(), category_cols),
          ("NumTrans", MinMaxScaler(), numerical_cols), ])
 
     X = PatientList.loc[:, category_cols + numerical_cols]
-    X.loc[:, category_cols] = X.loc[:, category_cols].astype('str')
-    X.loc[:, numerical_cols] = X.loc[:, numerical_cols].astype('float32')
+    yc = X.loc[:, category_cols].astype('float32')
+    X.loc[:, category_cols] = yc.fillna(yc.mean().astype('int'))
+    yn = X.loc[:, numerical_cols].astype('float32')
+    X.loc[:, numerical_cols] = yn.fillna(yn.mean())
     X_trans = ct.fit_transform(X)
+    if not isinstance(X_trans, (np.ndarray, np.generic)):
+        X_trans = X_trans.toarray()
     df_trans = pd.DataFrame(X_trans, index=X.index, columns=ct.get_feature_names_out())
     clinical_col = list(df_trans.columns)
     df_trans['xnat_subjectdata_field_map_' + target] = PatientList.loc[:, 'xnat_subjectdata_field_map_' + target]
     df_trans['subject_label'] = PatientList.loc[:, 'subject_label']
+    df_trans['subjectid'] = PatientList.loc[:, 'subjectid']
 
     return df_trans, clinical_col
 

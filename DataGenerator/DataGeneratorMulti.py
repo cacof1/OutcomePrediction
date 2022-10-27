@@ -74,11 +74,10 @@ class DataGenerator(torch.utils.data.Dataset):
             else:
                 message = "No ROI of name " + self.targetROI + " found in RTStruct"
                 raise ValueError(message)
-
-            mask_img = get_masked_img_voxel(mask_img, mask_img)
         else:  ## No ROI target defined
             mask_img = np.ones_like(CTArray)
-
+         
+        data_mask = get_masked_img_voxel(mask_img, mask_img)
         data_mask = np.expand_dims(mask_img, 0)
         if self.transform: data_mask = self.transform(data_mask)
         data_mask = torch.as_tensor(data_mask, dtype=torch.bool)
@@ -127,6 +126,7 @@ class DataGenerator(torch.utils.data.Dataset):
         else:
             label = self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']]
             if self.config['DATA']['threshold'] is not None:  label = np.array(label > self.config['DATA']['threshold'])
+            label = torch.as_tensor(label, dtype=torch.float32)
             return data, label
 
 

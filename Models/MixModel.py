@@ -17,10 +17,11 @@ class MixModel(LightningModule):
         self.label_range = label_range
         self.weights = weights
 
-        self.loss_fcn = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(1.26))
+        self.loss_fcn = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(2.26))
         self.activation = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         self.classifier = nn.Sequential(
-            nn.Linear(286, 120),
+            #nn.Linear(530, 120),
+            nn.Linear(198, 120),
             nn.Dropout(0.3),
             nn.Linear(120, 40),
             nn.Dropout(0.3),

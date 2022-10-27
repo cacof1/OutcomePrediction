@@ -99,7 +99,7 @@ class PredictionReports(TensorBoardLogger):
     def classification_matrix(self, prediction, label, prefix):
         c_out = {}
         cm = ConfusionMatrix(num_classes=2)
-        bcm = cm(prediction.round(), label.int())
+        bcm = cm(prediction.round().to('cpu'), label.int().to('cpu'))
         tn = bcm[0][0]
         tp = bcm[1][1]
         fp = bcm[0][1]
