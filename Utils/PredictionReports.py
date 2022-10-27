@@ -19,7 +19,7 @@ from pytorch_lightning.core.saving import save_hparams_to_yaml
 from pytorch_lightning.utilities.cloud_io import get_filesystem
 import logging
 from pytorch_lightning.loggers import TensorBoardLogger
-
+from torchmetrics import ConfusionMatrix
 
 class PredictionReports(TensorBoardLogger):
     def __init__(self, config,
@@ -98,14 +98,31 @@ class PredictionReports(TensorBoardLogger):
 
     def classification_matrix(self, prediction, label, prefix):
         c_out = {}
+        cm = ConfusionMatrix(num_classes=2)
+        bcm = cm(prediction.round(), label.int())
+        tn = bcm[0][0]
+        tp = bcm[1][1]
+        fp = bcm[0][1]
+        fn = bcm[1][0]
         if 'ROC' in self.config['CHECKPOINT']['matrix']:
             auroc = torchmetrics.AUROC()
             accuracy = auroc(prediction, label.int())
             c_out[prefix + 'roc'] = accuracy
         if 'Specificity' in self.config['CHECKPOINT']['matrix']:
-            specificity = torchmetrics.Specificity()
-            spec = specificity(prediction.to('cpu'), label.int().to('cpu'))
+            spec = tn /(tn + fp)
             c_out[prefix + 'specificity'] = spec
+
+        if 'Sensitivity' in self.config['CHECKPOINT']['matrix']:
+            sensitivity = tp / (tp + fn)
+            c_out[prefix + 'sensitivity'] = sensitivity
+
+        if 'Accuracy' in self.config['CHECKPOINT']['matrix']:
+            acc = bcm.diag().sum() / bcm.sum()
+            c_out[prefix + 'accuracy'] = acc
+
+        if 'Precision' in self.config['CHECKPOINT']['matrix']:
+            precision = tp / (tp + fp)
+            c_out[prefix + 'precision'] = precision
         return c_out
 
     def generate_cumulative_dynamic_auc(self, prediction, label, current_epoch, prefix) -> None:

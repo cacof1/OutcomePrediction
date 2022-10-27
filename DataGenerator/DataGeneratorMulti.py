@@ -4,7 +4,6 @@ import numpy as np
 import torch
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 import xnat
-import matplotlib.pyplot as plt
 import SimpleITK as sitk
 from Utils.DicomTools import *
 from Utils.XNATXML import XMLCreator
@@ -19,6 +18,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import concurrent
 from scipy.ndimage import *
+
 
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, SubjectList, SubjectInfo, config=None, keys=['CT'], targetROI=None, transform=None,
@@ -54,7 +54,9 @@ class DataGenerator(torch.utils.data.Dataset):
 
     def __getitem__(self, i):
         data = {}
+        img_data = {}
         subject_id = self.SubjectList.loc[i, 'subjectid']
+        subject_label = self.SubjectList.loc[i, 'subject_label']
         CTPath = self.GeneratePath(subject_id, 'CT')
         CTSession = ReadDicom(CTPath)
         CTSession.SetOrigin(CTSession.GetOrigin())
@@ -65,25 +67,31 @@ class DataGenerator(torch.utils.data.Dataset):
             RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
             roi_names = RS.get_roi_names()
             if self.targetROI in roi_names:
-                mask_img = RS.get_roi_mask_by_name(self.targetROI)
+                roi = self.targetROI
+                mask_img = RS.get_roi_mask_by_name(roi)
                 mask_img = mask_img.transpose(2, 0, 1)
                 mask_img = np.flip(mask_img, 0)  ## Same frame of reference as CT
             else:
                 message = "No ROI of name " + self.targetROI + " found in RTStruct"
                 raise ValueError(message)
 
+            mask_img = get_masked_img_voxel(mask_img, mask_img)
         else:  ## No ROI target defined
             mask_img = np.ones_like(CTArray)
+
+        data_mask = np.expand_dims(mask_img, 0)
+        if self.transform: data_mask = self.transform(data_mask)
+        data_mask = torch.as_tensor(data_mask, dtype=torch.bool)
+        img_data['mask'] = data_mask
         ## Load image within each channel for the target ROI
         for channel in self.keys:
             if channel == 'CT':
-                data['CT'] = get_masked_img_voxel(CTArray, mask_img)
-                print(data['CT'].shape)
-                if self.transform: data['CT'] = self.transform(data['CT'])
-                print(data['CT'].shape)
-                print(data['CT'].dtype)
+                data_CT = get_masked_img_voxel(CTArray, mask_img)
+                data_CT = np.expand_dims(data_CT, 0)
+                if self.transform: data_CT = self.transform(data_CT)
+                img_data['CT'] = torch.as_tensor(data_CT, dtype=torch.float32)
 
-            if channel == 'RTDose':
+            if channel == 'Dose':
                 DosePath = self.GeneratePath(subject_id, 'Dose')
                 DosePath = Path(DosePath, '1-1.dcm')
                 DoseObj = sitk.ReadImage(str(DosePath))
@@ -91,23 +99,27 @@ class DataGenerator(torch.utils.data.Dataset):
                 dose = dose * np.double(DoseObj.GetMetaData('3004|000e'))
 
                 DoseArray = DoseMatchCT(DoseObj, dose, CTSession)
+                mask_img = DoseArray
                 data_dose = get_masked_img_voxel(DoseArray, mask_img)
                 data_dose = np.expand_dims(data_dose, 0)
-
                 if self.transform: data_dose = self.transform(data_dose)
-                data['RTDose'] = torch.as_tensor(data_dose, dtype=torch.float32)
+                img_data['Dose'] = torch.as_tensor(data_dose, dtype=torch.float32)
 
             if channel == 'PET':
                 PETPath = self.GeneratePath(subject_id, 'PET')
                 PETSession = ReadDicom(PETPath)
                 PETSession = ResamplingITK(PETSession, CTSession)
                 PETArray = sitk.GetArrayFromImage(PETSession)
-                data['PET'] = get_masked_img_voxel(PETArray, mask_img)
-                if self.transform: data['PET'] = self.transform(data['PET'])
+                data_PET = get_masked_img_voxel(PETArray, mask_img)
+                data_PET = np.expand_dims(data_PET, 0)
+                if self.transform: data_PET = self.transform(data_PET)
+                img_data['PET'] = torch.as_tensor(data_PET, dtype=torch.float32)
 
             if channel == 'Records':
-                records = self.SubjectList.loc[:, self.clinical_cols].to_numpy()
-                data['Records'] = torch.as_tensor(records, dtype=torch.float32)
+                records = torch.tensor(self.SubjectList.loc[i, self.clinical_cols], dtype=torch.float32)
+                data['Records'] = records
+
+        data['Image'] = torch.cat([img_data[key] for key in img_data.keys()], dim=0)
 
         if self.inference:
             return data
@@ -115,7 +127,6 @@ class DataGenerator(torch.utils.data.Dataset):
         else:
             label = self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']]
             if self.config['DATA']['threshold'] is not None:  label = np.array(label > self.config['DATA']['threshold'])
-            label = torch.as_tensor(label, dtype=torch.float32)
             return data, label
 
 
@@ -126,17 +137,20 @@ class DataModule(LightningDataModule):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = num_workers
-        data_trans = class_stratify(SubjectList, config)
         ## Split Test with fixed seed
+
+        data_trans = class_stratify(SubjectList, config)
+
         train_val_list, test_list = train_test_split(SubjectList,
                                                      test_size=0.15,
-                                                     random_state=42,
+                                                     random_state=500,
                                                      stratify=data_trans)
-        data_trans = class_stratify(train_val_list, config)
         ## Split train-val with random seed
+        data_trans = class_stratify(train_val_list, config)
+        rstate = np.random.randint(1, 10000)
         train_list, val_list = train_test_split(train_val_list,
                                                 test_size=0.15,
-                                                random_state=np.random.randint(1, 10000),
+                                                random_state=rstate,
                                                 stratify=data_trans)
 
         train_list = train_list.reset_index(drop=True)
@@ -255,22 +269,28 @@ def LoadClinicalData(config, PatientList):
     for row in config['CLINICAL']['numerical_feat']:
         numerical_cols.append('xnat_subjectdata_field_map_' + row)
 
-    target = config['DATA']['target'][0]
+    target = config['DATA']['target']
 
     ct = ColumnTransformer(
         [("CatTrans", OneHotEncoder(), category_cols),
          ("NumTrans", MinMaxScaler(), numerical_cols), ])
 
     X = PatientList.loc[:, category_cols + numerical_cols]
-    X.loc[:, category_cols] = X.loc[:, category_cols].astype('str')
-    X.loc[:, numerical_cols] = X.loc[:, numerical_cols].astype('float32')
+    yc = X.loc[:, category_cols].astype('float32')
+    X.loc[:, category_cols] = yc.fillna(yc.mean().astype('int'))
+    yn = X.loc[:, numerical_cols].astype('float32')
+    X.loc[:, numerical_cols] = yn.fillna(yn.mean())
     X_trans = ct.fit_transform(X)
+    if not isinstance(X_trans, (np.ndarray, np.generic)):
+        X_trans = X_trans.toarray()
     df_trans = pd.DataFrame(X_trans, index=X.index, columns=ct.get_feature_names_out())
     clinical_col = list(df_trans.columns)
     df_trans['xnat_subjectdata_field_map_' + target] = PatientList.loc[:, 'xnat_subjectdata_field_map_' + target]
     df_trans['subject_label'] = PatientList.loc[:, 'subject_label']
+    df_trans['subjectid'] = PatientList.loc[:, 'subjectid']
 
     return df_trans, clinical_col
+
 
 def DoseMatchCT(DoseObj, DoseVolume, CTObj):
     DoseVolume = DoseVolume.transpose(2, 1, 0)
