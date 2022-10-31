@@ -33,35 +33,19 @@ class DataGenerator(torch.utils.data.Dataset):
         self.inference = inference
         self.clinical_cols = clinical_cols
 
-    def GeneratePath(self, subjectid, Modality):
-        subject = self.SubjectInfo[subjectid]['xnat:Subject'][0]
-        subject_label = subject['@label']
-        experiments = subject['xnat:experiments'][0]['xnat:experiment']
-
-        ## Won't work with many experiments
-        for experiment in experiments:
-            experiment_label = experiment['@label']
-            scans = experiment['xnat:scans'][0]['xnat:scan']
-            for scan in scans:
-                if (scan['@type'] in Modality):
-                    scan_label = scan['@ID'] + '-' + scan['@type']
-                    resources_label = scan['xnat:file'][0]['@label']
-                    return os.path.join(self.config['DATA']['DataFolder'], subject_label, experiment_label, 'scans',
-                                        scan_label, 'resources', resources_label, 'files')
-
     def __len__(self):
         return int(self.SubjectList.shape[0])
 
     def __getitem__(self, i):
         data = {}
         subject_id = self.SubjectList.loc[i, 'subjectid']
-        CTPath = self.GeneratePath(subject_id, 'CT')
+        CTPath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'CT')
         CTSession = ReadDicom(CTPath)
         CTSession.SetOrigin(CTSession.GetOrigin())
         CTArray = sitk.GetArrayFromImage(CTSession)
         ## First define the ROI based on target
         if self.targetROI:
-            RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')
+            RSPath = glob.glob(GeneratePath(self.SubjectInfo, self.config, subject_id, 'Structs') + '/*dcm')
             RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
             roi_names = RS.get_roi_names()
             if self.targetROI in roi_names:
@@ -83,7 +67,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 data['CT']      = torch.as_tensor(data['CT'], dtype=torch.float32)
 
             if channel == 'Dose':
-                DosePath = self.GeneratePath(subject_id, 'Dose')
+                DosePath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'Dose')
                 DosePath = Path(DosePath, '1-1.dcm')
                 DoseObj = sitk.ReadImage(str(DosePath))
                 dose = sitk.GetArrayFromImage(DoseObj)
@@ -97,7 +81,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 data['Dose'] = torch.as_tensor(data_dose, dtype=torch.float32)
 
             if channel == 'PET':
-                PETPath = self.GeneratePath(subject_id, 'PET')
+                PETPath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'PET')
                 PETSession = ReadDicom(PETPath)
                 PETSession = ResamplingITK(PETSession, CTSession)
                 PETArray = sitk.GetArrayFromImage(PETSession)
@@ -117,6 +101,99 @@ class DataGenerator(torch.utils.data.Dataset):
             label = torch.as_tensor(label, dtype=torch.float32)
             return data, label
 
+
+class DataGeneratorMulti(torch.utils.data.Dataset):
+    def __init__(self, SubjectList, SubjectInfo, config=None, keys=['CT'], targetROI=None, transform=None,
+                 inference=False, clinical_cols=None, **kwargs):
+        super().__init__()
+        self.config = config
+        self.SubjectList = SubjectList
+        self.SubjectInfo = SubjectInfo
+        self.targetROI = config['DATA']['mask_name']
+        self.keys = keys
+        self.transform = transform
+        self.inference = inference
+        self.clinical_cols = clinical_cols
+
+    def __len__(self):
+        return int(self.SubjectList.shape[0])
+
+    def __getitem__(self, i):
+        data = {}
+        img_data = {}
+        subject_id = self.SubjectList.loc[i, 'subjectid']
+        subject_label = self.SubjectList.loc[i, 'subject_label']
+        CTPath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'CT')
+        CTSession = ReadDicom(CTPath)
+        CTSession.SetOrigin(CTSession.GetOrigin())
+        CTArray = sitk.GetArrayFromImage(CTSession)
+        ## First define the ROI based on target
+        if self.targetROI:
+            RSPath = glob.glob(GeneratePath(self.SubjectInfo, self.config, subject_id, 'Structs') + '/*dcm')
+            RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
+            roi_names = RS.get_roi_names()
+            if self.targetROI in roi_names:
+                roi = self.targetROI
+                mask_img = RS.get_roi_mask_by_name(roi)
+                mask_img = mask_img.transpose(2, 0, 1)
+                mask_img = np.flip(mask_img, 0)  ## Same frame of reference as CT
+            else:
+                message = "No ROI of name " + self.targetROI + " found in RTStruct"
+                raise ValueError(message)
+        else:  ## No ROI target defined
+            mask_img = np.ones_like(CTArray)
+
+        data_mask = get_masked_img_voxel(mask_img, mask_img)
+        data_mask = np.expand_dims(mask_img, 0)
+        if self.transform: data_mask = self.transform(data_mask)
+        data_mask = torch.as_tensor(data_mask, dtype=torch.bool)
+        img_data['mask'] = data_mask
+        ## Load image within each channel for the target ROI
+        for channel in self.keys:
+            if channel == 'CT':
+                data_CT = get_masked_img_voxel(CTArray, mask_img)
+                data_CT = np.expand_dims(data_CT, 0)
+                if self.transform: data_CT = self.transform(data_CT)
+                img_data['CT'] = torch.as_tensor(data_CT, dtype=torch.float32)
+
+            if channel == 'Dose':
+                DosePath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'Dose')
+                DosePath = Path(DosePath, '1-1.dcm')
+                DoseObj = sitk.ReadImage(str(DosePath))
+                dose = sitk.GetArrayFromImage(DoseObj)
+                dose = dose * np.double(DoseObj.GetMetaData('3004|000e'))
+
+                DoseArray = DoseMatchCT(DoseObj, dose, CTSession)
+                mask_img = DoseArray
+                data_dose = get_masked_img_voxel(DoseArray, mask_img)
+                data_dose = np.expand_dims(data_dose, 0)
+                if self.transform: data_dose = self.transform(data_dose)
+                img_data['Dose'] = torch.as_tensor(data_dose, dtype=torch.float32)
+
+            if channel == 'PET':
+                PETPath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'PET')
+                PETSession = ReadDicom(PETPath)
+                PETSession = ResamplingITK(PETSession, CTSession)
+                PETArray = sitk.GetArrayFromImage(PETSession)
+                data_PET = get_masked_img_voxel(PETArray, mask_img)
+                data_PET = np.expand_dims(data_PET, 0)
+                if self.transform: data_PET = self.transform(data_PET)
+                img_data['PET'] = torch.as_tensor(data_PET, dtype=torch.float32)
+
+            if channel == 'Records':
+                records = torch.tensor(self.SubjectList.loc[i, self.clinical_cols], dtype=torch.float32)
+                data['Records'] = records
+
+        data['Image'] = torch.cat([img_data[key] for key in img_data.keys()], dim=0)
+
+        if self.inference:
+            return data
+
+        else:
+            label = self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']]
+            if self.config['DATA']['threshold'] is not None:  label = np.array(label > self.config['DATA']['threshold'])
+            label = torch.as_tensor(label, dtype=torch.float32)
+            return data, label
 
 ### DataLoader
 class DataModule(LightningDataModule):
@@ -142,9 +219,14 @@ class DataModule(LightningDataModule):
         val_list = val_list.reset_index(drop=True)
         test_list = test_list.reset_index(drop=True)
 
-        self.train_data = DataGenerator(train_list, SubjectInfo, config=config, transform=train_transform, **kwargs)
-        self.val_data = DataGenerator(val_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
-        self.test_data = DataGenerator(test_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
+        if config['DATA']['Multichannel']:
+            self.train_data = DataGeneratorMulti(train_list, SubjectInfo, config=config, transform=train_transform, **kwargs)
+            self.val_data = DataGeneratorMulti(val_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
+            self.test_data = DataGeneratorMulti(test_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
+        else:
+            self.train_data = DataGenerator(train_list, SubjectInfo, config=config, transform=train_transform, **kwargs)
+            self.val_data = DataGenerator(val_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
+            self.test_data = DataGenerator(test_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
 
     def train_dataloader(self):
         return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,
@@ -158,6 +240,22 @@ class DataModule(LightningDataModule):
         return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,
                           drop_last=True)
 
+
+def GeneratePath(SubjectInfo, config, subjectid, Modality):
+    subject = SubjectInfo[subjectid]['xnat:Subject'][0]
+    subject_label = subject['@label']
+    experiments = subject['xnat:experiments'][0]['xnat:experiment']
+
+    ## Won't work with many experiments
+    for experiment in experiments:
+        experiment_label = experiment['@label']
+        scans = experiment['xnat:scans'][0]['xnat:scan']
+        for scan in scans:
+            if (scan['@type'] in Modality):
+                scan_label = scan['@ID'] + '-' + scan['@type']
+                resources_label = scan['xnat:file'][0]['@label']
+                return os.path.join(config['DATA']['DataFolder'], subject_label, experiment_label, 'scans',
+                                    scan_label, 'resources', resources_label, 'files')
 
 def QuerySubjectList(config, **kwargs):
     root_element = "xnat:subjectData"

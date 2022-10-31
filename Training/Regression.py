@@ -31,8 +31,12 @@ config = toml.load(sys.argv[1])
 s_module = config['DATA']['module']
 
 total_backbone = config['MODEL']['Prediction_type']
-for module in s_module:
+if config['DATA']['Multichannel']:
+    module = 'Image'
     total_backbone = total_backbone + '_' + module + '_' + config['MODEL'][module + '_Backbone']
+else:
+    for module in s_module:
+        total_backbone = total_backbone + '_' + module + '_' + config['MODEL'][module + '_Backbone']
 
 # train_transform = {}
 # val_transform = {}
@@ -71,13 +75,22 @@ SubjectInfo = QuerySubjectInfo(config, SubjectList)
 
 module_dict = nn.ModuleDict()
 
-if 'CT' in config['DATA']['module']:
-    CT_Backbone = Classifier(config, 'CT')
-    module_dict['CT'] = CT_Backbone
+if config['DATA']['Multichannel']:
+    if config['MODALITY'].keys():
+        CT_Backbone = Classifier(config, 'Image')
+        module_dict['Image'] = CT_Backbone
+else:
+    if 'CT' in config['DATA']['module']:
+        CT_Backbone = Classifier(config, 'CT')
+        module_dict['CT'] = CT_Backbone
 
-if 'Dose' in config['DATA']['module']:
-    Dose_Backbone = Classifier(config, 'Dose')
-    module_dict['Dose'] = Dose_Backbone
+    if 'Dose' in config['DATA']['module']:
+        Dose_Backbone = Classifier(config, 'Dose')
+        module_dict['Dose'] = Dose_Backbone
+
+    if 'PET' in config['DATA']['module']:
+        Dose_Backbone = Classifier(config, 'PET')
+        module_dict['PET'] = Dose_Backbone
 
 if config['MODEL']['Records_Backbone']:
     Clinical_backbone = Linear()
@@ -100,7 +113,7 @@ for iter in range(20):
     dataloader = DataModule(SubjectList,
                             SubjectInfo,
                             config=config,
-                            keys=module_dict.keys(),
+                            keys=config['DATA']['module'],
                             train_transform=train_transform,
                             val_transform=val_transform,
                             clinical_cols=clinical_cols,
