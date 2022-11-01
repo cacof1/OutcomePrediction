@@ -28,8 +28,8 @@ class Classifier(LightningModule):
         self.model = nn.Sequential(*layers)
 
         self.flatten = nn.Sequential(
-            nn.Dropout(0.3),
-            nn.AdaptiveAvgPool3d(output_size=(4, 4, 4)),
+            # nn.Dropout(0.3),
+            # nn.AdaptiveAvgPool3d(output_size=(4, 4, 4)),
             nn.Dropout(0.3),
             nn.AdaptiveAvgPool3d(output_size=(1, 1, 1)),
             nn.Flatten(),

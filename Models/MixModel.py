@@ -21,7 +21,7 @@ class MixModel(LightningModule):
         self.activation = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         self.classifier = nn.Sequential(
             #nn.Linear(530, 120),
-            nn.Linear(198, 120),
+            nn.Linear(222, 120),
             nn.Dropout(0.3),
             nn.Linear(120, 40),
             nn.Dropout(0.3),
