@@ -38,7 +38,6 @@ class DataGenerator(torch.utils.data.Dataset):
 
     def __getitem__(self, i):
         data = {}
-        img_data = {}
         subject_id = self.SubjectList.loc[i, 'subjectid']
         subject_label = self.SubjectList.loc[i, 'subject_label']
         CTPath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'CT')
@@ -65,48 +64,49 @@ class DataGenerator(torch.utils.data.Dataset):
         data_mask = np.expand_dims(data_mask, 0)
         if self.transform: data_mask = self.transform(data_mask)
         data_mask = torch.as_tensor(data_mask, dtype=torch.bool)
-        img_data['mask'] = data_mask
+        data['mask'] = data_mask
         ## Load image within each channel for the target ROI
-        for channel in self.keys:
-            if channel == 'CT':
-                data_CT = get_masked_img_voxel(CTArray, mask_img)
-                data_CT = np.expand_dims(data_CT, 0)
-                if self.transform: data_CT = self.transform(data_CT)
-                img_data['CT'] = torch.as_tensor(data_CT, dtype=torch.float32)
 
-            if channel == 'Dose':
-                DosePath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'Dose')
-                DosePath = Path(DosePath, '1-1.dcm')
-                DoseObj = sitk.ReadImage(str(DosePath))
-                dose = sitk.GetArrayFromImage(DoseObj)
-                dose = dose * np.double(DoseObj.GetMetaData('3004|000e'))
+        if 'CT' in self.keys:
+            data_CT = get_masked_img_voxel(CTArray, mask_img)
+            data_CT = np.expand_dims(data_CT, 0)
+            if self.transform: data_CT = self.transform(data_CT)
+            data['CT'] = data_CT
 
-                DoseArray = DoseMatchCT(DoseObj, dose, CTSession)
-                mask_img = DoseArray
-                data_dose = get_masked_img_voxel(DoseArray, mask_img)
-                data_dose = np.expand_dims(data_dose, 0)
-                if self.transform: data_dose = self.transform(data_dose)
-                img_data['Dose'] = torch.as_tensor(data_dose, dtype=torch.float32)
+        if 'Dose' in self.keys:
+            DosePath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'Dose')
+            DosePath = Path(DosePath, '1-1.dcm')
+            DoseObj = sitk.ReadImage(str(DosePath))
+            dose = sitk.GetArrayFromImage(DoseObj)
+            dose = dose * np.double(DoseObj.GetMetaData('3004|000e'))
 
-            if channel == 'PET':
-                PETPath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'PET')
-                PETSession = ReadDicom(PETPath)
-                PETSession = ResamplingITK(PETSession, CTSession)
-                PETArray = sitk.GetArrayFromImage(PETSession)
-                data_PET = get_masked_img_voxel(PETArray, mask_img)
-                data_PET = np.expand_dims(data_PET, 0)
-                if self.transform: data_PET = self.transform(data_PET)
-                img_data['PET'] = torch.as_tensor(data_PET, dtype=torch.float32)
+            DoseArray = DoseMatchCT(DoseObj, dose, CTSession)
+            mask_img = DoseArray
+            data_dose = get_masked_img_voxel(DoseArray, mask_img)
+            data_dose = np.expand_dims(data_dose, 0)
+            if self.transform: data_dose = self.transform(data_dose)
+            data['Dose'] = data_dose
 
-            if channel == 'Records':
-                records = torch.tensor(self.SubjectList.loc[i, self.clinical_cols], dtype=torch.float32)
-                data['Records'] = records
+        if 'PET' in self.keys:
+            PETPath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'PET')
+            PETSession = ReadDicom(PETPath)
+            PETSession = ResamplingITK(PETSession, CTSession)
+            PETArray = sitk.GetArrayFromImage(PETSession)
+            data_PET = get_masked_img_voxel(PETArray, mask_img)
+            data_PET = np.expand_dims(data_PET, 0)
+            if self.transform: data_PET = self.transform(data_PET)
+            data['PET'] = data_PET
+
         if self.config['DATA']['Multichannel']:
-            data['Image'] = torch.cat([img_data[key] for key in img_data.keys()], dim=0)
+            old_keys = list(data.keys())
+            data['Image'] = np.concatenate([data[key] for key in data.keys()],axis=0)
+            for key in old_keys: data.pop(key)
         else:
-            for key in img_data.keys():
-                if key != 'mask':
-                    data[key] = img_data[key]
+            data.pop('mask')
+
+        if 'Records' in self.keys:
+            records = torch.tensor(self.SubjectList.loc[i, self.clinical_cols], dtype=torch.float32)
+            data['Records'] = records
 
         if self.inference:
             return data

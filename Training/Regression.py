@@ -2,14 +2,12 @@ import torch
 import torchvision
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
-from pytorch_lightning.strategies import DDPStrategy
+# from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
 import torchio as tio
 import monai
 torch.cuda.empty_cache()
-torch.cuda.memory_summary(device=None, abbreviated=False)
-
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import *
 from Models.Classifier import Classifier
@@ -77,8 +75,8 @@ module_dict = nn.ModuleDict()
 
 if config['DATA']['Multichannel']:
     if config['MODALITY'].keys():
-        CT_Backbone = Classifier(config, 'Image')
-        module_dict['Image'] = CT_Backbone
+        Image_Backbone = Classifier(config, 'Image')
+        module_dict['Image'] = Image_Backbone
 else:
     if 'CT' in config['DATA']['module']:
         CT_Backbone = Classifier(config, 'CT')
@@ -136,10 +134,10 @@ for iter in range(20):
     ]
 
     trainer = Trainer(
-        # gpus=1,
-        accelerator="gpu",
-        devices=[2, 3],
-        strategy=DDPStrategy(find_unused_parameters=False),
+        gpus=1,
+        # accelerator="gpu",
+        # devices=[2, 3],
+        # strategy=DDPStrategy(find_unused_parameters=False),
         max_epochs=30,
         logger=logger,
         callbacks=callbacks
