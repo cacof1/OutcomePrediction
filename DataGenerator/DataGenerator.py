@@ -63,7 +63,7 @@ class DataGenerator(torch.utils.data.Dataset):
         data_mask = get_masked_img_voxel(mask_img, mask_img)
         data_mask = np.expand_dims(data_mask, 0)
         if self.transform: data_mask = self.transform(data_mask)
-        data_mask = torch.as_tensor(data_mask, dtype=torch.bool)
+
         data['mask'] = data_mask
         ## Load image within each channel for the target ROI
 
@@ -81,7 +81,6 @@ class DataGenerator(torch.utils.data.Dataset):
             dose = dose * np.double(DoseObj.GetMetaData('3004|000e'))
 
             DoseArray = DoseMatchCT(DoseObj, dose, CTSession)
-            mask_img = DoseArray
             data_dose = get_masked_img_voxel(DoseArray, mask_img)
             data_dose = np.expand_dims(data_dose, 0)
             if self.transform: data_dose = self.transform(data_dose)
