@@ -237,7 +237,13 @@ class PredictionReports(TensorBoardLogger):
                 self.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
             if 'Specificity' in config['CHECKPOINT']['matrix']:
                 self.experiment.add_text('Specificity:', str(classification_out[prefix + 'specificity']))
-            return classification_out[prefix + 'roc']
+            if 'Sensitivity' in config['CHECKPOINT']['matrix']:
+                self.experiment.add_text('Specificity:', str(classification_out[prefix + 'sensitivity']))
+            if 'Accuracy' in config['CHECKPOINT']['matrix']:
+                self.experiment.add_text('Specificity:', str(classification_out[prefix + 'accuracy']))
+            if 'Precision' in config['CHECKPOINT']['matrix']:
+                self.experiment.add_text('Specificity:', str(classification_out[prefix + 'precision']))
+            return classification_out
 
 
 def r2_index(prediction, label):
