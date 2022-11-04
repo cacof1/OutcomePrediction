@@ -5,8 +5,7 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.signal.windows import triang
 from sksurv.metrics import cumulative_dynamic_auc
 from torch import nn
-from Models.Classifier3D import Classifier3D
-from Models.Classifier2D import Classifier2D
+from Models.Classifier import Classifier
 from Models.Linear import Linear
 
 def get_lds_kernel_window(kernel, ks, sigma):
@@ -59,10 +58,7 @@ def get_module(config):
         Clinical_backbone = Linear()
     for i, module in enumerate(s_module):
         if module == 'CT' or module == 'Dose' or module == 'PET':
-            if config['MODEL']['spatial_dims'] == 3:
-                Backbone = Classifier3D(config)
-            else:
-                Backbone = Classifier2D(config)
+            Backbone = Classifier(config)
             module_dict[module] = Backbone
         else:
             module_dict[module] = Clinical_backbone

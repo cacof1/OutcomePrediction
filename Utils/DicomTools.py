@@ -9,7 +9,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
 import torchio as tio
-
+from sklearn.preprocessing import KBinsDiscretizer
 sitk.ProcessObject_SetGlobalWarningDisplay(False)
 
 
@@ -118,3 +118,10 @@ def img_val_transform(img_dim):
         tio.RescaleIntensity(out_min_max=(0, 1))
     ])
     return transform
+
+def class_stratify(SubjectList, config):
+    ptarget = SubjectList['xnat_subjectdata_field_map_' + config['DATA']['target']]
+    kbins = KBinsDiscretizer(n_bins=20, encode='ordinal', strategy='uniform')
+    ptarget = np.array(ptarget).reshape((len(ptarget), 1))
+    data_trans = kbins.fit_transform(ptarget)
+    return data_trans

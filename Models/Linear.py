@@ -20,9 +20,10 @@ class Linear(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.model = nn.Sequential(
-            nn.LazyLinear(64),
-            nn.LayerNorm(64),
-            nn.ReLU()
+            nn.Linear(56, 42),
+            nn.Dropout(0.3),
+            nn.LayerNorm(42),
+            nn.ReLU(),
         )
         self.loss_fcn = nn.CrossEntropyLoss()
 

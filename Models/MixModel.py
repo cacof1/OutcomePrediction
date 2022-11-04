@@ -7,6 +7,7 @@ from Losses.loss import WeightedMSE, CrossEntropy
 from sksurv.metrics import concordance_index_censored
 from monai.networks import nets
 
+
 class MixModel(LightningModule):
     def __init__(self, module_dict, config, label_range=None, weights=None, loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
@@ -16,22 +17,21 @@ class MixModel(LightningModule):
         self.label_range = label_range
         self.weights = weights
 
-        self.loss_fcn   = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
+        self.loss_fcn = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(2.26))
         self.activation = getattr(torch.nn, self.config["MODEL"]["Activation"])()
-        # self.classifier = nets.Classifier((2, 2, 192), 1, (2, 4, 8), (2, 2, 2))
         self.classifier = nn.Sequential(
-            nn.Dropout(0.5),
-            nn.Conv2d(512, 256, kernel_size=(5, 5), stride=(3, 3)),
+            #nn.Linear(530, 120),
+            nn.Linear(222, 120),
             nn.Dropout(0.3),
-            nn.Conv2d(256, 1, kernel_size=(4, 4), stride=(4, 4)),
-            self.activation,
-            nn.AdaptiveAvgPool2d(output_size=(1, 1))
+            nn.Linear(120, 40),
+            nn.Dropout(0.3),
+            nn.Linear(40, 1),
+            self.activation
         )
         self.classifier.apply(self.weights_init)
 
     def forward(self, datadict):
         features = torch.cat([self.module_dict[key](datadict[key]) for key in self.module_dict.keys()], dim=1)
-        # features = features.transpose(1, 3)
         prediction = self.classifier(features)
         return prediction
 
@@ -39,14 +39,15 @@ class MixModel(LightningModule):
         out = {}
         datadict, label = batch
         prediction = self.forward(datadict)
-        loss = self.loss_fcn(prediction.squeeze(), batch[-1])
+        loss = self.loss_fcn(prediction.squeeze(), label)
 
         out['label'] = label
         out['prediction'] = prediction.detach()
         self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             if self.config['REGULARIZATION']['Label_smoothing']:
-                loss = WeightedMSE(prediction.squeeze(dim=1), batch[-1], weights=self.weights, label_range=self.label_range)
+                loss = WeightedMSE(prediction.squeeze(dim=1), batch[-1], weights=self.weights,
+                                   label_range=self.label_range)
             MAE = torch.abs(prediction.flatten(0) - label)
             out['MAE'] = MAE.detach()
             if 'Dose' in self.config['DATA']['module']: out['dose'] = datadict['Dose']
@@ -59,20 +60,21 @@ class MixModel(LightningModule):
         training_labels = torch.cat([out['label'] for i, out in enumerate(training_step_outputs)], dim=0)
         training_prediction = torch.cat([out['prediction'] for i, out in enumerate(training_step_outputs)], dim=0)
         prefix = 'train_epoch_'
-        self.logger.report_epoch(training_prediction.squeeze(), training_labels,training_step_outputs, self.current_epoch, prefix)
-                                 
+        self.logger.report_epoch(training_prediction.squeeze(), training_labels, training_step_outputs,
+                                 self.current_epoch, prefix)
+
     def validation_step(self, batch, batch_idx):
         out = {}
         datadict, label = batch
         prediction = self.forward(datadict)
-        val_loss = self.loss_fcn(prediction.squeeze(), batch[-1])
+        val_loss = self.loss_fcn(prediction.squeeze(), label)
         self.log("val_loss", val_loss, on_step=False, on_epoch=True, sync_dist=True)
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             MAE = torch.abs(prediction.flatten(0) - label)
             out['MAE'] = MAE
             if 'Dose' in self.config['DATA']['module']: out['dose'] = datadict['Dose']
             if 'CT' in self.config['DATA']['module']: out['img'] = datadict['CT']
-                
+
         out['prediction'] = prediction.squeeze(dim=1)
         out['label'] = label
 
@@ -82,12 +84,13 @@ class MixModel(LightningModule):
         val_labels = torch.cat([out['label'] for i, out in enumerate(validation_step_outputs)], dim=0)
         val_prediction = torch.cat([out['prediction'] for i, out in enumerate(validation_step_outputs)], dim=0)
         prefix = 'val_epoch_'
-        self.logger.report_epoch(val_prediction.squeeze(), val_labels, validation_step_outputs, self.current_epoch, prefix)
+        self.logger.report_epoch(val_prediction.squeeze(), val_labels, validation_step_outputs, self.current_epoch,
+                                 prefix)
 
     def test_step(self, batch, batch_idx):
         datadict, label = batch
-        prediction = self.forward(datadict, label)
-        test_loss = self.loss_fcn(prediction.squeeze(dim=1), batch[-1])
+        prediction = self.forward(datadict)
+        test_loss = self.loss_fcn(prediction.squeeze(dim=1), label)
         test_out = {}
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             MAE = torch.abs(prediction.flatten(0) - label)
