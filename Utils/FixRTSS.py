@@ -35,9 +35,4 @@ def FixRTSS(rtss_file, CT_path):
     ds.save_as(rtss_file)
 
 
-bp = '/home/dgs1/data/UCLH/'
-rtss_file = '/home/dgs1/data/OutcomePrediction/2d59d38f8e991100bcee7ffeb8d8fb656c78d067d49a717b57d490632aff3251/2d59d38f8e991100bcee7ffeb8d8fb656c78d067d49a717b57d490632aff3251/scans/602-Structs/resources/secondary/files/Unknown (0002).dcm'
-CT_path = '/home/dgs1/data/OutcomePrediction/2d59d38f8e991100bcee7ffeb8d8fb656c78d067d49a717b57d490632aff3251/2d59d38f8e991100bcee7ffeb8d8fb656c78d067d49a717b57d490632aff3251/scans/601-CT/resources/DICOM/files'
-FixRTSS(rtss_file, CT_path)
-
 
