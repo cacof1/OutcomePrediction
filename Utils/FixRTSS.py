@@ -39,13 +39,22 @@ def FixRTSS(rtss_file, CT_path):
 
             #print(ds.ROIContourSequence[item.ROINumber - 1].ContourSequence[i])
 
-        info = CIS_ds.ReferencedFrameOfReferenceSequence
+        filenames = sorted(glob.glob(CT_path + '/*.dcm'))
+
+        for file in filenames:
+            info = dicom.read_file(file)
+            instant_record.append(info.InstanceNumber)
+
+        info = ds.ReferencedFrameOfReferenceSequence
         RFUIDlist = info._list
         dinfo = RFUIDlist[0].RTReferencedStudySequence._list[0].RTReferencedSeriesSequence._list[0].ContourImageSequence._list
 
         for i in range(len(dinfo)):
             sliceuid = dinfo[i]
-            n = i if min(instant_record) == 0 else n = i + 1
+            if min(instant_record) == 0:
+                n = i
+            else:
+                n = i + 1
             idx = instant_record.index(n)
             fileUID = dicom.read_file(filenames[idx]).SOPInstanceUID
             sliceuid.ReferencedSOPInstanceUID = fileUID
@@ -63,6 +72,5 @@ def RenameCT(CTPath):
         oldpath[-1] = UID + '.dcm'
         newpath = '/'.join(oldpath)
         os.rename(file,newpath)
-
 
 
