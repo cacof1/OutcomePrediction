@@ -48,9 +48,9 @@ class PredictionReports(TensorBoardLogger):
             description = description + param + '+' + '+'.join(clinical_criteria)
         # Return the experiment version, int or str.
 
-        sub_str = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module'])
+        sub_str = description + '_' + 'modalities' + '+' + '+'.join(self.config['MODALITY'].keys())
         self._version = self._get_next_version(sub_str)
-        description = description + '_' + 'modalities' + '+' + '+'.join(self.config['DATA']['module']) + '_' + str(self._version)
+        description = description + '_' + 'modalities' + '+' + '+'.join(self.config['MODALITY'].keys()) + '_' + str(self._version)
         return description
 
     def _get_next_version(self, sub_str):
@@ -81,9 +81,9 @@ class PredictionReports(TensorBoardLogger):
         return grid
 
     def log_text(self) -> None:
-        configurations = 'The modules included are ' + str(self.config['DATA']['module'])
+        configurations = 'The modules included are ' + str(self.config['MODALITY'].keys())
         # configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' +
-        # str(self.config['DATA']['module'])
+        # str(self.config['MODALITY'].keys())
         self.experiment.add_text('configurations:', configurations)
 
     def regression_matrix(self, prediction, label, prefix):
@@ -170,7 +170,7 @@ class PredictionReports(TensorBoardLogger):
             idx = torch.argmax(loss)
             if loss[idx] > worst_AE:
                 if 'CT' in self.config['DATA']['target']:
-                    worst_img = data['img'][idx]
+                    worst_img = data['CT'][idx]
                 if 'Dose' in self.config['DATA']['target']:
                     worst_dose = data['dose'][idx]
                 worst_AE = loss[idx]
@@ -222,10 +222,10 @@ class PredictionReports(TensorBoardLogger):
             if 'WorstCase' in config['CHECKPOINT']['matrix']:
                 worst_record = self.worst_case_show(outs, prefix)
                 self.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
-                if 'CT' in config['DATA']['module']:
+                if 'CT' in config['MODALITY'].keys():
                     text = 'test_worst_case_img'
                     self.log_image(worst_record[prefix + 'worst_img'], text)
-                if 'Dose' in config['DATA']['module']:
+                if 'Dose' in config['MODALITY'].keys():
                     text = 'test_worst_case_dose'
                     self.log_image(worst_record[prefix + 'worst_dose'], text)
             return regression_out[prefix + 'r2']

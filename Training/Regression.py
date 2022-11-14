@@ -26,29 +26,14 @@ from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
-s_module = config['DATA']['module']
 
-total_backbone = config['MODEL']['Prediction_type']
-if config['DATA']['Multichannel']:
-    module = 'Image'
-    total_backbone = total_backbone + '_' + module + '_' + config['MODEL'][module + '_Backbone']
-else:
-    for module in s_module:
-        total_backbone = total_backbone + '_' + module + '_' + config['MODEL'][module + '_Backbone']
-
-# train_transform = {}
-# val_transform = {}
-#
-# for module in config['MODALITY'].keys():
-#     train_transform[module] = img_train_transform(config['DATA'][module + '_dim'])
-#     val_transform[module] = img_val_transform(config['DATA'][module + '_dim'])
-
+total_backbone = ' '
 ## 2D transform
 train_transform = torchvision.transforms.Compose([
     monai.transforms.ScaleIntensity(),
     # monai.transforms.RandSpatialCrop(roi_size = [1,-1, -1], random_size = False),
     # monai.transforms.SqueezeDim(dim=1),
-    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['CT_dim']),
+    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['dim']),
     # monai.transforms.RepeatChannel(repeats=3),
     monai.transforms.RandAffine(),
     monai.transforms.RandHistogramShift(),
@@ -61,63 +46,55 @@ val_transform = torchvision.transforms.Compose([
     monai.transforms.ScaleIntensity(),
     # monai.transforms.RandSpatialCrop(roi_size = [1,-1,-1], random_size = False),
     # monai.transforms.SqueezeDim(dim=1),
-    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['CT_dim']),
+    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['dim']),
     # monai.transforms.RepeatChannel(repeats=3)
 ])
 
-label = config['DATA']['target']
 
-SubjectList = QuerySubjectList(config)
+## First Connect to XNAT
+session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'],password=config['SERVER']['Password'])
+
+
+SubjectList = QuerySubjectList(config, session)
+## For testing
+SubjectList = SubjectList.fillna(0)
+SubjectList = SubjectList.sample(frac=1, random_state = 43)
+SubjectList = SubjectList.head(30)
+##
+print(SubjectList)
 SynchronizeData(config, SubjectList)
-SubjectInfo = QuerySubjectInfo(config, SubjectList)
+SubjectInfo = QuerySubjectInfo(config, SubjectList, session)
 
 module_dict = nn.ModuleDict()
-
-if config['DATA']['Multichannel']:
+if config['DATA']['Multichannel']: ## Single-Model Multichannel learning
     if config['MODALITY'].keys():
-        Image_Backbone = Classifier(config, 'Image')
-        module_dict['Image'] = Image_Backbone
-else:
-    if 'CT' in config['DATA']['module']:
-        CT_Backbone = Classifier(config, 'CT')
-        module_dict['CT'] = CT_Backbone
+        module_dict['Image'] = Classifier(config, 'Image')
+else: 
+    for key in config['MODALITY'].keys(): ## Multi-Model Single Channel learning
+        module_dict[key] = Classifier(config, key)
 
-    if 'Dose' in config['DATA']['module']:
-        Dose_Backbone = Classifier(config, 'Dose')
-        module_dict['Dose'] = Dose_Backbone
-
-    if 'PET' in config['DATA']['module']:
-        Dose_Backbone = Classifier(config, 'PET')
-        module_dict['PET'] = Dose_Backbone
-
-if config['MODEL']['Records_Backbone']:
-    Clinical_backbone = Linear()
-
-if 'Records' in config['DATA']['module']:
-    module_dict['Records'] = Clinical_backbone
+if 'Records' in config['MODALITY'].keys():
+    module_dict['Records'] = Linear()
     SubjectList, clinical_cols = LoadClinicalData(config, SubjectList)
+
 else:
     clinical_cols = None
 
-if config['MODEL']['Prediction_type'] == 'Classification':
-    threshold = config['DATA']['threshold']
-else:
-    threshold = None
-
+threshold = config['DATA']['threshold']
 ckpt_path = Path('./', total_backbone + '_ckpt')
 for iter in range(20):
     seed_everything(np.random.randint(1, 10000))
-    # seed_everything(4200)
     dataloader = DataModule(SubjectList,
                             SubjectInfo,
                             config=config,
-                            keys=config['DATA']['module'],
+                            keys=config['MODALITY'].keys(),
                             train_transform=train_transform,
                             val_transform=val_transform,
                             clinical_cols=clinical_cols,
-                            inference=False)
+                            inference=False,
+                            session = session)
 
-    model = MixModel(module_dict, config, label_range=None, weights=None)
+    model = MixModel(module_dict, config)
     model.apply(model.weights_reset)
 
     filename = total_backbone
@@ -135,14 +112,9 @@ for iter in range(20):
 
     trainer = Trainer(
         gpus=1,
-        # accelerator="gpu",
-        # devices=[2, 3],
-        # strategy=DDPStrategy(find_unused_parameters=False),
         max_epochs=30,
         logger=logger,
         callbacks=callbacks
     )
     trainer.fit(model, dataloader)
-    torch.save({
-        'state_dict': model.state_dict(),
-    }, Path('ckpt_test', 'Iter_' + str(iter) + '.ckpt'))
+    torch.save({'state_dict': model.state_dict(),}, Path('ckpt_test', 'Iter_' + str(iter) + '.ckpt'))

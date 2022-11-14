@@ -5,7 +5,9 @@ import torch
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 import xnat
 import matplotlib.pyplot as plt
-import SimpleITK as sitk
+from monai.transforms import (
+    LoadImage,EnsureChannelFirst, ResampleToMatch
+)
 from Utils.DicomTools import *
 from Utils.XNATXML import XMLCreator
 from io import StringIO
@@ -21,99 +23,96 @@ import concurrent
 from scipy.ndimage import *
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, SubjectList, SubjectInfo, config=None, keys=['CT'], targetROI=None, transform=None,
-                 inference=False, clinical_cols=None, **kwargs):
+    def __init__(self, SubjectList, SubjectInfo, config=None, keys=['CT'],  transform=None, inference=False, clinical_cols=None, session = None,**kwargs):
         super().__init__()
-        self.config = config
-        self.SubjectList = SubjectList
-        self.SubjectInfo = SubjectInfo
-        self.targetROI = config['DATA']['mask_name']
-        self.keys = keys
-        self.transform = transform
-        self.inference = inference
+        self.config        = config
+        self.session       = session
+        self.SubjectList   = SubjectList
+        self.SubjectInfo   = SubjectInfo
+        self.keys          = keys
+        self.transform     = transform
+        self.inference     = inference
         self.clinical_cols = clinical_cols
+        
+    def GeneratePath(self, subjectid, Modality):
+        subject       = self.SubjectInfo[subjectid]['xnat:Subject'][0]
+        subject_label = subject['@label']
+        experiments   = subject['xnat:experiments'][0]['xnat:experiment']
+
+        ## Won't work with many experiments yet
+        for experiment in experiments:
+            experiment_label = experiment['@label']
+            scans            = experiment['xnat:scans'][0]['xnat:scan']
+            for scan in scans:
+                if (scan['@type'] in Modality):
+                    scan_label = scan['@ID'] + '-' + scan['@type']
+                    resources_label = scan['xnat:file'][0]['@label']
+                    path = os.path.join(self.config['DATA']['DataFolder'], subject_label, experiment_label, 'scans', scan_label, 'resources', resources_label, 'files')
+                    return path
 
     def __len__(self):
         return int(self.SubjectList.shape[0])
 
     def __getitem__(self, i):
+
         data = {}
+        meta = {}
         subject_id = self.SubjectList.loc[i, 'subjectid']
-        subject_label = self.SubjectList.loc[i, 'subject_label']
-        CTPath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'CT')
-        CTSession = ReadDicom(CTPath)
-        CTSession.SetOrigin(CTSession.GetOrigin())
-        CTArray = sitk.GetArrayFromImage(CTSession)
-        ## First define the ROI based on target
-        if self.targetROI:
-            RSPath = glob.glob(GeneratePath(self.SubjectInfo, self.config, subject_id, 'Structs') + '/*dcm')
+        
+        ## Load CT
+        if 'CT' in self.keys:
+            CTPath                 = self.GeneratePath(subject_id, 'CT')
+            data['CT'], meta['CT'] = LoadImage()(CTPath)
+            data['CT']             = EnsureChannelFirst()(data['CT'])
+
+        ## Load Mask            
+        if 'Mask' in self.config['DATA'].keys():
+            RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')
             RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
             roi_names = RS.get_roi_names()
-            if self.targetROI in roi_names:
-                roi = self.targetROI
-                mask_img = RS.get_roi_mask_by_name(roi)
-                mask_img = mask_img.transpose(2, 0, 1)
-                mask_img = np.flip(mask_img, 0)  ## Same frame of reference as CT
+            if self.config['DATA']['mask_name'] in roi_names:
+                data["Mask"] = RS.get_roi_mask_by_name(self.config['DATA']['mask_name'])
             else:
-                message = "No ROI of name " + self.targetROI + " found in RTStruct"
-                raise ValueError(message)
-        else:  ## No ROI target defined
-            mask_img = np.ones_like(CTArray)
+                raise ValueError("No ROI of name " + self.config['DATA']['mask_name'] + " found in RTStruct")
+            
+        else: data["Mask"] = np.ones_like(data['CT']) ## No ROI target defined
+        data['Mask'] = EnsureChannelFirst()(data["Mask"])            
 
-        data_mask = get_masked_img_voxel(mask_img, mask_img)
-        data_mask = np.expand_dims(data_mask, 0)
-        if self.transform: data_mask = self.transform(data_mask)
-
-        data['mask'] = data_mask
-        ## Load image within each channel for the target ROI
-
-        if 'CT' in self.keys:
-            data_CT = get_masked_img_voxel(CTArray, mask_img)
-            data_CT = np.expand_dims(data_CT, 0)
-            if self.transform: data_CT = self.transform(data_CT)
-            data['CT'] = data_CT
-
+        ## Load Dose        
         if 'Dose' in self.keys:
-            DosePath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'Dose')
-            DosePath = Path(DosePath, '1-1.dcm')
-            DoseObj = sitk.ReadImage(str(DosePath))
-            dose = sitk.GetArrayFromImage(DoseObj)
-            dose = dose * np.double(DoseObj.GetMetaData('3004|000e'))
+            DosePath                   = self.GeneratePath(subject_id, 'Dose')
+            data['Dose'], meta['Dose'] = LoadImage()(DosePath+"/1-1.dcm")
+            data['Dose']               = data['Dose'] * np.double(meta['Dose']['3004|000e'])
+            data['Dose']               = EnsureChannelFirst()(data['Dose'])            
+            data['Dose']               = ResampleToMatch()(data['Dose'], data['CT'], src_meta = meta["Dose"], dst_meta = meta["CT"])
 
-            DoseArray = DoseMatchCT(DoseObj, dose, CTSession)
-            data_dose = get_masked_img_voxel(DoseArray, mask_img)
-            data_dose = np.expand_dims(data_dose, 0)
-            if self.transform: data_dose = self.transform(data_dose)
-            data['Dose'] = data_dose
-
+        ## Load PET            
         if 'PET' in self.keys:
-            PETPath = GeneratePath(self.SubjectInfo, self.config, subject_id, 'PET')
-            PETSession = ReadDicom(PETPath)
-            PETSession = ResamplingITK(PETSession, CTSession)
-            PETArray = sitk.GetArrayFromImage(PETSession)
-            data_PET = get_masked_img_voxel(PETArray, mask_img)
-            data_PET = np.expand_dims(data_PET, 0)
-            if self.transform: data_PET = self.transform(data_PET)
-            data['PET'] = data_PET
+            PETPath                    = self.GeneratePath(subject_id, 'PET')
+            data['PET'], meta['PET']   = LoadImage()(PETPath+"/1-1.dcm")
+            data['PET']                = EnsureChannelFirst()(data['PET'])                        
+            data['PET']                = ResampleToMatch()(data['PET'], data['CT'], src_meta = meta["PET"], dst_meta = meta["CT"])
 
-        if self.config['DATA']['Multichannel']:
+        #Decide between multi-branch single-channel/multi-channel single-branch
+        if self.config['DATA']['Multichannel']: 
             old_keys = list(data.keys())
             data['Image'] = np.concatenate([data[key] for key in data.keys()],axis=0)
             for key in old_keys: data.pop(key)
-        else:
-            data.pop('mask')
+        else: data.pop('Mask') ## No need for mask in single-channel multi-branch
 
-        if 'Records' in self.keys:
-            records = torch.tensor(self.SubjectList.loc[i, self.clinical_cols], dtype=torch.float32)
-            data['Records'] = records
+        ## Apply transforms on all
+        if self.transform : data = {k:self.transform(v) for k,v in data.items()}
+        
+        ## Add clinical record at the end
+        if 'Records' in self.keys: data['Records'] = torch.tensor(self.SubjectList.loc[i, self.clinical_cols], dtype=torch.float32)
 
-        if self.inference:
-            return data
+        if self.inference: return data
+            
         else:
-            label = self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']]
-            if self.config['DATA']['threshold'] is not None:  label = np.array(label > self.config['DATA']['threshold'])
-            label = torch.as_tensor(label, dtype=torch.float32)
+            label = torch.tensor(self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']])
+            if self.config['DATA']['threshold'] is not None:  label = torch.where(label > self.config['DATA']['threshold'], 1, 0)
             return data, label
+
 ### DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, SubjectList, SubjectInfo, config=None, train_transform=None, val_transform=None, train_size=0.7,
@@ -121,57 +120,29 @@ class DataModule(LightningDataModule):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = num_workers
-        data_trans = class_stratify(SubjectList, config)
+        #data_trans = class_stratify(SubjectList, config)
         ## Split Test with fixed seed
-        train_val_list, test_list = train_test_split(SubjectList,
-                                                     test_size=0.15,
-                                                     random_state=42,
-                                                     stratify=data_trans)
-        data_trans = class_stratify(train_val_list, config)
-        ## Split train-val with random seed
-        train_list, val_list = train_test_split(train_val_list,
-                                                test_size=0.15,
-                                                random_state=np.random.randint(1, 10000),
-                                                stratify=data_trans)
+        train_val_list, test_list = train_test_split(SubjectList,test_size=0.15,random_state=42)
+        #                                            stratify=data_trans)
 
+        #data_trans = class_stratify(train_val_list, config) 
+        ## Split train-val with random seed
+        train_list, val_list = train_test_split(train_val_list,test_size=0.15, random_state=np.random.randint(10000))
+        #stratify=data_trans)
+        
         train_list = train_list.reset_index(drop=True)
-        val_list = val_list.reset_index(drop=True)
-        test_list = test_list.reset_index(drop=True)
+        val_list   = val_list.reset_index(drop=True)
+        test_list  = test_list.reset_index(drop=True)
 
         self.train_data = DataGenerator(train_list, SubjectInfo, config=config, transform=train_transform, **kwargs)
-        self.val_data = DataGenerator(val_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
-        self.test_data = DataGenerator(test_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
+        self.val_data   = DataGenerator(val_list,   SubjectInfo, config=config, transform=val_transform, **kwargs)
+        self.test_data  = DataGenerator(test_list,  SubjectInfo, config=config, transform=val_transform, **kwargs)
+        
+    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,drop_last=True, shuffle=True)
+    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,drop_last=True, shuffle=False)
+    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, drop_last=True)
 
-    def train_dataloader(self):
-        return DataLoader(self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,
-                          drop_last=True, shuffle=True)
-
-    def val_dataloader(self):
-        return DataLoader(self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,
-                          drop_last=True, shuffle=False)
-
-    def test_dataloader(self):
-        return DataLoader(self.test_data, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True,
-                          drop_last=True)
-
-
-def GeneratePath(SubjectInfo, config, subjectid, Modality):
-    subject = SubjectInfo[subjectid]['xnat:Subject'][0]
-    subject_label = subject['@label']
-    experiments = subject['xnat:experiments'][0]['xnat:experiment']
-
-    ## Won't work with many experiments
-    for experiment in experiments:
-        experiment_label = experiment['@label']
-        scans = experiment['xnat:scans'][0]['xnat:scan']
-        for scan in scans:
-            if (scan['@type'] in Modality):
-                scan_label = scan['@ID'] + '-' + scan['@type']
-                resources_label = scan['xnat:file'][0]['@label']
-                return os.path.join(config['DATA']['DataFolder'], subject_label, experiment_label, 'scans',
-                                    scan_label, 'resources', resources_label, 'files')
-
-def QuerySubjectList(config, **kwargs):
+def QuerySubjectList(config, session):
     root_element = "xnat:subjectData"
     XML = XMLCreator(root_element)  # , search_field, search_where)
     print("Querying from Server")
@@ -183,10 +154,9 @@ def QuerySubjectList(config, **kwargs):
     XML.Add_search_field(
         {"element_name": "xnat:subjectData", "field_ID": "SUBJECT_LABEL", "sequence": "1", "type": "string"})
 
-    if 'Records' in config['DATA']['module']:
+    if 'Records' in config['MODALITY'].keys():
         for value in config['DATA']['clinical_columns']:
-            dict_temp = {"element_name": "xnat:subjectData", "field_ID": "XNAT_SUBJECTDATA_FIELD_MAP=" + str(value),
-                         "sequence": "1", "type": "int"}
+            dict_temp = {"element_name": "xnat:subjectData", "field_ID": "XNAT_SUBJECTDATA_FIELD_MAP=" + str(value), "sequence": "1", "type": "int"}
             XML.Add_search_field(dict_temp)
 
     ## Where Condition
@@ -208,52 +178,42 @@ def QuerySubjectList(config, **kwargs):
     if (len(templist)): XML.Add_search_where(templist, "AND")  ## if any items in here
 
     templist = []
-    for value in config['FILTER']['patient_id']:
-        dict_temp = {"schema_field": "xnat:subjectData.SUBJECT_LABEL", "comparison_type": "!=",
-                     "value": str(value)}
-        templist.append(dict_temp)
+    if(config['FILTER']):
+        for value in config['FILTER']['patient_id']:
+            dict_temp = {"schema_field": "xnat:subjectData.SUBJECT_LABEL", "comparison_type": "!=",  "value": str(value)}
+                     
+            templist.append(dict_temp)
     if (len(templist)): XML.Add_search_where(templist, "AND")
 
     xmlstr = XML.ConstructTree()
-    params = {'format': 'csv'}
-    response = requests.post(config['SERVER']['Address'] + '/data/search/', params=params, data=xmlstr,
-                             auth=(config['SERVER']['User'], config['SERVER']['Password']))
+    response = session.post(config['SERVER']['Address'] + '/data/search/', data=xmlstr, format='csv')
     SubjectList = pd.read_csv(StringIO(response.text))
     print('Query: ', SubjectList)
     return SubjectList
 
-
 def SynchronizeData(config, SubjectList):
-    session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'],
-                           password=config['SERVER']['Password'])
+    session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'],password=config['SERVER']['Password'])
     for subjectlabel, subjectid in zip(SubjectList['subject_label'], SubjectList['subjectid']):
         if (not Path(config['DATA']['DataFolder'], subjectlabel).is_dir()):
             xnatsubject = session.create_object('/data/subjects/' + subjectid)
             print("Synchronizing ", subjectid, subjectlabel)
             xnatsubject.download_dir(config['DATA']['DataFolder'])  ## Download data
 
-
 def get_subject_info(config, session, subjectid):
-    params = {'format': 'xml'}
-    r = session.get(config['SERVER']['Address'] + '/data/subjects/' + subjectid, params=params)
+    r = session.get(config['SERVER']['Address'] + '/data/subjects/' + subjectid, format='xml')
     data = xmltodict.parse(r.text, force_list=True)
     return data
 
-
-def QuerySubjectInfo(config, SubjectList):
-    params = {'format': 'xml'}
+def QuerySubjectInfo(config, SubjectList,session):
     SubjectInfo = {}
-    with requests.Session() as session:
-        session.auth = (config['SERVER']['User'], config['SERVER']['Password'])
-        r = session.get(config['SERVER']['Address'] + '/data/JSESSION')
-        with ThreadPoolExecutor(max_workers=20) as executor:
-            future_to_url = {executor.submit(get_subject_info, config, session, subjectid) for subjectid in
-                             SubjectList['subjectid']}
-            executor.shutdown(wait=True)
-        for future in concurrent.futures.as_completed(future_to_url):
-            subjectdata = future.result()
-            subjectid = subjectdata["xnat:Subject"][0]["@ID"]
-            SubjectInfo[subjectid] = subjectdata
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_url = {executor.submit(get_subject_info, config, session, subjectid) for subjectid in
+                         SubjectList['subjectid']}
+        executor.shutdown(wait=True)
+    for future in concurrent.futures.as_completed(future_to_url):
+        subjectdata = future.result()
+        subjectid = subjectdata["xnat:Subject"][0]["@ID"]
+        SubjectInfo[subjectid] = subjectdata
     return SubjectInfo
 
 
@@ -278,59 +238,11 @@ def LoadClinicalData(config, PatientList):
     yn = X.loc[:, numerical_cols].astype('float32')
     X.loc[:, numerical_cols] = yn.fillna(yn.mean())
     X_trans = ct.fit_transform(X)
-    if not isinstance(X_trans, (np.ndarray, np.generic)):
-        X_trans = X_trans.toarray()
+    if not isinstance(X_trans, (np.ndarray, np.generic)): X_trans = X_trans.toarray()
+        
     df_trans = pd.DataFrame(X_trans, index=X.index, columns=ct.get_feature_names_out())
     clinical_col = list(df_trans.columns)
     df_trans['xnat_subjectdata_field_map_' + target] = PatientList.loc[:, 'xnat_subjectdata_field_map_' + target]
     df_trans['subject_label'] = PatientList.loc[:, 'subject_label']
     df_trans['subjectid'] = PatientList.loc[:, 'subjectid']
-
     return df_trans, clinical_col
-
-def DoseMatchCT(DoseObj, DoseVolume, CTObj):
-    DoseVolume = DoseVolume.transpose(2, 1, 0)
-    originD = DoseObj.GetOrigin()
-    spaceD = DoseObj.GetSpacing()
-    origin = CTObj.GetOrigin()
-    space = CTObj.GetSpacing()
-
-    dx = np.arange(0, DoseObj.GetSize()[0]) * spaceD[0] + originD[0]
-    dy = np.arange(0, DoseObj.GetSize()[1]) * spaceD[1] + originD[1]
-    dz = -np.arange(0, DoseObj.GetSize()[2]) * spaceD[2] + originD[2]
-    dz.sort()
-
-    cx = np.arange(0, CTObj.GetSize()[0]) * space[0] + origin[0]
-    cy = np.arange(0, CTObj.GetSize()[1]) * space[1] + origin[1]
-    cz = -np.arange(0, CTObj.GetSize()[2]) * space[2] + origin[2]
-    cz.sort()
-
-    cxv, cyv, czv = np.meshgrid(cx, cy, cz, indexing='ij')
-
-    Vf = interp3(dx, dy, dz, DoseVolume, cxv, cyv, czv)
-    Vf = Vf.transpose(2, 1, 0)
-    return Vf
-
-
-def interp3(x, y, z, v, xi, yi, zi, **kwargs):
-    """Sample a 3D array "v" with pixel corner locations at "x","y","z" at the
-    points in "xi", "yi", "zi" using linear interpolation. Additional kwargs
-    are passed on to ``scipy.ndimage.map_coordinates``."""
-
-    def index_coords(corner_locs, interp_locs):
-        index = np.arange(len(corner_locs))
-        if np.all(np.diff(corner_locs) < 0):
-            corner_locs, index = corner_locs[::-1], index[::-1]
-        return np.interp(interp_locs, corner_locs, index)
-
-    orig_shape = np.asarray(xi).shape
-    xi, yi, zi = np.atleast_1d(xi, yi, zi)
-    for arr in [xi, yi, zi]:
-        arr.shape = -1
-
-    output = np.empty(xi.shape, dtype=float)
-    coords = [index_coords(*item) for item in zip([x, y, z], [xi, yi, zi])]
-
-    map_coordinates(v, coords, order=1, output=output, **kwargs)
-
-    return output.reshape(orig_shape)

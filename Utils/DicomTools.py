@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
+from monai.data import ITKReader, PILReader
 import torchio as tio
 from sklearn.preprocessing import KBinsDiscretizer
 sitk.ProcessObject_SetGlobalWarningDisplay(False)
@@ -29,7 +30,7 @@ def get_bbox_from_mask(mask, img_shape):
 
 
 def ReadDicom(dicom_path, view_image=False):
-    Reader = sitk.ImageSeriesReader()
+    Reader    = sitk.ImageSeriesReader()
     filenames = sorted(glob.glob(dicom_path + '/*.dcm'))
     Reader.SetFileNames(sorted(filenames))
 
@@ -121,7 +122,7 @@ def img_val_transform(img_dim):
 
 def class_stratify(SubjectList, config):
     ptarget = SubjectList['xnat_subjectdata_field_map_' + config['DATA']['target']]
-    kbins = KBinsDiscretizer(n_bins=20, encode='ordinal', strategy='uniform')
+    kbins   = KBinsDiscretizer(n_bins=5, encode='ordinal', strategy='uniform')
     ptarget = np.array(ptarget).reshape((len(ptarget), 1))
     data_trans = kbins.fit_transform(ptarget)
     return data_trans

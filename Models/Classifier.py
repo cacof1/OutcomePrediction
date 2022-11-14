@@ -12,8 +12,8 @@ class Classifier(LightningModule):
     def __init__(self, config, module_str):
         super().__init__()
 
-        model = config['MODEL'][module_str + '_Backbone']
-        parameters = config[module_str + '_MODEL_PARAMETERS']
+        model = config['MODEL']['Backbone']
+        parameters = config['MODEL_PARAMETERS']
 
         # only use network for features
         if model == 'torchvision':
