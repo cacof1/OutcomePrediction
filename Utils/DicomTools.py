@@ -12,7 +12,7 @@ from monai.data import ITKReader, PILReader
 import torchio as tio
 from sklearn.preprocessing import KBinsDiscretizer
 sitk.ProcessObject_SetGlobalWarningDisplay(False)
-
+from rt_utils import RTStructBuilder
 
 def get_bbox_from_mask(mask, img_shape):
     pos = np.where(mask)
@@ -126,3 +126,12 @@ def class_stratify(SubjectList, config):
     ptarget = np.array(ptarget).reshape((len(ptarget), 1))
     data_trans = kbins.fit_transform(ptarget)
     return data_trans
+
+def get_RS_masks(CTPath, RSfile, mask_names):
+    RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSfile)
+    roi_names = RS.get_roi_names()
+    for roi in mask_names:
+        if roi in roi_names:
+            mask = RS.get_roi_mask_by_name(roi)
+
+    return mask

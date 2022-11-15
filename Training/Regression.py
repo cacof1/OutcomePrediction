@@ -26,28 +26,37 @@ from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
+s_module = config['DATA']['module']
 
-total_backbone = ' '
+total_backbone = config['MODEL']['Prediction_type']
+if config['DATA']['Multichannel']:
+   module = 'Image'
+   total_backbone = total_backbone + '_' + module + '_' + config['MODEL']['Backbone']
+else:
+   for module in s_module:
+       total_backbone = total_backbone + '_' + module + '_' + config['MODEL']['Backbone']
 ## 2D transform
+img_keys = list(config['MODALITY'].keys())
+if 'Mask' in config['DATA'].keys():
+    img_keys.append('Mask')
+
 train_transform = torchvision.transforms.Compose([
-    monai.transforms.ScaleIntensity(),
-    # monai.transforms.RandSpatialCrop(roi_size = [1,-1, -1], random_size = False),
-    # monai.transforms.SqueezeDim(dim=1),
-    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['dim']),
-    # monai.transforms.RepeatChannel(repeats=3),
-    monai.transforms.RandAffine(),
-    monai.transforms.RandHistogramShift(),
-    monai.transforms.RandAdjustContrast(),
-    monai.transforms.RandGaussianNoise(),
+    EnsureChannelFirstd(keys=img_keys),
+    ResampleToMatchd(list(set(config['MODALITY'].keys()).difference(set(['CT']))), key_dst='CT'),
+    monai.transforms.ScaleIntensityd(keys=img_keys),
+    # monai.transforms.ResizeWithPadOrCropd(keys=img_keys, spatial_size=config['DATA']['dim']),
+    monai.transforms.RandAffined(keys=img_keys),
+    monai.transforms.RandHistogramShiftd(keys=img_keys),
+    monai.transforms.RandAdjustContrastd(keys=img_keys),
+    monai.transforms.RandGaussianNoised(keys=img_keys),
 
 ])
 
 val_transform = torchvision.transforms.Compose([
-    monai.transforms.ScaleIntensity(),
-    # monai.transforms.RandSpatialCrop(roi_size = [1,-1,-1], random_size = False),
-    # monai.transforms.SqueezeDim(dim=1),
-    monai.transforms.ResizeWithPadOrCrop(spatial_size = config['DATA']['dim']),
-    # monai.transforms.RepeatChannel(repeats=3)
+    EnsureChannelFirstd(keys=img_keys),
+    ResampleToMatchd(list(set(config['MODALITY'].keys()).difference(set(['CT']))), key_dst='CT'),
+    monai.transforms.ScaleIntensityd(img_keys),
+    # monai.transforms.ResizeWithPadOrCropd(img_keys, spatial_size=config['DATA']['dim']),
 ])
 
 
@@ -57,9 +66,9 @@ session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'
 
 SubjectList = QuerySubjectList(config, session)
 ## For testing
-SubjectList = SubjectList.fillna(0)
-SubjectList = SubjectList.sample(frac=1, random_state = 43)
-SubjectList = SubjectList.head(30)
+# SubjectList = SubjectList.fillna(0)
+# SubjectList = SubjectList.sample(frac=1, random_state = 43)
+# SubjectList = SubjectList.head(30)
 ##
 print(SubjectList)
 SynchronizeData(config, SubjectList)
@@ -87,7 +96,7 @@ for iter in range(20):
     dataloader = DataModule(SubjectList,
                             SubjectInfo,
                             config=config,
-                            keys=config['MODALITY'].keys(),
+                            keys=config['DATA']['module'],
                             train_transform=train_transform,
                             val_transform=val_transform,
                             clinical_cols=clinical_cols,

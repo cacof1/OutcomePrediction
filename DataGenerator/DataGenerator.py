@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 import xnat
 import matplotlib.pyplot as plt
 from monai.transforms import (
-    LoadImage,EnsureChannelFirst, ResampleToMatch
+    LoadImage,EnsureChannelFirstd, ResampleToMatchd
 )
 from Utils.DicomTools import *
 from Utils.XNATXML import XMLCreator
@@ -63,51 +63,45 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'CT' in self.keys:
             CTPath                 = self.GeneratePath(subject_id, 'CT')
             data['CT'], meta['CT'] = LoadImage()(CTPath)
-            data['CT']             = EnsureChannelFirst()(data['CT'])
-
         ## Load Mask            
         if 'Mask' in self.config['DATA'].keys():
             RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')
-            RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
-            roi_names = RS.get_roi_names()
-            if self.config['DATA']['mask_name'] in roi_names:
-                data["Mask"] = RS.get_roi_mask_by_name(self.config['DATA']['mask_name'])
+            mask = get_RS_masks(CTPath, RSPath[0], self.config['DATA']['Mask'])
+            if self.config['DATA']['Mask'] in roi_names:
+
+                mask = RS.get_roi_mask_by_name(self.config['DATA']['Mask'])
+                mask = np.rot90(mask)
+                mask = np.flip(mask, axis=0)
+                data['Mask'] = mask
             else:
-                raise ValueError("No ROI of name " + self.config['DATA']['mask_name'] + " found in RTStruct")
+                raise ValueError("No ROI of name " + self.config['DATA']['Mask'] + " found in RTStruct")
             
         else: data["Mask"] = np.ones_like(data['CT']) ## No ROI target defined
-        data['Mask'] = EnsureChannelFirst()(data["Mask"])            
 
         ## Load Dose        
         if 'Dose' in self.keys:
             DosePath                   = self.GeneratePath(subject_id, 'Dose')
             data['Dose'], meta['Dose'] = LoadImage()(DosePath+"/1-1.dcm")
             data['Dose']               = data['Dose'] * np.double(meta['Dose']['3004|000e'])
-            data['Dose']               = EnsureChannelFirst()(data['Dose'])            
-            data['Dose']               = ResampleToMatch()(data['Dose'], data['CT'], src_meta = meta["Dose"], dst_meta = meta["CT"])
 
         ## Load PET            
         if 'PET' in self.keys:
             PETPath                    = self.GeneratePath(subject_id, 'PET')
             data['PET'], meta['PET']   = LoadImage()(PETPath+"/1-1.dcm")
-            data['PET']                = EnsureChannelFirst()(data['PET'])                        
-            data['PET']                = ResampleToMatch()(data['PET'], data['CT'], src_meta = meta["PET"], dst_meta = meta["CT"])
 
-        #Decide between multi-branch single-channel/multi-channel single-branch
-        if self.config['DATA']['Multichannel']: 
+        ## Apply transforms on all
+        if self.transform : data = self.transform(data)
+        # Decide between multi-branch single-channel/multi-channel single-branch
+        if self.config['DATA']['Multichannel']:
             old_keys = list(data.keys())
             data['Image'] = np.concatenate([data[key] for key in data.keys()],axis=0)
             for key in old_keys: data.pop(key)
         else: data.pop('Mask') ## No need for mask in single-channel multi-branch
-
-        ## Apply transforms on all
-        if self.transform : data = {k:self.transform(v) for k,v in data.items()}
         
         ## Add clinical record at the end
         if 'Records' in self.keys: data['Records'] = torch.tensor(self.SubjectList.loc[i, self.clinical_cols], dtype=torch.float32)
 
         if self.inference: return data
-            
         else:
             label = torch.tensor(self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']])
             if self.config['DATA']['threshold'] is not None:  label = torch.where(label > self.config['DATA']['threshold'], 1, 0)
