@@ -20,7 +20,7 @@ from sklearn.compose import ColumnTransformer
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import concurrent
-from scipy.ndimage import *
+
 
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, SubjectList, SubjectInfo, config=None, keys=['CT'],  transform=None, inference=False, clinical_cols=None, session = None,**kwargs):
@@ -66,16 +66,12 @@ class DataGenerator(torch.utils.data.Dataset):
         ## Load Mask            
         if 'Mask' in self.config['DATA'].keys():
             RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')
-            mask = get_RS_masks(CTPath, RSPath[0], self.config['DATA']['Mask'])
-            if self.config['DATA']['Mask'] in roi_names:
+            mask_imgs = np.zeros_like(data['CT'])
+            mask = get_RS_masks(CTPath, mask_imgs, RSPath[0], self.config['DATA']['Mask'])
+            mask = np.rot90(mask)
+            mask = np.flip(mask, axis=0)
+            data['Mask'] = mask
 
-                mask = RS.get_roi_mask_by_name(self.config['DATA']['Mask'])
-                mask = np.rot90(mask)
-                mask = np.flip(mask, axis=0)
-                data['Mask'] = mask
-            else:
-                raise ValueError("No ROI of name " + self.config['DATA']['Mask'] + " found in RTStruct")
-            
         else: data["Mask"] = np.ones_like(data['CT']) ## No ROI target defined
 
         ## Load Dose        

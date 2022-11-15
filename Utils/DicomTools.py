@@ -11,8 +11,11 @@ from matplotlib.path import Path
 from monai.data import ITKReader, PILReader
 import torchio as tio
 from sklearn.preprocessing import KBinsDiscretizer
+
 sitk.ProcessObject_SetGlobalWarningDisplay(False)
 from rt_utils import RTStructBuilder
+from scipy.ndimage import *
+
 
 def get_bbox_from_mask(mask, img_shape):
     pos = np.where(mask)
@@ -30,7 +33,7 @@ def get_bbox_from_mask(mask, img_shape):
 
 
 def ReadDicom(dicom_path, view_image=False):
-    Reader    = sitk.ImageSeriesReader()
+    Reader = sitk.ImageSeriesReader()
     filenames = sorted(glob.glob(dicom_path + '/*.dcm'))
     Reader.SetFileNames(sorted(filenames))
 
@@ -120,18 +123,32 @@ def img_val_transform(img_dim):
     ])
     return transform
 
+
 def class_stratify(SubjectList, config):
     ptarget = SubjectList['xnat_subjectdata_field_map_' + config['DATA']['target']]
-    kbins   = KBinsDiscretizer(n_bins=5, encode='ordinal', strategy='uniform')
+    kbins = KBinsDiscretizer(n_bins=5, encode='ordinal', strategy='uniform')
     ptarget = np.array(ptarget).reshape((len(ptarget), 1))
     data_trans = kbins.fit_transform(ptarget)
     return data_trans
 
-def get_RS_masks(CTPath, RSfile, mask_names):
+
+def get_RS_masks(CTPath, mask_imgs, RSfile, mask_names):
     RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSfile)
     roi_names = RS.get_roi_names()
-    for roi in mask_names:
+    for idx, roi in enumerate(mask_names):
         if roi in roi_names:
-            mask = RS.get_roi_mask_by_name(roi)
+            mask_img = RS.get_roi_mask_by_name(roi)
+            # mask_img = distance_transform_edt(mask_img)
+            mask_imgs = BitSet(mask_imgs, idx * np.ones_like(mask_imgs), mask_img)
+        else:
+            raise ValueError("No ROI of name " + roi + " found in RTStruct")
 
-    return mask
+    return mask_imgs
+
+
+def BitSet(n, p, b):
+    p = p.astype(int)
+    n = n.astype(int)
+    mask = 1 << p
+    bm = b << p
+    return (n & ~mask) | bm
