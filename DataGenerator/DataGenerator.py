@@ -78,6 +78,7 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'Dose' in self.keys:
             DosePath                   = self.GeneratePath(subject_id, 'Dose')
             data['Dose'], meta['Dose'] = LoadImage()(DosePath+"/1-1.dcm")
+            print('Dose meta: ',meta['Dose'])
             data['Dose']               = data['Dose'] * np.double(meta['Dose']['3004|000e'])
 
         ## Load PET            
@@ -106,7 +107,7 @@ class DataGenerator(torch.utils.data.Dataset):
 ### DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, SubjectList, SubjectInfo, config=None, train_transform=None, val_transform=None, train_size=0.7,
-                 val_size=0.2, test_size=0.1, num_workers=0, **kwargs):
+                 val_size=0.2, test_size=0.1, num_workers=64, **kwargs):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = num_workers
@@ -178,7 +179,7 @@ def QuerySubjectList(config, session):
     xmlstr = XML.ConstructTree()
     response = session.post(config['SERVER']['Address'] + '/data/search/', data=xmlstr, format='csv')
     SubjectList = pd.read_csv(StringIO(response.text))
-    print('Query: ', SubjectList)
+    #print('Query: ', SubjectList)
     return SubjectList
 
 def SynchronizeData(config, SubjectList):

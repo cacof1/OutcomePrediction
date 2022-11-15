@@ -2,7 +2,7 @@ import torch
 import torchvision
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
-# from pytorch_lightning.strategies import DDPStrategy
+from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
 import torchio as tio
@@ -70,7 +70,7 @@ SubjectList = QuerySubjectList(config, session)
 # SubjectList = SubjectList.sample(frac=1, random_state = 43)
 # SubjectList = SubjectList.head(30)
 ##
-print(SubjectList)
+#print(SubjectList)
 SynchronizeData(config, SubjectList)
 SubjectInfo = QuerySubjectInfo(config, SubjectList, session)
 
@@ -120,7 +120,10 @@ for iter in range(20):
     ]
 
     trainer = Trainer(
-        gpus=1,
+        #gpus=1,
+        accelerator="gpu",
+        devices=[2],
+        strategy=DDPStrategy(find_unused_parameters=False),
         max_epochs=30,
         logger=logger,
         callbacks=callbacks
