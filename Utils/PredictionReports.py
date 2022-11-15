@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 import matplotlib.pyplot as plt
-# plt.switch_backend('agg')
+plt.switch_backend('agg')
 import torchvision
 from pytorch_lightning.loggers import LightningLoggerBase
 from sksurv.metrics import cumulative_dynamic_auc
