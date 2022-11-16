@@ -48,6 +48,8 @@ class DataGenerator(torch.utils.data.Dataset):
                 if (scan['@type'] in Modality):
                     scan_label = scan['@ID'] + '-' + scan['@type']
                     resources_label = scan['xnat:file'][0]['@label']
+                    if resources_label == 'SNAPSHOTS':
+                        resources_label = scan['xnat:file'][1]['@label']
                     path = os.path.join(self.config['DATA']['DataFolder'], subject_label, experiment_label, 'scans', scan_label, 'resources', resources_label, 'files')
                     return path
 
@@ -110,6 +112,7 @@ class DataGenerator(torch.utils.data.Dataset):
         else:
             label = torch.tensor(self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']])
             if self.config['DATA']['threshold'] is not None:  label = torch.where(label > self.config['DATA']['threshold'], 1, 0)
+            label = torch.as_tensor(label, dtype=torch.float32)
             return data, label
 
 ### DataLoader
