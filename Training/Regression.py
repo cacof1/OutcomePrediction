@@ -45,6 +45,7 @@ train_transform = torchvision.transforms.Compose([
     ResampleToMatchd(list(set(config['MODALITY'].keys()).difference(set(['CT']))), key_dst='CT'),
     monai.transforms.ScaleIntensityd(keys=img_keys),
     # monai.transforms.ResizeWithPadOrCropd(keys=img_keys, spatial_size=config['DATA']['dim']),
+    monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.RandAffined(keys=img_keys),
     monai.transforms.RandHistogramShiftd(keys=img_keys),
     monai.transforms.RandAdjustContrastd(keys=img_keys),
@@ -57,6 +58,7 @@ val_transform = torchvision.transforms.Compose([
     ResampleToMatchd(list(set(config['MODALITY'].keys()).difference(set(['CT']))), key_dst='CT'),
     monai.transforms.ScaleIntensityd(img_keys),
     # monai.transforms.ResizeWithPadOrCropd(img_keys, spatial_size=config['DATA']['dim']),
+    monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
 ])
 
 

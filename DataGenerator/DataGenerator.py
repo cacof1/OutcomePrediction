@@ -2,6 +2,7 @@ from pytorch_lightning import LightningDataModule, LightningModule, Trainer, see
 from torch.utils.data import DataLoader
 import numpy as np
 import torch
+from monai.data import MetaTensor
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 import xnat
 import matplotlib.pyplot as plt
@@ -62,7 +63,15 @@ class DataGenerator(torch.utils.data.Dataset):
         ## Load CT
         if 'CT' in self.keys:
             CTPath                 = self.GeneratePath(subject_id, 'CT')
-            data['CT'], meta['CT'] = LoadImage()(CTPath)
+            array, meta['CT'] = LoadImage()(CTPath)
+            CTSession = ReadDicom(CTPath)
+            CTArray = sitk.GetArrayFromImage(CTSession)
+            CTArray = CTArray.transpose([2,1,0])
+            CTArray = np.flip(CTArray, axis=2)
+            if not array.shape == CTArray.shape:
+                print('LoadImage problem on '+slabel)
+            data['CT'] = MetaTensor(CTArray.copy(), meta=meta['CT'])
+
         ## Load Mask            
         if 'Mask' in self.config['DATA'].keys():
             RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')

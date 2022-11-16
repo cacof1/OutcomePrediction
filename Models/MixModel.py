@@ -15,7 +15,7 @@ class MixModel(LightningModule):
         self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
         self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         self.classifier  = nn.Sequential(
-            nn.Linear(248, 120),
+            nn.Linear(198, 120),
             nn.Dropout(0.3),
             nn.Linear(120, 40),
             nn.Dropout(0.3),

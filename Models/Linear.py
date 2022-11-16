@@ -20,7 +20,7 @@ class Linear(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(56, 42),
+            nn.Linear(49, 42),
             nn.Dropout(0.3),
             nn.LayerNorm(42),
             nn.ReLU(),
