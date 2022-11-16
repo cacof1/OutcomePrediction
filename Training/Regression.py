@@ -82,7 +82,7 @@ else:
     for key in config['MODALITY'].keys(): ## Multi-Model Single Channel learning
         module_dict[key] = Classifier(config, key)
 
-if 'Records' in config['MODALITY'].keys():
+if 'Records' in config['DATA']['module']:
     module_dict['Records'] = Linear()
     SubjectList, clinical_cols = LoadClinicalData(config, SubjectList)
 
@@ -122,7 +122,7 @@ for iter in range(20):
     trainer = Trainer(
         #gpus=1,
         accelerator="gpu",
-        devices=[2],
+        devices=[2,3],
         strategy=DDPStrategy(find_unused_parameters=False),
         max_epochs=30,
         logger=logger,

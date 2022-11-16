@@ -132,16 +132,21 @@ def class_stratify(SubjectList, config):
     return data_trans
 
 
-def get_RS_masks(CTPath, mask_imgs, RSfile, mask_names):
+def get_RS_masks(slabel, CTPath, mask_imgs, RSfile, mask_names):
     RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSfile)
     roi_names = RS.get_roi_names()
+    strList = [x.lower() for x in roi_names]
     for idx, roi in enumerate(mask_names):
-        if roi in roi_names:
-            mask_img = RS.get_roi_mask_by_name(roi)
+        if roi.lower() in strList:
+            roi_s = roi_names[strList.index(roi.lower())]
+            try:
+                mask_img = RS.get_roi_mask_by_name(roi_s)
+            except:
+                print(slabel+' has roi problem!')
             # mask_img = distance_transform_edt(mask_img)
             mask_imgs = BitSet(mask_imgs, idx * np.ones_like(mask_imgs), mask_img)
         else:
-            raise ValueError("No ROI of name " + roi + " found in RTStruct")
+            raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
 
     return mask_imgs
 

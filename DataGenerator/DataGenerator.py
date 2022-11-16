@@ -58,7 +58,7 @@ class DataGenerator(torch.utils.data.Dataset):
         data = {}
         meta = {}
         subject_id = self.SubjectList.loc[i, 'subjectid']
-        
+        slabel = self.SubjectList.loc[i, 'subject_label']
         ## Load CT
         if 'CT' in self.keys:
             CTPath                 = self.GeneratePath(subject_id, 'CT')
@@ -67,7 +67,7 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'Mask' in self.config['DATA'].keys():
             RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')
             mask_imgs = np.zeros_like(data['CT'])
-            mask = get_RS_masks(CTPath, mask_imgs, RSPath[0], self.config['DATA']['Mask'])
+            mask = get_RS_masks(slabel,CTPath, mask_imgs, RSPath[0], self.config['DATA']['Mask'])
             mask = np.rot90(mask)
             mask = np.flip(mask, axis=0)
             data['Mask'] = mask
@@ -78,7 +78,6 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'Dose' in self.keys:
             DosePath                   = self.GeneratePath(subject_id, 'Dose')
             data['Dose'], meta['Dose'] = LoadImage()(DosePath+"/1-1.dcm")
-            print('Dose meta: ',meta['Dose'])
             data['Dose']               = data['Dose'] * np.double(meta['Dose']['3004|000e'])
 
         ## Load PET            
@@ -145,7 +144,7 @@ def QuerySubjectList(config, session):
     XML.Add_search_field(
         {"element_name": "xnat:subjectData", "field_ID": "SUBJECT_LABEL", "sequence": "1", "type": "string"})
 
-    if 'Records' in config['MODALITY'].keys():
+    if 'Records' in config['DATA']['module']:
         for value in config['DATA']['clinical_columns']:
             dict_temp = {"element_name": "xnat:subjectData", "field_ID": "XNAT_SUBJECTDATA_FIELD_MAP=" + str(value), "sequence": "1", "type": "int"}
             XML.Add_search_field(dict_temp)
