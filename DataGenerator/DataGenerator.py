@@ -122,15 +122,13 @@ class DataModule(LightningDataModule):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = num_workers
-        #data_trans = class_stratify(SubjectList, config)
+        data_trans = class_stratify(SubjectList, config)
         ## Split Test with fixed seed
-        train_val_list, test_list = train_test_split(SubjectList,test_size=0.15,random_state=42)
-        #                                            stratify=data_trans)
+        train_val_list, test_list = train_test_split(SubjectList,test_size=0.15,random_state=42,stratify=data_trans)
 
-        #data_trans = class_stratify(train_val_list, config) 
+        data_trans = class_stratify(train_val_list, config) 
         ## Split train-val with random seed
-        train_list, val_list = train_test_split(train_val_list,test_size=0.15, random_state=np.random.randint(10000))
-        #stratify=data_trans)
+        train_list, val_list = train_test_split(train_val_list,test_size=0.15, random_state=np.random.randint(10000),stratify=data_trans)
         
         train_list = train_list.reset_index(drop=True)
         val_list   = val_list.reset_index(drop=True)

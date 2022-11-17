@@ -75,7 +75,7 @@ class MixModel(LightningModule):
         #MAE = torch.abs(prediction.flatten(0) - label)
         #out['MAE'] = MAE
         out = copy.deepcopy(data_dict)
-        out['prediction'] = prediction
+        out['prediction'] = prediction.squeeze(dim=1)
         out['label'] = label
         out['loss'] = loss                
         return out
