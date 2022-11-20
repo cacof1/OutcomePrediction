@@ -13,7 +13,7 @@ from DataGenerator.DataGenerator import *
 from Models.Classifier import Classifier
 from Models.Linear import Linear
 from Models.MixModel import MixModel
-
+from monai.transforms import EnsureChannelFirstd, ScaleIntensityd, ResampleToMatchd
 ## Main
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import toml
@@ -38,7 +38,8 @@ else:
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
 if 'Mask' in config['DATA'].keys():
-    img_keys.append('Mask')
+    for roi in config['DATA']['Mask']:
+         img_keys.append('Mask_' +  roi)
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
@@ -93,7 +94,7 @@ else:
 
 threshold = config['DATA']['threshold']
 ckpt_path = Path('./', total_backbone + '_ckpt')
-for iter in range(20):
+for iter in range(1):
     seed_everything(np.random.randint(1, 10000))
     dataloader = DataModule(SubjectList,
                             SubjectInfo,
@@ -106,7 +107,9 @@ for iter in range(20):
                             session = session)
 
     model = MixModel(module_dict, config)
-    model.apply(model.weights_reset)
+    #model.apply(model.weights_reset)
+    full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
+    model.load_state_dict(torch.load(full_ckpt_path)['state_dict'])
 
     filename = total_backbone
     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
@@ -126,7 +129,7 @@ for iter in range(20):
         accelerator="gpu",
         devices=[2,3],
         strategy=DDPStrategy(find_unused_parameters=True),
-        max_epochs=30,
+        max_epochs=12,
         logger=logger,
         callbacks=callbacks
     )

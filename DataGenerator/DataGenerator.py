@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 import xnat
 import matplotlib.pyplot as plt
 from monai.transforms import (
-    LoadImage,EnsureChannelFirstd, ResampleToMatchd
+    LoadImage,ResizeWithPadOrCropd
 )
 from Utils.DicomTools import *
 from Utils.XNATXML import XMLCreator
@@ -74,17 +74,6 @@ class DataGenerator(torch.utils.data.Dataset):
                 print('LoadImage problem on '+slabel)
             data['CT'] = MetaTensor(CTArray.copy(), meta=meta['CT'])
 
-        ## Load Mask            
-        if 'Mask' in self.config['DATA'].keys():
-            RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')
-            mask_imgs = np.zeros_like(data['CT'])
-            mask = get_RS_masks(slabel,CTPath, mask_imgs, RSPath[0], self.config['DATA']['Mask'])
-            mask = np.rot90(mask)
-            mask = np.flip(mask, axis=0)
-            data['Mask'] = mask
-
-        else: data["Mask"] = np.ones_like(data['CT']) ## No ROI target defined
-
         ## Load Dose        
         if 'Dose' in self.keys:
             DosePath                   = self.GeneratePath(subject_id, 'Dose')
@@ -96,6 +85,24 @@ class DataGenerator(torch.utils.data.Dataset):
             PETPath                    = self.GeneratePath(subject_id, 'PET')
             data['PET'], meta['PET']   = LoadImage()(PETPath+"/1-1.dcm")
 
+        ## Load Mask
+        if 'Mask' in self.config['DATA'].keys():
+            RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')
+            RS        = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
+            roi_names = RS.get_roi_names()
+            for roi in self.config['DATA']['Mask']:
+               if roi in roi_names:
+                   mask = RS.get_roi_mask_by_name(roi)
+                   mask = distance_transform_edt(mask)
+               else:
+                   message = "No ROI of name " + self.targetROI + " found in RTStruct"
+                   raise ValueError(message)
+               mask = np.rot90(mask)
+               mask = np.flip(mask, axis=0)
+               data['Mask_' + roi] = mask
+
+        else: data["Mask"] = np.ones_like(data['CT']) ## No ROI target defined
+
         ## Apply transforms on all
         if self.transform : data = self.transform(data)
         # Decide between multi-branch single-channel/multi-channel single-branch
@@ -104,7 +111,7 @@ class DataGenerator(torch.utils.data.Dataset):
             data['Image'] = np.concatenate([data[key] for key in data.keys()],axis=0)
             for key in old_keys: data.pop(key)
         else: data.pop('Mask') ## No need for mask in single-channel multi-branch
-        
+
         ## Add clinical record at the end
         if 'Records' in self.keys: data['Records'] = torch.tensor(self.SubjectList.loc[i, self.clinical_cols], dtype=torch.float32)
 
@@ -124,7 +131,7 @@ class DataModule(LightningDataModule):
         self.num_workers = num_workers
         data_trans = class_stratify(SubjectList, config)
         ## Split Test with fixed seed
-        train_val_list, test_list = train_test_split(SubjectList,test_size=0.15,random_state=42,stratify=data_trans)
+        train_val_list, test_list = train_test_split(SubjectList,test_size=0.15,random_state=500,stratify=data_trans)
 
         data_trans = class_stratify(train_val_list, config) 
         ## Split train-val with random seed

@@ -12,7 +12,7 @@ from DataGenerator.DataGenerator import *
 from Models.Classifier import Classifier
 from Models.Linear import Linear
 from Models.MixModel import MixModel
-
+from monai.transforms import EnsureChannelFirstd, ScaleIntensityd, ResampleToMatchd
 ## Main
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import toml
@@ -37,7 +37,8 @@ else:
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
 if 'Mask' in config['DATA'].keys():
-    img_keys.append('Mask')
+    for roi in config['DATA']['Mask']:
+         img_keys.append('Mask_' +  roi)
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
@@ -106,7 +107,7 @@ base_fpr = np.linspace(0, 1, 39)
 cm = ConfusionMatrix(num_classes=2)
 prediction_labels_full_list = []
 
-for iter in range(2):
+for iter in range(1):
     # seed_everything(4200)
     dataloader = DataModule(SubjectList,
                             SubjectInfo,
@@ -119,10 +120,11 @@ for iter in range(2):
                             session = session)
 
     model = MixModel(module_dict, config)
-    # full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
+    full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
     # full_ckpt_path = Path('Classification_4_ckpt', 'Iter_' + str(iter) + '.ckpt')
-    full_ckpt_path = 'ckpt_test/Iter_' + str(iter) + '.ckpt'
-    model.load_state_dict(torch.load(full_ckpt_path, map_location={'cuda:1': 'cuda:0'})['state_dict'])
+    # full_ckpt_path = 'ckpt_test/Iter_' + str(iter) + '.ckpt'
+    model.load_state_dict(torch.load(full_ckpt_path, map_location={'cuda:2': 'cuda:3'})['state_dict'])
+    # model.load_state_dict(torch.load(full_ckpt_path, map_location='cpu')['state_dict'])
     model.eval()
     print('start testing...')
     worstCase = 0
