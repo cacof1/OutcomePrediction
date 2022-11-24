@@ -36,10 +36,13 @@ else:
    for module in s_module:
        total_backbone = total_backbone + '_' + module + '_' + config['MODEL']['Backbone']
 ## 2D transform
+#img_keys = list(config['MODALITY'].keys())
+#if 'Mask' in config['DATA'].keys():
+#    for roi in config['DATA']['Mask']:
+#         img_keys.append('Mask_' +  roi)
 img_keys = list(config['MODALITY'].keys())
 if 'Mask' in config['DATA'].keys():
-    for roi in config['DATA']['Mask']:
-         img_keys.append('Mask_' +  roi)
+    img_keys.append('Mask')
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
@@ -94,7 +97,7 @@ else:
 
 threshold = config['DATA']['threshold']
 ckpt_path = Path('./', total_backbone + '_ckpt')
-for iter in range(1):
+for iter in range(1,2,1):
     seed_everything(np.random.randint(1, 10000))
     dataloader = DataModule(SubjectList,
                             SubjectInfo,
@@ -107,9 +110,9 @@ for iter in range(1):
                             session = session)
 
     model = MixModel(module_dict, config)
-    #model.apply(model.weights_reset)
-    full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
-    model.load_state_dict(torch.load(full_ckpt_path)['state_dict'])
+    model.apply(model.weights_reset)
+    #full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
+    #model.load_state_dict(torch.load(full_ckpt_path)['state_dict'])
 
     filename = total_backbone
     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
@@ -127,9 +130,9 @@ for iter in range(1):
     trainer = Trainer(
         #gpus=1,
         accelerator="gpu",
-        devices=[2,3],
+        devices=[0,1,2,3],
         strategy=DDPStrategy(find_unused_parameters=True),
-        max_epochs=12,
+        max_epochs=30,
         logger=logger,
         callbacks=callbacks
     )

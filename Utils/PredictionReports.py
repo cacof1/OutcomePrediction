@@ -194,45 +194,47 @@ class PredictionReports(TensorBoardLogger):
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             regression_out = self.regression_matrix(prediction, label, prefix)
             self.log_metrics(regression_out, current_epoch)
-            if 'AUC' in self.config['CHECKPOINT']['matrix']:
+            if 'AUROC' in self.config['CHECKPOINT']['matrix']:
                 self.generate_cumulative_dynamic_auc(prediction, label, current_epoch, prefix)
-            if 'WorstCase' in self.config['CHECKPOINT']['matrix']:
-                worst_record = self.worst_case_show(validation_step_outputs, prefix)
-                self.log_metrics({prefix + 'worst_AE': worst_record[prefix + 'worst_AE']}, current_epoch)
-                if 'CT' in self.config['DATA']['target']:
-                    text = 'validate_worst_case_img'
-                    self.log_image(worst_record[prefix + 'worst_img'], text, current_epoch)
-                if 'Dose' in self.config['DATA']['target']:
-                    text = 'validate_worst_case_dose'
-                    self.log_image(worst_record[prefix + 'worst_dose'], text, current_epoch)
 
         if self.config['MODEL']['Prediction_type'] == 'Classification':
             classification_out = self.classification_matrix(prediction.squeeze(), label, prefix)
             self.log_metrics(classification_out, current_epoch)
-            if 'ROC' in self.config['CHECKPOINT']['matrix']:
+            if 'AUROC' in self.config['CHECKPOINT']['matrix']:
                 self.plot_AUROC(prediction.squeeze(), label, prefix, current_epoch)
 
+        if 'WorstCase' in self.config['CHECKPOINT']['matrix']:
+            worst_record = self.worst_case_show(validation_step_outputs, prefix)
+            self.log_metrics({prefix + 'worst_AE': worst_record[prefix + 'worst_AE']}, current_epoch)
+            if 'CT' in self.config['DATA']['target']:
+                text = 'validate_worst_case_img'
+                self.log_image(worst_record[prefix + 'worst_img'], text, current_epoch)
+            if 'Dose' in self.config['DATA']['target']:
+                text = 'validate_worst_case_dose'
+                self.log_image(worst_record[prefix + 'worst_dose'], text, current_epoch)
+
     def report_test(self, config, outs, model, prediction_labels, validation_labels, prefix):
+        if 'WorstCase' in config['CHECKPOINT']['matrix']:
+            worst_record = self.worst_case_show(outs, prefix)
+            self.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
+            if 'CT' in config['MODALITY'].keys():
+                text = 'test_worst_case_img'
+                self.log_image(worst_record[prefix + 'worst_img'], text)
+            if 'Dose' in config['MODALITY'].keys():
+                text = 'test_worst_case_dose'
+                self.log_image(worst_record[prefix + 'worst_dose'], text)
+
         if config['MODEL']['Prediction_type'] == 'Regression':
             self.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels)))
             self.generate_cumulative_dynamic_auc(prediction_labels, validation_labels, 0, prefix)
             regression_out = self.regression_matrix(prediction_labels, validation_labels, prefix)
             self.experiment.add_text('test_cindex: ', str(regression_out[prefix + 'cindex']))
             self.experiment.add_text('test_r2: ', str(regression_out[prefix + 'r2']))
-            if 'WorstCase' in config['CHECKPOINT']['matrix']:
-                worst_record = self.worst_case_show(outs, prefix)
-                self.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
-                if 'CT' in config['MODALITY'].keys():
-                    text = 'test_worst_case_img'
-                    self.log_image(worst_record[prefix + 'worst_img'], text)
-                if 'Dose' in config['MODALITY'].keys():
-                    text = 'test_worst_case_dose'
-                    self.log_image(worst_record[prefix + 'worst_dose'], text)
-            return regression_out[prefix + 'r2']
+            return regression_out
 
         if config['MODEL']['Prediction_type'] == 'Classification':
             classification_out = self.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
-            if 'ROC' in config['CHECKPOINT']['matrix']:
+            if 'AUROC' in config['CHECKPOINT']['matrix']:
                 self.plot_AUROC(prediction_labels, validation_labels, prefix)
                 self.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
             if 'Specificity' in config['CHECKPOINT']['matrix']:
@@ -243,6 +245,8 @@ class PredictionReports(TensorBoardLogger):
                 self.experiment.add_text('Specificity:', str(classification_out[prefix + 'accuracy']))
             if 'Precision' in config['CHECKPOINT']['matrix']:
                 self.experiment.add_text('Specificity:', str(classification_out[prefix + 'precision']))
+            if 'ROC' in config['CHECKPOINT']['matrix']:
+                self.experiment.add_text('ROC:', str(classification_out[prefix + 'roc']))
             return classification_out
 
 
