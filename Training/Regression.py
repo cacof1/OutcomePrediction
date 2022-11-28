@@ -36,13 +36,13 @@ else:
    for module in s_module:
        total_backbone = total_backbone + '_' + module + '_' + config['MODEL']['Backbone']
 ## 2D transform
-#img_keys = list(config['MODALITY'].keys())
-#if 'Mask' in config['DATA'].keys():
-#    for roi in config['DATA']['Mask']:
-#         img_keys.append('Mask_' +  roi)
 img_keys = list(config['MODALITY'].keys())
 if 'Mask' in config['DATA'].keys():
-    img_keys.append('Mask')
+    for roi in config['DATA']['Mask']:
+         img_keys.append('Mask_' +  roi)
+#img_keys = list(config['MODALITY'].keys())
+#if 'Mask' in config['DATA'].keys():
+#    img_keys.append('Mask')
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
@@ -97,7 +97,7 @@ else:
 
 threshold = config['DATA']['threshold']
 ckpt_path = Path('./', total_backbone + '_ckpt')
-for iter in range(1,2,1):
+for iter in range(2,3,1):
     seed_everything(np.random.randint(1, 10000))
     dataloader = DataModule(SubjectList,
                             SubjectInfo,

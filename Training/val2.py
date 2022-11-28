@@ -111,7 +111,7 @@ base_fpr = np.linspace(0, 1, 39)
 cm = ConfusionMatrix(num_classes=2)
 prediction_labels_full_list = []
 
-for iter in range(1):
+for iter in range(0,1,1):
     # seed_everything(4200)
     dataloader = DataModule(SubjectList,
                             SubjectInfo,

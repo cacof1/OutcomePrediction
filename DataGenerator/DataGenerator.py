@@ -90,18 +90,18 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'Mask' in self.config['DATA'].keys():
             RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')
             ### mask in multichannel
-            # RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
-            # roi_names = RS.get_roi_names()
-            # for roi in self.config['DATA']['Mask']:
-            #     if roi in roi_names:
-            #         mask = RS.get_roi_mask_by_name(roi)
-            #         mask = distance_transform_edt(mask)
-            #     else:
-            #         message = "No ROI of name " + self.targetROI + " found in RTStruct"
-            #         raise ValueError(message)
-            #     mask = np.rot90(mask)
-            #     mask = np.flip(mask, axis=0)
-            #     data['Mask_' + roi] = mask
+            #RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
+            #roi_names = RS.get_roi_names()
+            #for roi in self.config['DATA']['Mask']:
+            #    if roi in roi_names:
+            #        mask = RS.get_roi_mask_by_name(roi)
+            #        mask = distance_transform_edt(mask)
+            #    else:
+            #        message = "No ROI of name " + self.targetROI + " found in RTStruct"
+            #        raise ValueError(message)
+            #    mask = np.rot90(mask)
+            #    mask = np.flip(mask, axis=0)
+            #    data['Mask_' + roi] = mask
 
             ### masks images
             mask_imgs = np.zeros_like(CTArray)
