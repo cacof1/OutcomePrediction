@@ -24,36 +24,16 @@ import concurrent
 
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, SubjectList, SubjectInfo, config=None, keys=['CT'], transform=None, inference=False,
+    def __init__(self, SubjectList,config=None, keys=['CT'], transform=None, inference=False,
                  clinical_cols=None, session=None, **kwargs):
         super().__init__()
         self.config = config
         self.session = session
         self.SubjectList = SubjectList
-        self.SubjectInfo = SubjectInfo
         self.keys = keys
         self.transform = transform
         self.inference = inference
         self.clinical_cols = clinical_cols
-
-    def GeneratePath(self, subjectid, Modality):
-        subject = self.SubjectInfo[subjectid]['xnat:Subject'][0]
-        subject_label = subject['@label']
-        experiments = subject['xnat:experiments'][0]['xnat:experiment']
-
-        ## Won't work with many experiments yet
-        for experiment in experiments:
-            experiment_label = experiment['@label']
-            scans = experiment['xnat:scans'][0]['xnat:scan']
-            for scan in scans:
-                if (scan['@type'] in Modality):
-                    scan_label = scan['@ID'] + '-' + scan['@type']
-                    resources_label = scan['xnat:file'][0]['@label']
-                    if resources_label == 'SNAPSHOTS':
-                        resources_label = scan['xnat:file'][1]['@label']
-                    path = os.path.join(self.config['DATA']['DataFolder'], subject_label, experiment_label, 'scans',
-                                        scan_label, 'resources', resources_label, 'files')
-                    return path
 
     def __len__(self):
         return int(self.SubjectList.shape[0])
@@ -66,7 +46,7 @@ class DataGenerator(torch.utils.data.Dataset):
         slabel = self.SubjectList.loc[i, 'subject_label']
         ## Load CT
         if 'CT' in self.keys:
-            CTPath = self.GeneratePath(subject_id, 'CT')
+            CTPath = self.SubjectList.loc[i, 'CT_Path']
             CTSession = ReadDicom(CTPath)
             CTArray = sitk.GetArrayFromImage(CTSession)
             CTArray = CTArray.transpose([2, 1, 0])
@@ -77,18 +57,18 @@ class DataGenerator(torch.utils.data.Dataset):
             data['CT'] = MetaTensor(CTArray.copy(), meta=meta['CT'])
         ## Load Dose
         if 'Dose' in self.keys:
-            DosePath = self.GeneratePath(subject_id, 'Dose')
+            DosePath = self.SubjectList.loc[i, 'Dose_Path']
             data['Dose'], meta['Dose'] = LoadImage()(DosePath + "/1-1.dcm")
             data['Dose'] = data['Dose'] * np.double(meta['Dose']['3004|000e'])
 
         ## Load PET
         if 'PET' in self.keys:
-            PETPath = self.GeneratePath(subject_id, 'PET')
+            PETPath = self.SubjectList.loc[i, 'PET_Path']
             data['PET'], meta['PET'] = LoadImage()(PETPath + "/1-1.dcm")
 
         ## Load Mask
         if 'Mask' in self.config['DATA'].keys():
-            RSPath = glob.glob(self.GeneratePath(subject_id, 'Structs') + '/*dcm')
+            RSPath = glob.glob(self.SubjectList.loc[i, 'Structs_path'] + '/*dcm')
             ### mask in multichannel
             #RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
             #roi_names = RS.get_roi_names()
@@ -257,9 +237,29 @@ def QuerySubjectInfo(config, SubjectList, session):
     for future in concurrent.futures.as_completed(future_to_url):
         subjectdata = future.result()
         subjectid = subjectdata["xnat:Subject"][0]["@ID"]
-        SubjectInfo[subjectid] = subjectdata
-    return SubjectInfo
+        for key in config['MODALITY'].keys():
+            SubjectList.loc[SubjectList.subjectid == subjectid,key + '_Path'] = GeneratePath(subjectdata,Modality=key, config=config)
+        if 'Mask' in config['DATA'].keys():
+            SubjectList.loc[SubjectList.subjectid == subjectid,'Structs_path'] = GeneratePath(subjectdata,Modality='Structs', config=config)
 
+def GeneratePath(subjectdata, Modality, config):
+    subject = subjectdata['xnat:Subject'][0]
+    subject_label = subject['@label']
+    experiments = subject['xnat:experiments'][0]['xnat:experiment']
+
+    ## Won't work with many experiments yet
+    for experiment in experiments:
+        experiment_label = experiment['@label']
+        scans = experiment['xnat:scans'][0]['xnat:scan']
+        for scan in scans:
+            if (scan['@type'] in Modality):
+                scan_label = scan['@ID'] + '-' + scan['@type']
+                resources_label = scan['xnat:file'][0]['@label']
+                if resources_label == 'SNAPSHOTS':
+                    resources_label = scan['xnat:file'][1]['@label']
+                path = os.path.join(config['DATA']['DataFolder'], subject_label, experiment_label, 'scans',
+                                    scan_label, 'resources', resources_label, 'files')
+                return path
 
 def LoadClinicalData(config, PatientList):
     category_cols = []

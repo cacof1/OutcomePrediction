@@ -72,13 +72,13 @@ session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'
 
 SubjectList = QuerySubjectList(config, session)
 ## For testing
-# SubjectList = SubjectList.fillna(0)
-# SubjectList = SubjectList.sample(frac=1, random_state = 43)
-# SubjectList = SubjectList.head(30)
-##
-print(SubjectList)
+for key in config['MODALITY'].keys():
+    SubjectList[key+'_Path'] = ""
+if 'Mask' in config['DATA'].keys():
+    SubjectList['Structs_path'] = ""
+
 SynchronizeData(config, SubjectList)
-SubjectInfo = QuerySubjectInfo(config, SubjectList, session)
+QuerySubjectInfo(config, SubjectList, session)
 
 module_dict = nn.ModuleDict()
 if config['DATA']['Multichannel']: ## Single-Model Multichannel learning
@@ -100,7 +100,6 @@ ckpt_path = Path('./', total_backbone + '_ckpt')
 for iter in range(2,3,1):
     seed_everything(np.random.randint(1, 10000))
     dataloader = DataModule(SubjectList,
-                            SubjectInfo,
                             config=config,
                             keys=config['DATA']['module'],
                             train_transform=train_transform,
