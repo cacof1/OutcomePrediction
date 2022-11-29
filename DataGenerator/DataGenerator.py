@@ -47,14 +47,7 @@ class DataGenerator(torch.utils.data.Dataset):
         ## Load CT
         if 'CT' in self.keys:
             CTPath = self.SubjectList.loc[i, 'CT_Path']
-            CTSession = ReadDicom(CTPath)
-            CTArray = sitk.GetArrayFromImage(CTSession)
-            CTArray = CTArray.transpose([2, 1, 0])
-            CTArray = np.flip(CTArray, axis=2)
-            array, meta['CT'] = LoadImage()(CTPath)
-            if not array.shape == CTArray.shape:
-                print('LoadImage problem on ' + slabel)
-            data['CT'] = MetaTensor(CTArray.copy(), meta=meta['CT'])
+            data['CT'], meta['CT'] = LoadImage(reader='PydicomReader')(CTPath)
         ## Load Dose
         if 'Dose' in self.keys:
             DosePath = self.SubjectList.loc[i, 'Dose_Path']
@@ -84,10 +77,11 @@ class DataGenerator(torch.utils.data.Dataset):
             #    data['Mask_' + roi] = mask
 
             ### masks images
-            mask_imgs = np.zeros_like(CTArray)
+            mask_imgs = np.zeros_like(data['CT'])
             mask = get_RS_masks(slabel, CTPath, mask_imgs, RSPath[0], self.config['DATA']['Mask'])
             mask = np.rot90(mask)
-            data['Mask'] = np.flip(mask, axis=0)
+            mask = np.flip(mask, 2)
+            data['Mask'] = np.flip(mask, 0)
 
         else:
             data['Mask'] = np.ones_like(data['CT'])  ## No ROI target defined
