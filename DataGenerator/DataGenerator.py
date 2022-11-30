@@ -60,31 +60,33 @@ class DataGenerator(torch.utils.data.Dataset):
             data['PET'], meta['PET'] = LoadImage()(PETPath + "/1-1.dcm")
 
         ## Load Mask
-        if 'Mask' in self.config['DATA'].keys():
-            RSPath = glob.glob(self.SubjectList.loc[i, 'Structs_path'] + '/*dcm')
-            ### mask in multichannel
-            #RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
-            #roi_names = RS.get_roi_names()
-            #for roi in self.config['DATA']['Mask']:
-            #    if roi in roi_names:
-            #        mask = RS.get_roi_mask_by_name(roi)
-            #        mask = distance_transform_edt(mask)
-            #    else:
-            #        message = "No ROI of name " + self.targetROI + " found in RTStruct"
-            #        raise ValueError(message)
-            #    mask = np.rot90(mask)
-            #    mask = np.flip(mask, axis=0)
-            #    data['Mask_' + roi] = mask
+        if 'Structs' in self.keys:
+            RSPath = glob.glob(self.SubjectList.loc[i, 'Structs_Path'] + '/*dcm')
+            ## mask in multichannel
+            RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
+            roi_names = RS.get_roi_names()
+            for roi in self.config['DATA']['Structs']:
+               if roi in roi_names:
+                   mask_img = RS.get_roi_mask_by_name(roi)
+                   mask_img = distance_transform_edt(mask_img)
+               else:
+                   message = "No ROI of name " + self.targetROI + " found in RTStruct"
+                   raise ValueError(message)
+               mask_img = np.rot90(mask_img)
+               mask_img = np.flip(mask_img, 2)
+               mask_img = np.flip(mask_img, 0)
+               mask = MetaTensor(mask_img.copy(), meta = meta['CT'])
+               data['Struct_' + roi] = mask
 
             ### masks images
-            mask_imgs = np.zeros_like(data['CT'])
-            mask = get_RS_masks(slabel, CTPath, mask_imgs, RSPath[0], self.config['DATA']['Mask'])
-            mask = np.rot90(mask)
-            mask = np.flip(mask, 2)
-            data['Mask'] = np.flip(mask, 0)
+            #mask_imgs = np.zeros_like(data['CT'])
+            #mask = get_RS_masks(slabel, CTPath, mask_imgs, RSPath[0], self.config['DATA']['Mask'])
+            #mask = np.rot90(mask)
+            #mask = np.flip(mask, 2)
+            #data['Structs'] = np.flip(mask, 0)
 
         else:
-            data['Mask'] = np.ones_like(data['CT'])  ## No ROI target defined
+            data['Structs'] = np.ones_like(data['CT'])  ## No ROI target defined
 
         ## Apply transforms on all
         if self.transform: data = self.transform(data)
@@ -102,12 +104,12 @@ class DataGenerator(torch.utils.data.Dataset):
             data['Image'] = np.concatenate([data[key] for key in data.keys()], axis=0)
             for key in old_keys: data.pop(key)
         else:
-            data.pop('Mask')  ## No need for mask in single-channel multi-branch
+            data.pop('Structs')  ## No need for mask in single-channel multi-branch
 
         #data = ResizeWithPadOrCropd(keys=data.keys(), spatial_size=self.config['DATA']['dim'])(data)
 
         ## Add clinical record at the end
-        if 'Records' in self.keys: data['Records'] = torch.tensor(self.SubjectList.loc[i, self.clinical_cols],
+        if 'Records' in self.config['DATA'].keys(): data['Records'] = torch.tensor(self.SubjectList.loc[i, self.clinical_cols],
                                                                   dtype=torch.float32)
         if self.inference:
             return data
@@ -121,8 +123,8 @@ class DataGenerator(torch.utils.data.Dataset):
 
 ### DataLoader
 class DataModule(LightningDataModule):
-    def __init__(self, SubjectList, SubjectInfo, config=None, train_transform=None, val_transform=None, train_size=0.7,
-                 val_size=0.2, test_size=0.1, num_workers=64, **kwargs):
+    def __init__(self, SubjectList, config=None, train_transform=None, val_transform=None, train_size=0.7,
+                 val_size=0.2, test_size=0.1, num_workers=10, **kwargs):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = num_workers
@@ -139,9 +141,9 @@ class DataModule(LightningDataModule):
         val_list = val_list.reset_index(drop=True)
         test_list = test_list.reset_index(drop=True)
 
-        self.train_data = DataGenerator(train_list, SubjectInfo, config=config, transform=train_transform, **kwargs)
-        self.val_data = DataGenerator(val_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
-        self.test_data = DataGenerator(test_list, SubjectInfo, config=config, transform=val_transform, **kwargs)
+        self.train_data = DataGenerator(train_list, config=config, transform=train_transform, **kwargs)
+        self.val_data = DataGenerator(val_list,config=config, transform=val_transform, **kwargs)
+        self.test_data = DataGenerator(test_list, config=config, transform=val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,
                                                   num_workers=self.num_workers, pin_memory=True, drop_last=True,
@@ -167,8 +169,9 @@ def QuerySubjectList(config, session):
     XML.Add_search_field(
         {"element_name": "xnat:subjectData", "field_ID": "SUBJECT_LABEL", "sequence": "1", "type": "string"})
 
-    if 'Records' in config['DATA']['module']:
-        for value in config['DATA']['clinical_columns']:
+    if 'Records' in config.keys():
+        feats_list = [item for sublist in config['Records'].values() for item in sublist]
+        for value in feats_list:
             dict_temp = {"element_name": "xnat:subjectData", "field_ID": "XNAT_SUBJECTDATA_FIELD_MAP=" + str(value),
                          "sequence": "1", "type": "int"}
             XML.Add_search_field(dict_temp)
@@ -223,7 +226,6 @@ def get_subject_info(config, session, subjectid):
 
 
 def QuerySubjectInfo(config, SubjectList, session):
-    SubjectInfo = {}
     with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_url = {executor.submit(get_subject_info, config, session, subjectid) for subjectid in
                          SubjectList['subjectid']}
@@ -233,9 +235,6 @@ def QuerySubjectInfo(config, SubjectList, session):
         subjectid = subjectdata["xnat:Subject"][0]["@ID"]
         for key in config['MODALITY'].keys():
             SubjectList.loc[SubjectList.subjectid == subjectid,key + '_Path'] = GeneratePath(subjectdata,Modality=key, config=config)
-        if 'Mask' in config['DATA'].keys():
-            SubjectList.loc[SubjectList.subjectid == subjectid,'Structs_path'] = GeneratePath(subjectdata,Modality='Structs', config=config)
-
 def GeneratePath(subjectdata, Modality, config):
     subject = subjectdata['xnat:Subject'][0]
     subject_label = subject['@label']
@@ -258,10 +257,10 @@ def GeneratePath(subjectdata, Modality, config):
 def LoadClinicalData(config, PatientList):
     category_cols = []
     numerical_cols = []
-    for col in config['CLINICAL']['category_feat']:
+    for col in config['Records']['category_feat']:
         category_cols.append('xnat_subjectdata_field_map_' + col)
 
-    for row in config['CLINICAL']['numerical_feat']:
+    for row in config['Records']['numerical_feat']:
         numerical_cols.append('xnat_subjectdata_field_map_' + row)
 
     target = config['DATA']['target']

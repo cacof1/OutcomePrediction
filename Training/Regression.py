@@ -26,27 +26,21 @@ from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
-s_module = config['DATA']['module']
-
-total_backbone = config['MODEL']['Prediction_type']
-if config['DATA']['Multichannel']:
-   module = 'Image'
-   total_backbone = total_backbone + '_' + module + '_' + config['MODEL']['Backbone']
-else:
-   for module in s_module:
-       total_backbone = total_backbone + '_' + module + '_' + config['MODEL']['Backbone']
+total_backbone = ""
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
-if 'Mask' in config['DATA'].keys():
-    for roi in config['DATA']['Mask']:
-         img_keys.append('Mask_' +  roi)
+img_keys.remove('Structs')
+if 'Structs' in config['DATA'].keys():
+    for roi in config['DATA']['Structs']:
+         img_keys.append('Struct_' +  roi)
+
 #img_keys = list(config['MODALITY'].keys())
-#if 'Mask' in config['DATA'].keys():
+#if 'Structs' in config['DATA'].keys():
 #    img_keys.append('Mask')
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
-    ResampleToMatchd(list(set(config['MODALITY'].keys()).difference(set(['CT']))), key_dst='CT'),
+    ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
     monai.transforms.ScaleIntensityd(keys=img_keys),
     # monai.transforms.ResizeWithPadOrCropd(keys=img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
@@ -59,7 +53,7 @@ train_transform = torchvision.transforms.Compose([
 
 val_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
-    ResampleToMatchd(list(set(config['MODALITY'].keys()).difference(set(['CT']))), key_dst='CT'),
+    ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
     monai.transforms.ScaleIntensityd(img_keys),
     # monai.transforms.ResizeWithPadOrCropd(img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
@@ -71,29 +65,28 @@ session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'
 
 
 SubjectList = QuerySubjectList(config, session)
-## For testing
-for key in config['MODALITY'].keys():
-    SubjectList[key+'_Path'] = ""
-if 'Mask' in config['DATA'].keys():
-    SubjectList['Structs_path'] = ""
-
 SynchronizeData(config, SubjectList)
-QuerySubjectInfo(config, SubjectList, session)
 
 module_dict = nn.ModuleDict()
 if config['DATA']['Multichannel']: ## Single-Model Multichannel learning
     if config['MODALITY'].keys():
         module_dict['Image'] = Classifier(config, 'Image')
-else: 
-    for key in config['MODALITY'].keys(): ## Multi-Model Single Channel learning
+else:
+    for key in config['MODALITY'].keys():# Multi-Model Single Channel learning
         module_dict[key] = Classifier(config, key)
 
-if 'Records' in config['DATA']['module']:
+if 'Records' in config.keys():
     module_dict['Records'] = Linear()
     SubjectList, clinical_cols = LoadClinicalData(config, SubjectList)
 
 else:
     clinical_cols = None
+
+## GeneratePath
+for key in config['MODALITY'].keys():
+    SubjectList[key+'_Path'] = ""
+QuerySubjectInfo(config, SubjectList, session)
+print(SubjectList)
 
 threshold = config['DATA']['threshold']
 ckpt_path = Path('./', total_backbone + '_ckpt')
@@ -101,7 +94,7 @@ for iter in range(2,3,1):
     seed_everything(np.random.randint(1, 10000))
     dataloader = DataModule(SubjectList,
                             config=config,
-                            keys=config['DATA']['module'],
+                            keys=config['MODALITY'].keys(),
                             train_transform=train_transform,
                             val_transform=val_transform,
                             clinical_cols=clinical_cols,
