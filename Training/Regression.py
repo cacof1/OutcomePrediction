@@ -90,7 +90,7 @@ print(SubjectList)
 
 threshold = config['DATA']['threshold']
 ckpt_path = Path('./', total_backbone + '_ckpt')
-for iter in range(2,3,1):
+for iter in range(20):
     seed_everything(np.random.randint(1, 10000))
     dataloader = DataModule(SubjectList,
                             config=config,

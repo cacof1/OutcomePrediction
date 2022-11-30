@@ -109,7 +109,7 @@ class DataGenerator(torch.utils.data.Dataset):
         #data = ResizeWithPadOrCropd(keys=data.keys(), spatial_size=self.config['DATA']['dim'])(data)
 
         ## Add clinical record at the end
-        if 'Records' in self.config['DATA'].keys(): data['Records'] = torch.tensor(self.SubjectList.loc[i, self.clinical_cols],
+        if 'Records' in self.config.keys(): data['Records'] = torch.tensor(self.SubjectList.loc[i, self.clinical_cols],
                                                                   dtype=torch.float32)
         if self.inference:
             return data
