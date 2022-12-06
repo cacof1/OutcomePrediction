@@ -205,7 +205,7 @@ def QuerySubjectList(config, session):
 
     xmlstr = XML.ConstructTree()
     response = session.post(config['SERVER']['Address'] + '/data/search/', data=xmlstr, format='csv')
-    SubjectList = pd.read_csv(StringIO(response.text))
+    SubjectList = pd.read_csv(StringIO(response.text), dtype=str)
     # print('Query: ', SubjectList)
     return SubjectList
 
@@ -214,7 +214,7 @@ def SynchronizeData(config, SubjectList):
     session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'],
                            password=config['SERVER']['Password'])
     for subjectlabel, subjectid in zip(SubjectList['subject_label'], SubjectList['subjectid']):
-        if (not Path(config['DATA']['DataFolder'], str(subjectlabel)).is_dir()):
+        if (not Path(config['DATA']['DataFolder'], subjectlabel).is_dir()):
             xnatsubject = session.create_object('/data/subjects/' + subjectid)
             print("Synchronizing ", subjectid, subjectlabel)
             xnatsubject.download_dir(config['DATA']['DataFolder'])  ## Download data
