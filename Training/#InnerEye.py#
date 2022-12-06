@@ -1,0 +1,73 @@
+import sys
+from DataGenerator.DataGenerator import QuerySubjectList, QuerySubjectInfo, GeneratePath, SynchronizeData
+import toml
+import nibabel as nib
+from Utils.DicomTools import *
+from pathlib import Path
+import os
+from rt_utils import RTStructBuilder
+import xnat
+session = xnat.connect('http://128.16.11.124:8080/xnat', user='admin', password='mortavar1977')
+import csv
+from monai.transforms import Spacing, LoadImage, EnsureChannelFirst
+from monai.data import MetaTensor
+import itk
+config = toml.load(sys.argv[1])
+SubjectList = QuerySubjectList(config)
+#SynchronizeData(config, SubjectList)
+SubjectInfo = QuerySubjectInfo(config, SubjectList)
+# roi = ['Heart', 'Oesophagus', 'Spinal Canal', 'Prox bronch tree', 'Proximal trachea', 'Cwall & ribs', 'L Lung',
+#         'R Lung', 'Brachial Plexus']
+# roi_name = ['heart', 'oesophagus', 'spinal_canal', 'prox_bronch_tree', 'proximal_trachea', 'cwall_ribs', 'lt_lung',
+#         'rt_lung', 'brachial_plexus']
+
+roi_series = ['HEART', 'PTV', 'LUNG_IPSI', 'LUNG_CNTR', 'SPINAL_CORD', 'ESOPHAGUS']
+roi_name = ['HEART', 'PTV', 'LUNG_IPSI', 'LUNG_CNTR', 'SPINAL_CORD', 'ESOPHAGUS']
+
+path = config['DATA']['NiiFolder']
+sPatient = SubjectList
+r1 = [x.lower() for x in roi_series]
+
+for i in range(0, len(sPatient), 1):
+    subject_id = sPatient.loc[i, 'subjectid']
+    subject_label = sPatient.loc[i,'subject_label']
+
+    print('No.{}:'.format(i) + subject_label)
+
+    CTPath = GeneratePath(SubjectInfo, config, subject_id, 'CT')
+    CTArray, meta = LoadImage(reader='PydicomReader')(CTPath)
+    #ct = EnsureChannelFirst()(CTArray)
+    #ct = Spacing(pixdim=(1, 1, 3))(ct)
+    
+    """
+    ct_array = ct.array.squeeze()
+    # First define the ROI based on target
+    RSPath = glob.glob(GeneratePath(SubjectInfo, config, subject_id, 'Structs') + '/*dcm')
+    RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
+    # print(RS)
+    #%%
+    roi_names = RS.get_roi_names()
+    strList = [x.lower() for x in roi_names]
+    ni_img = nib.Nifti1Image(np.double(ct_array), affine=ct.affine)
+    spath = Path(path, subject_label)
+
+    if not os.path.isdir(spath):
+        os.mkdir(spath)
+    nib.save(ni_img, Path(spath, 'ct.nii.gz'))
+
+    for i in range(len(r1)):
+        roi = r1[i]
+        if roi in strList:
+            index = strList.index(roi.lower())
+            mask_img = RS.get_roi_mask_by_name(roi_names[index])
+            mask_img = np.rot90(mask_img)
+            mask_img = np.flip(mask_img, 2)
+            mask_img = np.flip(mask_img, 0)
+            mask = MetaTensor(mask_img.copy(), meta=meta)
+            mask = EnsureChannelFirst()(mask)
+            mask = Spacing(pixdim=(1, 1, 3))(mask)
+            mask_array = mask.array.squeeze()
+            ni_mask = nib.Nifti1Image(mask_array.astype('int'), affine=mask.affine, dtype='uint8')
+            nib.save(ni_mask, Path(spath, roi_name[i].lower() + '.nii.gz'))
+    """
+

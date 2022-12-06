@@ -47,7 +47,7 @@ class DataGenerator(torch.utils.data.Dataset):
         ## Load CT
         if 'CT' in self.keys:
             CTPath = self.SubjectList.loc[i, 'CT_Path']
-            data['CT'], meta['CT'] = LoadImage(reader='PydicomReader')(CTPath)
+            data['CT'], meta['CT'] = LoadImage()(CTPath)
         ## Load Dose
         if 'Dose' in self.keys:
             DosePath = self.SubjectList.loc[i, 'Dose_Path']
@@ -64,26 +64,27 @@ class DataGenerator(torch.utils.data.Dataset):
             RSPath = glob.glob(self.SubjectList.loc[i, 'Structs_Path'] + '/*dcm')
             ## mask in multichannel
             RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
-            roi_names = RS.get_roi_names()
-            for roi in self.config['DATA']['Structs']:
-               if roi in roi_names:
-                   mask_img = RS.get_roi_mask_by_name(roi)
-                   mask_img = distance_transform_edt(mask_img)
-               else:
-                   message = "No ROI of name " + self.targetROI + " found in RTStruct"
-                   raise ValueError(message)
-               mask_img = np.rot90(mask_img)
-               mask_img = np.flip(mask_img, 2)
-               mask_img = np.flip(mask_img, 0)
-               mask = MetaTensor(mask_img.copy(), meta = meta['CT'])
-               data['Struct_' + roi] = mask
+            #roi_names = RS.get_roi_names()
+            #for roi in self.config['DATA']['Structs']:
+            #   if roi in roi_names:
+            #       mask_img = RS.get_roi_mask_by_name(roi)
+            #       mask_img = distance_transform_edt(mask_img)
+            #   else:
+            #       message = "No ROI of name " + self.targetROI + " found in RTStruct"
+            #       raise ValueError(message)
+            #   mask_img = np.rot90(mask_img)
+            #   mask_img = np.flip(mask_img, 2)
+            #   mask_img = np.flip(mask_img, 0)
+            #   mask = MetaTensor(mask_img.copy(), meta = meta['CT'])
+            #   data['Struct_' + roi] = mask
 
             ### masks images
-            #mask_imgs = np.zeros_like(data['CT'])
-            #mask = get_RS_masks(slabel, CTPath, mask_imgs, RSPath[0], self.config['DATA']['Mask'])
-            #mask = np.rot90(mask)
-            #mask = np.flip(mask, 2)
-            #data['Structs'] = np.flip(mask, 0)
+            masks_img = np.zeros_like(data['CT'])
+            masks_img = get_RS_masks(slabel, CTPath, masks_img, RSPath[0], self.config['DATA']['Structs'])
+            masks_img = np.rot90(masks_img)
+            masks_img = np.flip(masks_img, 0)
+            masks_img = MetaTensor(masks_img.copy(), meta = meta['CT'])
+            data['Structs'] = masks_img
 
         else:
             data['Structs'] = np.ones_like(data['CT'])  ## No ROI target defined
@@ -213,7 +214,7 @@ def SynchronizeData(config, SubjectList):
     session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'],
                            password=config['SERVER']['Password'])
     for subjectlabel, subjectid in zip(SubjectList['subject_label'], SubjectList['subjectid']):
-        if (not Path(config['DATA']['DataFolder'], subjectlabel).is_dir()):
+        if (not Path(config['DATA']['DataFolder'], str(subjectlabel)).is_dir()):
             xnatsubject = session.create_object('/data/subjects/' + subjectid)
             print("Synchronizing ", subjectid, subjectlabel)
             xnatsubject.download_dir(config['DATA']['DataFolder'])  ## Download data
@@ -270,10 +271,10 @@ def LoadClinicalData(config, PatientList):
          ("NumTrans", MinMaxScaler(), numerical_cols), ])
 
     X = PatientList.loc[:, category_cols + numerical_cols]
-    yc = X.loc[:, category_cols].astype('float32')
-    X.loc[:, category_cols] = yc.fillna(yc.mean().astype('int'))
-    yn = X.loc[:, numerical_cols].astype('float32')
-    X.loc[:, numerical_cols] = yn.fillna(yn.mean())
+    yc = X[category_cols].astype('float32')
+    X[category_cols] = yc.fillna(yc.mean().astype('int'))
+    yn = X[numerical_cols].astype('float32')
+    X[numerical_cols] = yn.fillna(yn.mean()) #X.loc[:, numerical_cols] = yn.fillna(yn.mean())
     X_trans = ct.fit_transform(X)
     if not isinstance(X_trans, (np.ndarray, np.generic)): X_trans = X_trans.toarray()
 

@@ -10,7 +10,7 @@ from torchvision import transforms
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer,seed_everything
 import sys
-import torchio as tio
+#import torchio as tio
 import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics

@@ -1,6 +1,6 @@
 import os
 import glob
-import cv2
+#import cv2
 import SimpleITK as sitk
 import pydicom as dicom
 from pydicom import dcmread
@@ -9,7 +9,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
 from monai.data import ITKReader, PILReader
-import torchio as tio
+#import torchio as tio
 from sklearn.preprocessing import KBinsDiscretizer
 
 sitk.ProcessObject_SetGlobalWarningDisplay(False)
@@ -133,33 +133,33 @@ def class_stratify(SubjectList, config):
 
 
 def get_RS_masks(slabel, CTPath, mask_imgs, RSfile, mask_names):
-     RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSfile)
-     roi_names = RS.get_roi_names()
-     strList = [x.lower() for x in roi_names]
-     for idx, roi in enumerate(mask_names):
-         if roi.lower() in strList:
-             roi_s = roi_names[strList.index(roi.lower())]
-             mask_img = RS.get_roi_mask_by_name(roi_s)
-             # mask_img = distance_transform_edt(mask_img)
-             mask_imgs = BitSet(mask_imgs, idx * np.ones_like(mask_imgs), mask_img)
-         else:
-             raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
-    
-     return mask_imgs
+     #RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSfile)
+     #roi_names = RS.get_roi_names()
+     #strList = [x.lower() for x in roi_names]
+     #for idx, roi in enumerate(mask_names):
+     #    if roi.lower() in strList:
+     #        roi_s = roi_names[strList.index(roi.lower())]
+     #        mask_img = RS.get_roi_mask_by_name(roi_s)
+     #        # mask_img = distance_transform_edt(mask_img)
+     #        mask_imgs = BitSet(mask_imgs, idx * np.ones_like(mask_imgs), mask_img)
+     #    else:
+     #        raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
+     #
+     #return mask_imgs
 
-    #RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSfile)
-    #roi_names = RS.get_roi_names()
-    #strList = [x.lower() for x in roi_names]
-    #for idx, roi in enumerate(mask_names):
-    #    if roi.lower() in strList:
-    #        roi_s = roi_names[strList.index(roi.lower())]
-    #        mask_img = RS.get_roi_mask_by_name(roi_s)
-    #        mask_img = distance_transform_edt(mask_img)
-    #        mask_imgs = mask_imgs + mask_img
-    #    else:
-    #        raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
+    RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSfile)
+    roi_names = RS.get_roi_names()
+    strList = [x.lower() for x in roi_names]
+    for idx, roi in enumerate(mask_names):
+        if roi.lower() in strList:
+            roi_s = roi_names[strList.index(roi.lower())]
+            mask_img = RS.get_roi_mask_by_name(roi_s)
+            mask_img = distance_transform_edt(mask_img)
+            mask_imgs = mask_imgs + mask_img
+        else:
+            raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
     
-    #return mask_imgs
+    return mask_imgs
 
 
 def BitSet(n, p, b):

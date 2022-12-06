@@ -2,6 +2,7 @@ import torch
 import torchvision
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
 import torchio as tio
@@ -25,24 +26,21 @@ from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
-s_module = config['DATA']['module']
-
-total_backbone = config['MODEL']['Prediction_type']
-if config['DATA']['Multichannel']:
-   module = 'Image'
-   total_backbone = total_backbone + '_' + module + '_' + config['MODEL']['Backbone']
-else:
-   for module in s_module:
-       total_backbone = total_backbone + '_' + module + '_' + config['MODEL']['Backbone']
+total_backbone = ""
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
-if 'Mask' in config['DATA'].keys():
-    for roi in config['DATA']['Mask']:
-         img_keys.append('Mask_' +  roi)
+img_keys.remove('Structs')
+if 'Structs' in config['DATA'].keys():
+    for roi in config['DATA']['Structs']:
+         img_keys.append('Struct_' +  roi)
+
+#img_keys = list(config['MODALITY'].keys())
+#if 'Structs' in config['DATA'].keys():
+#    img_keys.append('Mask')
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
-    ResampleToMatchd(list(set(config['MODALITY'].keys()).difference(set(['CT']))), key_dst='CT'),
+    ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
     monai.transforms.ScaleIntensityd(keys=img_keys),
     # monai.transforms.ResizeWithPadOrCropd(keys=img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
@@ -55,7 +53,7 @@ train_transform = torchvision.transforms.Compose([
 
 val_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
-    ResampleToMatchd(list(set(config['MODALITY'].keys()).difference(set(['CT']))), key_dst='CT'),
+    ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
     monai.transforms.ScaleIntensityd(img_keys),
     # monai.transforms.ResizeWithPadOrCropd(img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
@@ -67,29 +65,28 @@ session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'
 
 
 SubjectList = QuerySubjectList(config, session)
-## For testing
-# SubjectList = SubjectList.fillna(0)
-# SubjectList = SubjectList.sample(frac=1, random_state = 43)
-# SubjectList = SubjectList.head(30)
-##
-print(SubjectList)
 SynchronizeData(config, SubjectList)
-SubjectInfo = QuerySubjectInfo(config, SubjectList, session)
 
 module_dict = nn.ModuleDict()
 if config['DATA']['Multichannel']: ## Single-Model Multichannel learning
     if config['MODALITY'].keys():
         module_dict['Image'] = Classifier(config, 'Image')
-else: 
-    for key in config['MODALITY'].keys(): ## Multi-Model Single Channel learning
+else:
+    for key in config['MODALITY'].keys():# Multi-Model Single Channel learning
         module_dict[key] = Classifier(config, key)
 
-if 'Records' in config['DATA']['module']:
+if 'Records' in config.keys():
     module_dict['Records'] = Linear()
     SubjectList, clinical_cols = LoadClinicalData(config, SubjectList)
 
 else:
     clinical_cols = None
+
+## GeneratePath
+for key in config['MODALITY'].keys():
+    SubjectList[key+'_Path'] = ""
+QuerySubjectInfo(config, SubjectList, session)
+print(SubjectList)
 
 threshold = config['DATA']['threshold']
 ckpt_path = Path('./', total_backbone + '_ckpt')
@@ -107,12 +104,11 @@ base_fpr = np.linspace(0, 1, 39)
 cm = ConfusionMatrix(num_classes=2)
 prediction_labels_full_list = []
 
-for iter in range(1):
+for iter in range(0,1,1):
     # seed_everything(4200)
     dataloader = DataModule(SubjectList,
-                            SubjectInfo,
                             config=config,
-                            keys=config['DATA']['module'],
+                            keys=config['MODALITY'].keys(),
                             train_transform=train_transform,
                             val_transform=val_transform,
                             clinical_cols=clinical_cols,
@@ -123,7 +119,7 @@ for iter in range(1):
     full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
     # full_ckpt_path = Path('Classification_4_ckpt', 'Iter_' + str(iter) + '.ckpt')
     # full_ckpt_path = 'ckpt_test/Iter_' + str(iter) + '.ckpt'
-    model.load_state_dict(torch.load(full_ckpt_path, map_location={'cuda:2': 'cuda:3'})['state_dict'])
+    model.load_state_dict(torch.load(full_ckpt_path)['state_dict'])
     # model.load_state_dict(torch.load(full_ckpt_path, map_location='cpu')['state_dict'])
     model.eval()
     print('start testing...')
@@ -148,7 +144,6 @@ tn = bcm[0][0]
 tp = bcm[1][1]
 fp = bcm[0][1]
 fn = bcm[1][0]
-
 acc = bcm.diag().sum() / bcm.sum()
 sensitivity = tp / (tp + fn)
 precision = tp / (tp + fp)

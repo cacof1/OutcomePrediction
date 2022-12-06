@@ -5,7 +5,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
-import torchio as tio
+#import torchio as tio
 import monai
 torch.cuda.empty_cache()
 ## Module - Dataloaders
@@ -21,22 +21,18 @@ from Utils.GenerateSmoothLabel import get_smoothed_label_distribution, get_modul
 from Utils.PredictionReports import PredictionReports
 from pathlib import Path
 from Utils.DicomTools import img_train_transform, img_val_transform
-import torchio as tio
+#import torchio as tio
 from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
-total_backbone = ""
+total_backbone = config['MODEL']['Backbone']
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
-img_keys.remove('Structs')
-if 'Structs' in config['DATA'].keys():
-    for roi in config['DATA']['Structs']:
-         img_keys.append('Struct_' +  roi)
-
-#img_keys = list(config['MODALITY'].keys())
+#img_keys.remove('Structs')
 #if 'Structs' in config['DATA'].keys():
-#    img_keys.append('Mask')
+#    for roi in config['DATA']['Structs']:
+#         img_keys.append('Struct_' +  roi)
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
@@ -128,5 +124,6 @@ for iter in range(20):
         logger=logger,
         callbacks=callbacks
     )
+    #model = torch.compile(model)
     trainer.fit(model, dataloader)
     torch.save({'state_dict': model.state_dict(),}, Path('ckpt_test', 'Iter_' + str(iter) + '.ckpt'))
