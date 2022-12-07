@@ -48,6 +48,7 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'CT' in self.keys:
             CTPath = self.SubjectList.loc[i, 'CT_Path']
             data['CT'], meta['CT'] = LoadImage()(CTPath)
+            CTArray = ReadDicom(CTPath)
         ## Load Dose
         if 'Dose' in self.keys:
             DosePath = self.SubjectList.loc[i, 'Dose_Path']
@@ -115,7 +116,7 @@ class DataGenerator(torch.utils.data.Dataset):
         if self.inference:
             return data
         else:
-            label = torch.tensor(self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']])
+            label = torch.tensor(np.float(self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']]))
             if self.config['DATA']['threshold'] is not None:  label = torch.where(
                 label > self.config['DATA']['threshold'], 1, 0)
             label = torch.as_tensor(label, dtype=torch.float32)
