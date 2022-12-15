@@ -47,46 +47,71 @@ class DataGenerator(torch.utils.data.Dataset):
         ## Load CT
         if 'CT' in self.keys:
             CTPath = self.SubjectList.loc[i, 'CT_Path']
-            data['CT'], meta['CT'] = LoadImage()(CTPath)
-            CTArray = ReadDicom(CTPath)
+            if self.config['DATA']['Nifty']:
+                CTPath = Path(CTPath, 'ct.nii.gz')
+                data['CT'], meta['CT'] = LoadImage()(CTPath)
+            else:
+                data['CT'], meta['CT'] = LoadImage()(CTPath)
+                CTSession = ReadDicom(CTPath)
+                CTArray = sitk.GetArrayFromImage(CTSession)
+                if not(CTArray.shape == data['CT'].shape):
+                    CTArray = CTArray.transpose((2, 1, 0))
+                    CTArray = np.flip(CTArray, axis=2)
+                    mCT = MetaTensor(CTArray.copy(), meta=meta['CT'])
+                    data['CT'] = mCT
+
         ## Load Dose
         if 'Dose' in self.keys:
             DosePath = self.SubjectList.loc[i, 'Dose_Path']
-            data['Dose'], meta['Dose'] = LoadImage()(DosePath + "/1-1.dcm")
-            data['Dose'] = data['Dose'] * np.double(meta['Dose']['3004|000e'])
+            if self.config['DATA']['Nifty']:
+                DosePath = Path(DosePath, 'dose.nii.gz')
+            data['Dose'], meta['Dose'] = LoadImage()(DosePath)
+            if not self.config['DATA']['Nifty']:
+                data['Dose'] = data['Dose'] * np.double(meta['Dose']['3004|000e'])
 
         ## Load PET
         if 'PET' in self.keys:
             PETPath = self.SubjectList.loc[i, 'PET_Path']
-            data['PET'], meta['PET'] = LoadImage()(PETPath + "/1-1.dcm")
+            if self.config['DATA']['Nifty']:
+                PETPath = Path(PETPath, 'dose.nii.gz')
+            data['PET'], meta['PET'] = LoadImage()(PETPath)
 
         ## Load Mask
         if 'Structs' in self.keys:
-            RSPath = glob.glob(self.SubjectList.loc[i, 'Structs_Path'] + '/*dcm')
-            ## mask in multichannel
-            RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath[0])
-            #roi_names = RS.get_roi_names()
-            #for roi in self.config['DATA']['Structs']:
-            #   if roi in roi_names:
-            #       mask_img = RS.get_roi_mask_by_name(roi)
-            #       mask_img = distance_transform_edt(mask_img)
-            #   else:
-            #       message = "No ROI of name " + self.targetROI + " found in RTStruct"
-            #       raise ValueError(message)
-            #   mask_img = np.rot90(mask_img)
-            #   mask_img = np.flip(mask_img, 2)
-            #   mask_img = np.flip(mask_img, 0)
-            #   mask = MetaTensor(mask_img.copy(), meta = meta['CT'])
-            #   data['Struct_' + roi] = mask
+            RSPath = self.SubjectList.loc[i, 'Structs_Path']
+            if self.config['DATA']['Nifty']:
+                # for roi in self.config['DATA']['Structs']:
+                #     data['Struct_' + roi], meta['Struct_' + roi] = LoadImage()(Path(RSPath,roi+'.nii.gz'))
+                #     data['Structs' + roi] = distance_transform_edt(data['Structs' + roi])
 
-            ### masks images
-            masks_img = np.zeros_like(data['CT'])
-            masks_img = get_RS_masks(slabel, CTPath, masks_img, RSPath[0], self.config['DATA']['Structs'])
-            masks_img = np.rot90(masks_img)
-            masks_img = np.flip(masks_img, 0)
-            masks_img = MetaTensor(masks_img.copy(), meta = meta['CT'])
-            data['Structs'] = masks_img
+                masks_img = np.zeros_like(data['CT'])
+                masks_img = get_nii_masks(slabel, masks_img, RSPath, self.config['DATA']['Structs'])
+                masks_img = MetaTensor(masks_img.copy(), meta=meta['CT'])
+                data['Structs'] = masks_img
+            else:
+                ## mask in multichannel
+                RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath)
+                #roi_names = RS.get_roi_names()
+                #for roi in self.config['DATA']['Structs']:
+                #   if roi in roi_names:
+                #       mask_img = RS.get_roi_mask_by_name(roi)
+                #       mask_img = distance_transform_edt(mask_img)
+                #   else:
+                #       message = "No ROI of name " + self.targetROI + " found in RTStruct"
+                #       raise ValueError(message)
+                #   mask_img = np.rot90(mask_img)
+                #   mask_img = np.flip(mask_img, 2)
+                #   mask_img = np.flip(mask_img, 0)
+                #   mask = MetaTensor(mask_img.copy(), meta = meta['CT'])
+                #   data['Struct_' + roi] = mask
 
+                ### masks images
+                masks_img = np.zeros_like(data['CT'])
+                masks_img = get_RS_masks(slabel, CTPath, masks_img, RSPath, self.config['DATA']['Structs'])
+                masks_img = np.rot90(masks_img)
+                masks_img = np.flip(masks_img, 0)
+                masks_img = MetaTensor(masks_img.copy(), meta = meta['CT'])
+                data['Structs'] = masks_img
         else:
             data['Structs'] = np.ones_like(data['CT'])  ## No ROI target defined
 
@@ -126,7 +151,7 @@ class DataGenerator(torch.utils.data.Dataset):
 ### DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, SubjectList, config=None, train_transform=None, val_transform=None, train_size=0.7,
-                 val_size=0.2, test_size=0.1, num_workers=10, **kwargs):
+                 val_size=0.2, test_size=0.1, num_workers=0, **kwargs):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = num_workers
@@ -228,15 +253,27 @@ def get_subject_info(config, session, subjectid):
 
 
 def QuerySubjectInfo(config, SubjectList, session):
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_url = {executor.submit(get_subject_info, config, session, subjectid) for subjectid in
-                         SubjectList['subjectid']}
-        executor.shutdown(wait=True)
-    for future in concurrent.futures.as_completed(future_to_url):
-        subjectdata = future.result()
-        subjectid = subjectdata["xnat:Subject"][0]["@ID"]
-        for key in config['MODALITY'].keys():
-            SubjectList.loc[SubjectList.subjectid == subjectid,key + '_Path'] = GeneratePath(subjectdata,Modality=key, config=config)
+    if config['DATA']['Nifty']:
+        for i in range(len(SubjectList)):
+            subject_label = SubjectList.loc[i,'subject_label']
+            for key in config['MODALITY'].keys():
+                SubjectList.loc[i, key + '_Path'] = Path(config['DATA']['DataFolder'], subject_label)
+    else:
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_url = {executor.submit(get_subject_info, config, session, subjectid) for subjectid in
+                             SubjectList['subjectid']}
+            executor.shutdown(wait=True)
+        for future in concurrent.futures.as_completed(future_to_url):
+            subjectdata = future.result()
+            subjectid = subjectdata["xnat:Subject"][0]["@ID"]
+            for key in config['MODALITY'].keys():
+                path = GeneratePath(subjectdata, Modality=key, config=config)
+                if key == 'CT':
+                    SubjectList.loc[SubjectList.subjectid == subjectid, key + '_Path'] = path
+                else:
+                    spath = glob.glob(path + '/*dcm')
+                    SubjectList.loc[SubjectList.subjectid == subjectid, key + '_Path'] = spath[0]
+
 def GeneratePath(subjectdata, Modality, config):
     subject = subjectdata['xnat:Subject'][0]
     subject_label = subject['@label']
