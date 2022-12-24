@@ -66,8 +66,9 @@ class DataGenerator(torch.utils.data.Dataset):
             if self.config['DATA']['Nifty']:
                 DosePath = Path(DosePath, 'dose.nii.gz')
             data['Dose'], meta['Dose'] = LoadImage()(DosePath)
+            data['Dose'] = data['Dose']/67
             if not self.config['DATA']['Nifty']:
-                data['Dose'] = data['Dose'] * np.double(meta['Dose']['3004|000e'])
+                data['Dose'] = data['Dose'] * np.double(meta['Dose']['3004|000e'])/67
 
         ## Load PET
         if 'PET' in self.keys:
@@ -80,14 +81,14 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'Structs' in self.keys:
             RSPath = self.SubjectList.loc[i, 'Structs_Path']
             if self.config['DATA']['Nifty']:
-                # for roi in self.config['DATA']['Structs']:
-                #     data['Struct_' + roi], meta['Struct_' + roi] = LoadImage()(Path(RSPath,roi+'.nii.gz'))
-                #     data['Structs' + roi] = distance_transform_edt(data['Structs' + roi])
-
-                masks_img = np.zeros_like(data['CT'])
-                masks_img = get_nii_masks(slabel, masks_img, RSPath, self.config['DATA']['Structs'])
-                masks_img = MetaTensor(masks_img.copy(), meta=meta['CT'])
-                data['Structs'] = masks_img
+                for roi in self.config['DATA']['Structs']:
+                    data['Struct_' + roi], meta['Struct_' + roi] = LoadImage()(Path(RSPath,roi+'.nii.gz'))
+                    dt = distance_transform_edt(data['Struct_' + roi])
+                    data['Struct_' + roi] = MetaTensor(dt, meta = meta['CT'])
+                #masks_img = np.zeros_like(data['CT'])
+                #masks_img = get_nii_masks(slabel, masks_img, RSPath, self.config['DATA']['Structs'])
+                #masks_img = MetaTensor(masks_img.copy(), meta=meta['CT'])
+                #data['Structs'] = masks_img
             else:
                 ## mask in multichannel
                 RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath)
@@ -151,13 +152,13 @@ class DataGenerator(torch.utils.data.Dataset):
 ### DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, SubjectList, config=None, train_transform=None, val_transform=None, train_size=0.7,
-                 val_size=0.2, test_size=0.1, num_workers=0, **kwargs):
+                 val_size=0.2, test_size=0.1, num_workers=10, **kwargs):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = num_workers
         data_trans = class_stratify(SubjectList, config)
         ## Split Test with fixed seed
-        train_val_list, test_list = train_test_split(SubjectList, test_size=0.15, random_state=500, stratify=data_trans)
+        train_val_list, test_list = train_test_split(SubjectList, test_size=0.15, random_state=42, stratify=data_trans)
 
         data_trans = class_stratify(train_val_list, config)
         ## Split train-val with random seed

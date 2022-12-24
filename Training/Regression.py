@@ -26,18 +26,18 @@ from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
-total_backbone = config['MODEL']['Backbone']
+total_backbone = config['MODEL']['Backbone'] + '_DoseScale'
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
-#img_keys.remove('Structs')
-#if 'Structs' in config['DATA'].keys():
-#    for roi in config['DATA']['Structs']:
-#         img_keys.append('Struct_' +  roi)
+img_keys.remove('Structs')
+if 'Structs' in config['DATA'].keys():
+    for roi in config['DATA']['Structs']:
+         img_keys.append('Struct_' +  roi)
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
-    ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
-    monai.transforms.ScaleIntensityd(keys=img_keys),
+    #ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
+    monai.transforms.ScaleIntensityd(keys=list(set(img_keys).difference(set(['Dose'])))),
     # monai.transforms.ResizeWithPadOrCropd(keys=img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.RandAffined(keys=img_keys),
@@ -49,8 +49,8 @@ train_transform = torchvision.transforms.Compose([
 
 val_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
-    ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
-    monai.transforms.ScaleIntensityd(img_keys),
+    #ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
+    monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['Dose'])))),
     # monai.transforms.ResizeWithPadOrCropd(img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
 ])
@@ -62,6 +62,7 @@ session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'
 
 SubjectList = QuerySubjectList(config, session)
 SynchronizeData(config, SubjectList)
+SubjectList.dropna(subset=['xnat_subjectdata_field_map_survival_months'], inplace=True)
 
 module_dict = nn.ModuleDict()
 if config['DATA']['Multichannel']: ## Single-Model Multichannel learning
@@ -86,7 +87,7 @@ print(SubjectList)
 
 threshold = config['DATA']['threshold']
 ckpt_path = Path('./', total_backbone + '_ckpt')
-for iter in range(20):
+for iter in range(1,5,1):
     seed_everything(np.random.randint(1, 10000))
     dataloader = DataModule(SubjectList,
                             config=config,
