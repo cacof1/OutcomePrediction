@@ -7,11 +7,11 @@ from pydicom import dcmread
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.path import Path
-from monai.data import ITKReader, PILReader
+#from monai.data import ITKReader, PILReader
 #import torchio as tio
+from pathlib import Path
 from sklearn.preprocessing import KBinsDiscretizer
-
+from monai.transforms import LoadImage
 sitk.ProcessObject_SetGlobalWarningDisplay(False)
 from rt_utils import RTStructBuilder
 from scipy.ndimage import *
@@ -162,26 +162,27 @@ def get_RS_masks(slabel, CTPath, mask_imgs, RSfile, mask_names):
     return mask_imgs
 
 def get_nii_masks(slabel, mask_imgs, MPath, mask_names):
-    # for idx, roi in enumerate(mask_names):
-    #     try:
-    #         data, meta = LoadImage()(Path(MPath,roi+'.nii.gz'))
-    #     except:
-    #         raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
-    #     mask_imgs = BitSet(mask_imgs, idx * np.ones_like(mask_imgs), data)
-    # return mask_imgs
-    for roi in mask_names:
+    for idx, roi in enumerate(mask_names):
         try:
             data, meta = LoadImage()(Path(MPath, roi + '.nii.gz'))
         except:
             raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
-        mask_img = distance_transform_edt(data)
-        mask_imgs = mask_imgs + mask_img
+        mask_imgs = BitSet(mask_imgs, idx * np.ones_like(mask_imgs), data)
     return mask_imgs
+    #for roi in mask_names:
+    #    try:
+    #        data, meta = LoadImage()(Path(MPath, roi + '.nii.gz'))
+    #    except:
+    #        raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
+    #    mask_img = distance_transform_edt(data)
+    #    mask_imgs = mask_imgs + mask_img
+    #return mask_imgs
 
 
 def BitSet(n, p, b):
     p = p.astype(int)
     n = n.astype(int)
+    b = b.astype(int)
     mask = 1 << p
     bm = b << p
     return (n & ~mask) | bm

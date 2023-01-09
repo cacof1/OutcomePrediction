@@ -26,13 +26,13 @@ from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
-total_backbone = config['MODEL']['Backbone'] + '_DoseScale'
+total_backbone = config['MODEL']['Backbone'] + '_bitset5_seed_42'
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
-img_keys.remove('Structs')
-if 'Structs' in config['DATA'].keys():
-    for roi in config['DATA']['Structs']:
-         img_keys.append('Struct_' +  roi)
+#img_keys.remove('Structs')
+#if 'Structs' in config['DATA'].keys():
+#    for roi in config['DATA']['Structs']:
+#         img_keys.append('Struct_' +  roi)
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
@@ -99,7 +99,7 @@ base_fpr = np.linspace(0, 1, 39)
 cm = ConfusionMatrix(num_classes=2)
 prediction_labels_full_list = []
 
-for iter in range(0,1,1):
+for iter in range(0, 1, 1):
     # seed_everything(4200)
     dataloader = DataModule(SubjectList,
                             config=config,
@@ -112,8 +112,8 @@ for iter in range(0,1,1):
 
     model = MixModel(module_dict, config)
     #full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
-    # full_ckpt_path = Path('Classification_4_ckpt', 'Iter_' + str(iter) + '.ckpt')
-    full_ckpt_path = 'ckpt_test/Iter_' + str(iter) + '.ckpt'
+    #full_ckpt_path = Path('Classification_4_ckpt', 'Iter_' + str(iter) + '.ckpt')
+    full_ckpt_path = 'ckpt_test_bitset7_r42/Iter_' + str(iter) + '.ckpt'
     model.load_state_dict(torch.load(full_ckpt_path)['state_dict'])
     # model.load_state_dict(torch.load(full_ckpt_path, map_location='cpu')['state_dict'])
     model.eval()
@@ -129,24 +129,27 @@ for iter in range(0,1,1):
 
         validation_labels_full = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
         prediction_labels_full = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
+        roc_i = auroc(prediction_labels_full, validation_labels_full.int())
+        print('roc_'+str(iter), roc_i)
         prediction_labels_full_list.append(prediction_labels_full.tolist())
 
-    prediction_labels = torch.tensor(prediction_labels_full_list).mean(dim=0)
-    validation_labels = validation_labels_full
-    roc = auroc(prediction_labels, validation_labels.int())
-    bcm = cm(prediction_labels.round(), validation_labels.int())
-    tn = bcm[0][0]
-    tp = bcm[1][1]
-    fp = bcm[0][1]
-    fn = bcm[1][0]
-    acc = bcm.diag().sum() / bcm.sum()
-    sensitivity = tp / (tp + fn)
-    precision = tp / (tp + fp)
-    spec = tn / (tn + fp)
+prediction_labels = torch.tensor(prediction_labels_full_list).mean(dim=0)
+validation_labels = validation_labels_full
+roc = auroc(prediction_labels, validation_labels.int())
+bcm = cm(prediction_labels.round(), validation_labels.int())
+tn = bcm[0][0]
+tp = bcm[1][1]
+fp = bcm[0][1]
+fn = bcm[1][0]
+acc = bcm.diag().sum() / bcm.sum()
+sensitivity = tp / (tp + fn)
+precision = tp / (tp + fp)
+spec = tn / (tn + fp)
 
-    print('avg_roc', str(roc))
-    print('avg_specificity', str(spec))
-    print('avg_sensitivity', str(sensitivity))
-    print('avg_accuracy', str(acc))
-    print('avg_precision', str(precision))
-    print('finish test')
+print('avg_roc', str(roc))
+print('avg_specificity', str(spec))
+print('avg_sensitivity', str(sensitivity))
+print('avg_accuracy', str(acc))
+print('avg_precision', str(precision))
+print('finish test')
+

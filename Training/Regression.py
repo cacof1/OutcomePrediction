@@ -26,13 +26,14 @@ from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
-total_backbone = config['MODEL']['Backbone'] + '_DoseScale'
+total_backbone = config['MODEL']['Backbone'] + '_bitset7_seed_42'
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
-img_keys.remove('Structs')
-if 'Structs' in config['DATA'].keys():
-    for roi in config['DATA']['Structs']:
-         img_keys.append('Struct_' +  roi)
+## Multichannel masks
+#img_keys.remove('Structs')
+#if 'Structs' in config['DATA'].keys():
+#    for roi in config['DATA']['Structs']:
+#         img_keys.append('Struct_' +  roi)
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
@@ -87,8 +88,9 @@ print(SubjectList)
 
 threshold = config['DATA']['threshold']
 ckpt_path = Path('./', total_backbone + '_ckpt')
-for iter in range(1,5,1):
-    seed_everything(np.random.randint(1, 10000))
+rd = [2300, 5700, 998, 24, 7865, 9273]
+for iter in range(0,5,1):
+    seed_everything(rd[iter])
     dataloader = DataModule(SubjectList,
                             config=config,
                             keys=config['MODALITY'].keys(),
@@ -127,4 +129,4 @@ for iter in range(1,5,1):
     )
     #model = torch.compile(model)
     trainer.fit(model, dataloader)
-    torch.save({'state_dict': model.state_dict(),}, Path('ckpt_test', 'Iter_' + str(iter) + '.ckpt'))
+    torch.save({'state_dict': model.state_dict(),}, Path('ckpt_test_bitset7_r42', 'Iter_' + str(iter) + '.ckpt'))

@@ -81,14 +81,14 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'Structs' in self.keys:
             RSPath = self.SubjectList.loc[i, 'Structs_Path']
             if self.config['DATA']['Nifty']:
-                for roi in self.config['DATA']['Structs']:
-                    data['Struct_' + roi], meta['Struct_' + roi] = LoadImage()(Path(RSPath,roi+'.nii.gz'))
-                    dt = distance_transform_edt(data['Struct_' + roi])
-                    data['Struct_' + roi] = MetaTensor(dt, meta = meta['CT'])
-                #masks_img = np.zeros_like(data['CT'])
-                #masks_img = get_nii_masks(slabel, masks_img, RSPath, self.config['DATA']['Structs'])
-                #masks_img = MetaTensor(masks_img.copy(), meta=meta['CT'])
-                #data['Structs'] = masks_img
+                #for roi in self.config['DATA']['Structs']:
+                #    data['Struct_' + roi], meta['Struct_' + roi] = LoadImage()(Path(RSPath,roi+'.nii.gz'))
+                #    dt = distance_transform_edt(data['Struct_' + roi])
+                #    data['Struct_' + roi] = MetaTensor(dt, meta = meta['CT'])
+                masks_img = np.zeros_like(data['CT'])
+                masks_img = get_nii_masks(slabel, masks_img, RSPath, self.config['DATA']['Structs'])
+                masks_img = MetaTensor(masks_img.copy(), meta=meta['CT'])
+                data['Structs'] = masks_img
             else:
                 ## mask in multichannel
                 RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath)
