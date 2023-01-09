@@ -118,14 +118,6 @@ class DataGenerator(torch.utils.data.Dataset):
 
         ## Apply transforms on all
         if self.transform: data = self.transform(data)
-
-        # mask_imgs = np.zeros_like(CTArray)
-        # for key in data.keys():
-        #     if 'Mask' in key:
-        #         mask_imgs = mask_imgs + data[key]
-
-        #for key in data.keys():
-        #    data[key] = get_masked_img_voxel(data[key], data['Mask'])
         # Decide between multi-branch single-channel/multi-channel single-branch
         if self.config['DATA']['Multichannel']:
             old_keys = list(data.keys())
@@ -133,9 +125,6 @@ class DataGenerator(torch.utils.data.Dataset):
             for key in old_keys: data.pop(key)
         else:
             data.pop('Structs')  ## No need for mask in single-channel multi-branch
-
-        #data = ResizeWithPadOrCropd(keys=data.keys(), spatial_size=self.config['DATA']['dim'])(data)
-
         ## Add clinical record at the end
         if 'Records' in self.config.keys(): data['Records'] = torch.tensor(self.SubjectList.loc[i, self.clinical_cols],
                                                                   dtype=torch.float32)
