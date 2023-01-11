@@ -35,7 +35,7 @@ class Classifier(LightningModule):
             nn.Flatten(),
         )
         self.model.apply(self.weights_init)
-        self.accuracy = torchmetrics.AUC(reorder=True)
+        self.accuracy = torchmetrics.AUROC(task="binary")
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, x):

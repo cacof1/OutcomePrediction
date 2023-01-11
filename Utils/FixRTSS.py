@@ -27,10 +27,9 @@ def FixRTSS(rtss_file, CT_path):
                 contour_coord = contour_coord.reshape(int(contour.NumberOfContourPoints), 3)
                 filenames = glob.glob(CT_path + '/*.dcm')
                 img_path, img = FindMatchedImage(filenames, contour_coord)
-                img_id = os.path.basename(img_path).split('_')[-1].split('.dcm')[0]
                 CIS_ds = Dataset()
                 CIS_ds.add_new([0x0008, 0x1150], 'UI', 'CT Image Storage')
-                CIS_ds.add_new([0x0008, 0x1155], 'UI', img_id)
+                CIS_ds.add_new([0x0008, 0x1155], 'UI', img.SOPInstanceUID)
                 ds.ROIContourSequence[n].ContourSequence[i].add_new([0x3006, 0x0016], 'SQ', Sequence([CIS_ds]))
         except:
             del ds.ROIContourSequence[n]

@@ -10,7 +10,7 @@ from torchvision import transforms
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer,seed_everything
 import sys
-import torchio as tio
+#import torchio as tio
 import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
@@ -20,7 +20,7 @@ class Linear(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(56, 42),
+            nn.Linear(51, 42),
             nn.Dropout(0.3),
             nn.LayerNorm(42),
             nn.ReLU(),

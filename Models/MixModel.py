@@ -12,10 +12,10 @@ class MixModel(LightningModule):
         super().__init__()
         self.module_dict = module_dict
         self.config      = config
-        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
+        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(1.21))
         self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         self.classifier  = nn.Sequential(
-            nn.Linear(248, 120),
+            nn.Linear(198, 120),
             nn.Dropout(0.3),
             nn.Linear(120, 40),
             nn.Dropout(0.3),
@@ -33,49 +33,49 @@ class MixModel(LightningModule):
         out = {}
         data_dict, label = batch
         prediction = self.forward(data_dict)
-        loss = self.loss_fcn(prediction, label)
-        #self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        #MAE = torch.abs(prediction.flatten(0) - label)
-        #out['MAE'] = MAE.detach()
-        #out = copy.deepcopy(data_dict)
+        loss = self.loss_fcn(prediction.squeeze(dim=1), label)
+        self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        MAE = torch.abs(prediction.flatten(0) - label)
+        out['MAE'] = MAE.detach()
+        out = copy.deepcopy(data_dict)
         out['prediction'] = prediction.detach()
         out['label']      = label        
         out['loss'] = loss
-        return loss
+        return out
 
-    #def training_epoch_end(self, step_outputs):
-    #    labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
-    #    prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
-    #    self.logger.report_epoch(prediction, labels, step_outputs,self.current_epoch, 'train_epoch_')
+    def training_epoch_end(self, step_outputs):
+        labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
+        prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
+        self.logger.report_epoch(prediction, labels, step_outputs,self.current_epoch, 'train_epoch_')
                                  
     def validation_step(self, batch, batch_idx):
         out = {}
         data_dict, label = batch
         prediction = self.forward(data_dict)
-        loss = self.loss_fcn(prediction, label)
-        #self.log("loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        #MAE = torch.abs(prediction.flatten(0) - label)
-        #out['MAE'] = MAE
-        #out = copy.deepcopy(data_dict)
+        loss = self.loss_fcn(prediction.squeeze(dim=1), label)
+        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        MAE = torch.abs(prediction.flatten(0) - label)
+        out['MAE'] = MAE
+        out = copy.deepcopy(data_dict)
         out['prediction'] = prediction
         out['label'] = label
         out['loss'] = loss        
-        return loss
+        return out
 
-    #def validation_epoch_end(self, step_outputs):
-    #    labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
-    #    prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
-    #    self.logger.report_epoch(prediction.squeeze(), labels, step_outputs, self.current_epoch,'val_epoch_')
+    def validation_epoch_end(self, step_outputs):
+        labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
+        prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
+        self.logger.report_epoch(prediction.squeeze(), labels, step_outputs, self.current_epoch,'val_epoch_')
 
     def test_step(self, batch, batch_idx):
         data_dict, label = batch
         prediction = self.forward(data_dict)
         loss = self.loss_fcn(prediction.squeeze(dim=1), label)
         out = {}
-        #MAE = torch.abs(prediction.flatten(0) - label)
-        #out['MAE'] = MAE
+        MAE = torch.abs(prediction.flatten(0) - label)
+        out['MAE'] = MAE
         out = copy.deepcopy(data_dict)
-        out['prediction'] = prediction
+        out['prediction'] = prediction.squeeze(dim=1)
         out['label'] = label
         out['loss'] = loss                
         return out
