@@ -66,6 +66,7 @@ class DataGenerator(torch.utils.data.Dataset):
             if self.config['DATA']['Nifty']:
                 DosePath = Path(DosePath, 'dose.nii.gz')
             data['Dose'], meta['Dose'] = LoadImage()(DosePath)
+            ## 67 is the average prescript dose, (60+74)/2
             data['Dose'] = data['Dose']/67
             if not self.config['DATA']['Nifty']:
                 data['Dose'] = data['Dose'] * np.double(meta['Dose']['3004|000e'])/67
@@ -81,10 +82,6 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'Structs' in self.keys:
             RSPath = self.SubjectList.loc[i, 'Structs_Path']
             if self.config['DATA']['Nifty']:
-                #for roi in self.config['DATA']['Structs']:
-                #    data['Struct_' + roi], meta['Struct_' + roi] = LoadImage()(Path(RSPath,roi+'.nii.gz'))
-                #    dt = distance_transform_edt(data['Struct_' + roi])
-                #    data['Struct_' + roi] = MetaTensor(dt, meta = meta['CT'])
                 masks_img = np.zeros_like(data['CT'])
                 masks_img = get_nii_masks(slabel, masks_img, RSPath, self.config['DATA']['Structs'])
                 masks_img = MetaTensor(masks_img.copy(), meta=meta['CT'])
@@ -92,20 +89,6 @@ class DataGenerator(torch.utils.data.Dataset):
             else:
                 ## mask in multichannel
                 RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSPath)
-                #roi_names = RS.get_roi_names()
-                #for roi in self.config['DATA']['Structs']:
-                #   if roi in roi_names:
-                #       mask_img = RS.get_roi_mask_by_name(roi)
-                #       mask_img = distance_transform_edt(mask_img)
-                #   else:
-                #       message = "No ROI of name " + self.targetROI + " found in RTStruct"
-                #       raise ValueError(message)
-                #   mask_img = np.rot90(mask_img)
-                #   mask_img = np.flip(mask_img, 2)
-                #   mask_img = np.flip(mask_img, 0)
-                #   mask = MetaTensor(mask_img.copy(), meta = meta['CT'])
-                #   data['Struct_' + roi] = mask
-
                 ### masks images
                 masks_img = np.zeros_like(data['CT'])
                 masks_img = get_RS_masks(slabel, CTPath, masks_img, RSPath, self.config['DATA']['Structs'])
