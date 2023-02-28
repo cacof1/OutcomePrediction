@@ -5,7 +5,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
-#import torchio as tio
 import monai
 torch.cuda.empty_cache()
 ## Module - Dataloaders
@@ -20,13 +19,10 @@ import toml
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution, get_module
 from Utils.PredictionReports import PredictionReports
 from pathlib import Path
-from Utils.DicomTools import img_train_transform, img_val_transform
-#import torchio as tio
 from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
-total_backbone = config['MODEL']['Backbone'] + '_bitset7_seed_42'
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
 ## Multichannel masks
@@ -64,6 +60,7 @@ session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'
 SubjectList = QuerySubjectList(config, session)
 SynchronizeData(config, SubjectList)
 SubjectList.dropna(subset=['xnat_subjectdata_field_map_survival_months'], inplace=True)
+# SubjectList.dropna(subset=['xnat_subjectdata_field_map_overall_stage'], inplace=True)
 
 module_dict = nn.ModuleDict()
 if config['DATA']['Multichannel']: ## Single-Model Multichannel learning
@@ -74,9 +71,8 @@ else:
         module_dict[key] = Classifier(config, key)
 
 if 'Records' in config.keys():
-    module_dict['Records'] = Linear()
     SubjectList, clinical_cols = LoadClinicalData(config, SubjectList)
-
+    module_dict['Records'] = Linear(in_feat=len(clinical_cols), out_feat=42)
 else:
     clinical_cols = None
 
@@ -87,32 +83,35 @@ QuerySubjectInfo(config, SubjectList, session)
 print(SubjectList)
 
 threshold = config['DATA']['threshold']
-ckpt_path = Path('./', total_backbone + '_ckpt')
-rd = [2300, 5700, 998, 24, 7865, 9273]
-for iter in range(0,5,1):
+# ckpt_path = Path('./lightning_logs', total_backbone, 'ckpt')
+rd = [53414, 88536, 89901, 62594, 13787, 21781, 18215, 4182, 10695, 61645, 93967, 35446, 41063, 98435, 94558, 67665,
+      98831, 76684, 33670, 66239, 24417, 29551, 68018, 52785, 41160, 60264, 75053, 58354, 55180, 58358, 51182, 8260]
+
+for iter in range(0, 32, 1):
     seed_everything(rd[iter])
+    # seed_everything(42, workers=True)
     dataloader = DataModule(SubjectList,
                             config=config,
                             keys=config['MODALITY'].keys(),
                             train_transform=train_transform,
                             val_transform=val_transform,
                             clinical_cols=clinical_cols,
-                            inference=False,
-                            session = session)
+                            inference=False)
 
     model = MixModel(module_dict, config)
     model.apply(model.weights_reset)
     #full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
     #model.load_state_dict(torch.load(full_ckpt_path)['state_dict'])
 
-    filename = total_backbone
+    filename = 'random_seed_75'
     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
     logger.log_text()
+    logger._version = iter
     callbacks = [
-        ModelCheckpoint(dirpath=ckpt_path,
+        ModelCheckpoint(dirpath=Path(logger.log_dir, 'ckpt'),
                         monitor='val_loss',
                         filename='Iter_' + str(iter),
-                        save_top_k=1,
+                        save_top_k=5,
                         mode='min'),
         # EarlyStopping(monitor='val_loss',
         #               check_finite=True),
@@ -125,8 +124,16 @@ for iter in range(0,5,1):
         strategy=DDPStrategy(find_unused_parameters=True),
         max_epochs=30,
         logger=logger,
-        callbacks=callbacks
+        callbacks=callbacks,
     )
     #model = torch.compile(model)
     trainer.fit(model, dataloader)
-    torch.save({'state_dict': model.state_dict(),}, Path('ckpt_test_bitset7_r42', 'Iter_' + str(iter) + '.ckpt'))
+    torch.save({'state_dict': model.state_dict(),}, Path(logger.log_dir, 'Iter_' + str(iter) + '.ckpt'))
+    
+with open(logger.root_dir + "/Config.ini", "w+") as toml_file:
+    toml.dump(config, toml_file)
+    toml_file.write("Train transform:\n")
+    toml_file.write(str(train_transform))
+    toml_file.write("Val/Test transform:\n")
+    toml_file.write(str(val_transform))
+

@@ -102,31 +102,31 @@ def get_masked_img_voxel(ImageVoxel, mask_voxel):
     return img_masked
 
 
-def img_train_transform(img_dim):
-    transform = tio.Compose([
-        tio.transforms.ZNormalization(),
-        tio.RandomAffine(),
-        tio.RandomFlip(),
-        tio.RandomNoise(),
-        tio.RandomMotion(),
-        tio.transforms.Resize(img_dim),
-        tio.RescaleIntensity(out_min_max=(0, 1))
-    ])
-    return transform
-
-
-def img_val_transform(img_dim):
-    transform = tio.Compose([
-        tio.transforms.ZNormalization(),
-        tio.transforms.Resize(img_dim),
-        tio.RescaleIntensity(out_min_max=(0, 1))
-    ])
-    return transform
+# def img_train_transform(img_dim):
+#     transform = tio.Compose([
+#         tio.transforms.ZNormalization(),
+#         tio.RandomAffine(),
+#         tio.RandomFlip(),
+#         tio.RandomNoise(),
+#         tio.RandomMotion(),
+#         tio.transforms.Resize(img_dim),
+#         tio.RescaleIntensity(out_min_max=(0, 1))
+#     ])
+#     return transform
+#
+#
+# def img_val_transform(img_dim):
+#     transform = tio.Compose([
+#         tio.transforms.ZNormalization(),
+#         tio.transforms.Resize(img_dim),
+#         tio.RescaleIntensity(out_min_max=(0, 1))
+#     ])
+#     return transform
 
 
 def class_stratify(SubjectList, config):
     ptarget = SubjectList['xnat_subjectdata_field_map_' + config['DATA']['target']]
-    kbins = KBinsDiscretizer(n_bins=5, encode='ordinal', strategy='uniform')
+    kbins = KBinsDiscretizer(n_bins=15, encode='ordinal', strategy='uniform')
     ptarget = np.array(ptarget).reshape((len(ptarget), 1))
     data_trans = kbins.fit_transform(ptarget)
     return data_trans
@@ -169,14 +169,14 @@ def get_nii_masks(slabel, mask_imgs, MPath, mask_names):
             raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
         mask_imgs = BitSet(mask_imgs, idx * np.ones_like(mask_imgs), data)
     return mask_imgs
-    #for roi in mask_names:
+    # for roi in mask_names:
     #    try:
     #        data, meta = LoadImage()(Path(MPath, roi + '.nii.gz'))
     #    except:
     #        raise ValueError(slabel + " has no ROI of name " + roi + " found in RTStruct")
     #    mask_img = distance_transform_edt(data)
     #    mask_imgs = mask_imgs + mask_img
-    #return mask_imgs
+    # return mask_imgs
 
 
 def BitSet(n, p, b):

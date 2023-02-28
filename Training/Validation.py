@@ -5,8 +5,9 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
-#import torchio as tio
+# import torchio as tio
 import monai
+
 torch.cuda.empty_cache()
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import *
@@ -20,23 +21,21 @@ import toml
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution, get_module
 from Utils.PredictionReports import PredictionReports
 from pathlib import Path
-from Utils.DicomTools import img_train_transform, img_val_transform
-#import torchio as tio
+# import torchio as tio
 from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
-total_backbone = config['MODEL']['Backbone'] + '_bitset5_seed_42'
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
-#img_keys.remove('Structs')
-#if 'Structs' in config['DATA'].keys():
+# img_keys.remove('Structs')
+# if 'Structs' in config['DATA'].keys():
 #    for roi in config['DATA']['Structs']:
 #         img_keys.append('Struct_' +  roi)
 
 train_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
-    #ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
+    # ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
     monai.transforms.ScaleIntensityd(keys=img_keys),
     # monai.transforms.ResizeWithPadOrCropd(keys=img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
@@ -49,42 +48,41 @@ train_transform = torchvision.transforms.Compose([
 
 val_transform = torchvision.transforms.Compose([
     EnsureChannelFirstd(keys=img_keys),
-    #ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
+    # ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
     monai.transforms.ScaleIntensityd(img_keys),
     # monai.transforms.ResizeWithPadOrCropd(img_keys, spatial_size=config['DATA']['dim']),
     monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
 ])
 
-
 ## First Connect to XNAT
-session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'],password=config['SERVER']['Password'])
-
+session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'],
+                       password=config['SERVER']['Password'])
 
 SubjectList = QuerySubjectList(config, session)
 SynchronizeData(config, SubjectList)
+SubjectList.dropna(subset=['xnat_subjectdata_field_map_survival_months'], inplace=True)
 
 module_dict = nn.ModuleDict()
-if config['DATA']['Multichannel']: ## Single-Model Multichannel learning
+if config['DATA']['Multichannel']:  ## Single-Model Multichannel learning
     if config['MODALITY'].keys():
         module_dict['Image'] = Classifier(config, 'Image')
 else:
-    for key in config['MODALITY'].keys():# Multi-Model Single Channel learning
+    for key in config['MODALITY'].keys():  # Multi-Model Single Channel learning
         module_dict[key] = Classifier(config, key)
 
 if 'Records' in config.keys():
-    module_dict['Records'] = Linear()
     SubjectList, clinical_cols = LoadClinicalData(config, SubjectList)
-
+    module_dict['Records'] = Linear(in_feat=len(clinical_cols), out_feat=42)
 else:
     clinical_cols = None
 
+print('clinical_cols:', len(clinical_cols))
 ## GeneratePath
 for key in config['MODALITY'].keys():
-    SubjectList[key+'_Path'] = ""
+    SubjectList[key + '_Path'] = ""
 QuerySubjectInfo(config, SubjectList, session)
 
 threshold = config['DATA']['threshold']
-ckpt_path = Path('./', total_backbone + '_ckpt')
 roc_list = []
 sp_list = []
 sensi_list = []
@@ -98,8 +96,9 @@ fig = plt.figure()
 base_fpr = np.linspace(0, 1, 39)
 cm = ConfusionMatrix(num_classes=2)
 prediction_labels_full_list = []
-
-for iter in range(0, 1, 1):
+bidx = [21, 25, 0, 4, 6]
+for it in range(0, 5, 1):
+    iter = bidx[it]
     # seed_everything(4200)
     dataloader = DataModule(SubjectList,
                             config=config,
@@ -108,12 +107,13 @@ for iter in range(0, 1, 1):
                             val_transform=val_transform,
                             clinical_cols=clinical_cols,
                             inference=False,
-                            session = session)
+                            train_size=0.85)
 
     model = MixModel(module_dict, config)
-    #full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
-    #full_ckpt_path = Path('Classification_4_ckpt', 'Iter_' + str(iter) + '.ckpt')
-    full_ckpt_path = 'ckpt_test_bitset7_r42/Iter_' + str(iter) + '.ckpt'
+    filename = 'lightning_logs/random_seed_75_Seg/version_' + str(iter)
+    full_ckpt_path = Path(filename, 'Iter_' + str(iter) + '.ckpt')
+    # full_ckpt_path = Path(ckpt_path, 'ckpt', 'Iter_' + str(iter) + '.ckpt')
+    # full_ckpt_path = 'Iter_' + str(iter) + '.ckpt'
     model.load_state_dict(torch.load(full_ckpt_path)['state_dict'])
     # model.load_state_dict(torch.load(full_ckpt_path, map_location='cpu')['state_dict'])
     model.eval()
@@ -130,7 +130,7 @@ for iter in range(0, 1, 1):
         validation_labels_full = torch.cat([out['label'] for i, out in enumerate(outs)], dim=0)
         prediction_labels_full = torch.cat([out['prediction'] for i, out in enumerate(outs)], dim=0)
         roc_i = auroc(prediction_labels_full, validation_labels_full.int())
-        print('roc_'+str(iter), roc_i)
+        print('roc_' + str(iter), roc_i)
         prediction_labels_full_list.append(prediction_labels_full.tolist())
 
 prediction_labels = torch.tensor(prediction_labels_full_list).mean(dim=0)
@@ -152,4 +152,3 @@ print('avg_sensitivity', str(sensitivity))
 print('avg_accuracy', str(acc))
 print('avg_precision', str(precision))
 print('finish test')
-

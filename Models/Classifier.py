@@ -14,7 +14,6 @@ class Classifier(LightningModule):
 
         model = config['MODEL']['Backbone']
         parameters = config['MODEL_PARAMETERS']
-
         # only use network for features
         if model == 'torchvision':
             model_name = config['MODEL'][module_str + '_model_name']
@@ -24,23 +23,25 @@ class Classifier(LightningModule):
             model_str = 'nets.' + model + '(**parameters)'
             self.backbone = eval(model_str)
 
-        layers = list(self.backbone.children())[:-1]
-        self.model = nn.Sequential(*layers)
+        #layers = list(self.backbone.children())[:-1]
+        # self.model = nn.Sequential(*layers)
 
-        self.flatten = nn.Sequential(
-            # nn.Dropout(0.3),
-            # nn.AdaptiveAvgPool3d(output_size=(4, 4, 4)),
-            nn.Dropout(0.3),
-            nn.AdaptiveAvgPool3d(output_size=(1, 1, 1)),
-            nn.Flatten(),
-        )
-        self.model.apply(self.weights_init)
+        # self.flatten = nn.Sequential(
+        #     # nn.Dropout(0.3),
+        #     # nn.AdaptiveAvgPool3d(output_size=(4, 4, 4)),
+        #     nn.Dropout(0.3),
+        #     nn.AdaptiveAvgPool3d(output_size=(1, 1, 1)),
+        #     nn.Flatten(),
+        # )
+        # self.model.apply(self.weights_init)
+        self.out_feat = config['MODEL_PARAMETERS']['out_channels']
         self.accuracy = torchmetrics.AUROC(task="binary")
         self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, x):
-        features = self.model(x)
-        return self.flatten(features)
+        return self.backbone(x)
+        # features = self.model(x)
+        # return self.flatten(features)
 
     def weights_init(self, m):
         if isinstance(m, nn.Conv3d) or isinstance(m, nn.Linear):

@@ -17,16 +17,17 @@ import torchmetrics
 
 ## Model
 class Linear(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, out_feat=42, in_feat=58):
         super().__init__()
-        self.model = nn.Sequential(
-            nn.Linear(51, 42),
-            nn.Dropout(0.3),
-            nn.LayerNorm(42),
-            nn.ReLU(),
-        )
         self.loss_fcn = nn.CrossEntropyLoss()
+        self.out_feat = out_feat
 
+        self.model = nn.Sequential(
+            nn.Linear(in_feat, out_feat),
+            nn.Dropout(0.3),
+            nn.LayerNorm(out_feat),
+            nn.ReLU(),
+        )        
     def forward(self, x):
         return self.model(x.float())
 

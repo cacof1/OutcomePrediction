@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import torch
+import numpy as np
 import copy
 from torch import nn
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
@@ -11,18 +12,18 @@ class MixModel(LightningModule):
     def __init__(self, module_dict, config, loss_fcn=torch.nn.BCEWithLogitsLoss()):
         super().__init__()
         self.module_dict = module_dict
+        out_feat     = np.sum([model.out_feat for model in module_dict.values()])
         self.config      = config
-        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(1.21))
+        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(1.31))
         self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         self.classifier  = nn.Sequential(
-            nn.Linear(198, 120),
+            nn.Linear(out_feat, 120),
             nn.Dropout(0.3),
             nn.Linear(120, 40),
             nn.Dropout(0.3),
             nn.Linear(40, config['DATA']['n_classes']),
-            #self.activation
+            self.activation
         )
-        self.classifier.apply(self.weights_init)
 
     def forward(self, data_dict):
         features   = torch.cat([self.module_dict[key](data_dict[key]) for key in self.module_dict.keys()], dim=1)
@@ -49,6 +50,7 @@ class MixModel(LightningModule):
         self.logger.report_epoch(prediction, labels, step_outputs,self.current_epoch, 'train_epoch_')
                                  
     def validation_step(self, batch, batch_idx):
+        print('val step')
         out = {}
         data_dict, label = batch
         prediction = self.forward(data_dict)
