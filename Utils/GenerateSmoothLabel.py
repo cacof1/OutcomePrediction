@@ -7,6 +7,7 @@ from sksurv.metrics import cumulative_dynamic_auc
 from torch import nn
 from Models.Classifier import Classifier
 from Models.Linear import Linear
+from pathlib import Path
 
 def get_lds_kernel_window(kernel, ks, sigma):
     assert kernel in ['gaussian', 'triang', 'laplace']
@@ -64,3 +65,29 @@ def get_module(config):
             module_dict[module] = Clinical_backbone
 
     return module_dict
+
+
+def generate_cumulative_dynamic_auc(prediction, label, path) -> None:
+    # this function has issues
+    risk_score = 1 / prediction
+    va_times = np.arange(int(label.cpu().min()) + 1, label.cpu().max(), 1)
+
+    dtypes = np.dtype([('event', np.bool_), ('time', np.float)])
+    construct_test = np.ndarray(shape=(len(label),), dtype=dtypes)
+    for i in range(len(label)):
+        construct_test[i] = (True, label[i].cpu().numpy())
+
+    cph_auc, cph_mean_auc = cumulative_dynamic_auc(
+        construct_test, construct_test, risk_score.cpu().squeeze(), va_times
+    )
+
+    fig = plt.figure()
+    plt.plot(va_times, cph_auc, marker="o")
+    plt.axhline(cph_mean_auc, linestyle="--")
+    plt.ylim([0, 1])
+    plt.xlabel("survival months")
+    plt.ylabel("time-dependent AUC")
+    plt.grid(True)
+    #plt.show()
+    plt.savefig(Path(path, 't_auroc.jpg'))
+

@@ -14,8 +14,8 @@ class MixModel(LightningModule):
         self.module_dict = module_dict
         out_feat     = np.sum([model.out_feat for model in module_dict.values()])
         self.config      = config
-        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(1.31))
-        self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])()
+        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()#(pos_weight=torch.tensor(1.31))
+        self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])(1, 1)
         self.classifier  = nn.Sequential(
             nn.Linear(out_feat, 120),
             nn.Dropout(0.3),
@@ -31,14 +31,14 @@ class MixModel(LightningModule):
         return prediction
 
     def training_step(self, batch, batch_idx):
-        out = {}
+        #out = {}
         data_dict, label = batch
         prediction = self.forward(data_dict)
         loss = self.loss_fcn(prediction.squeeze(dim=1), label)
         self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         MAE = torch.abs(prediction.flatten(0) - label)
-        out['MAE'] = MAE.detach()
         out = copy.deepcopy(data_dict)
+        out['MAE'] = MAE.detach()
         out['prediction'] = prediction.detach()
         out['label']      = label        
         out['loss'] = loss
@@ -50,15 +50,16 @@ class MixModel(LightningModule):
         self.logger.report_epoch(prediction, labels, step_outputs,self.current_epoch, 'train_epoch_')
                                  
     def validation_step(self, batch, batch_idx):
-        print('val step')
-        out = {}
+        #print('val step')
+        #out = {}
         data_dict, label = batch
         prediction = self.forward(data_dict)
         loss = self.loss_fcn(prediction.squeeze(dim=1), label)
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         MAE = torch.abs(prediction.flatten(0) - label)
-        out['MAE'] = MAE
+        #out['MAE'] = MAE
         out = copy.deepcopy(data_dict)
+        out['MAE'] = MAE.detach()
         out['prediction'] = prediction
         out['label'] = label
         out['loss'] = loss        
@@ -73,10 +74,11 @@ class MixModel(LightningModule):
         data_dict, label = batch
         prediction = self.forward(data_dict)
         loss = self.loss_fcn(prediction.squeeze(dim=1), label)
-        out = {}
+        #out = {}
         MAE = torch.abs(prediction.flatten(0) - label)
-        out['MAE'] = MAE
+        #out['MAE'] = MAE
         out = copy.deepcopy(data_dict)
+        out['MAE'] = MAE.detach()
         out['prediction'] = prediction.squeeze(dim=1)
         out['label'] = label
         out['loss'] = loss                

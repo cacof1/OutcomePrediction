@@ -82,12 +82,12 @@ for key in config['MODALITY'].keys():
 QuerySubjectInfo(config, SubjectList, session)
 print(SubjectList)
 
-threshold = config['DATA']['threshold']
+# threshold = config['DATA']['threshold']
 # ckpt_path = Path('./lightning_logs', total_backbone, 'ckpt')
 rd = [53414, 88536, 89901, 62594, 13787, 21781, 18215, 4182, 10695, 61645, 93967, 35446, 41063, 98435, 94558, 67665,
       98831, 76684, 33670, 66239, 24417, 29551, 68018, 52785, 41160, 60264, 75053, 58354, 55180, 58358, 51182, 8260]
 
-for iter in range(0, 32, 1):
+for iter in range(0, 20, 1):
     seed_everything(rd[iter])
     # seed_everything(42, workers=True)
     dataloader = DataModule(SubjectList,
@@ -103,8 +103,8 @@ for iter in range(0, 32, 1):
     #full_ckpt_path = Path(ckpt_path, 'Iter_'+ str(iter) + '.ckpt')
     #model.load_state_dict(torch.load(full_ckpt_path)['state_dict'])
 
-    filename = 'random_seed_75'
-    logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
+    filename = config['DATA']['LogFolder']
+    logger = PredictionReports(config=config, save_dir='lightning_logs/Regression', name=filename)
     logger.log_text()
     logger._version = iter
     callbacks = [

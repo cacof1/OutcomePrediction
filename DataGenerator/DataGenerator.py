@@ -47,7 +47,7 @@ class DataGenerator(torch.utils.data.Dataset):
        if 'CT' in self.keys:
            CTPath = self.SubjectList.loc[i, 'CT_Path']
            if self.config['DATA']['Nifty']:
-               CTPath = Path(CTPath, 'ct.nii.gz')
+               CTPath = Path(CTPath, 'CT.nii.gz')
                data['CT'], meta['CT'] = LoadImage()(CTPath)
            else:
                data['CT'], meta['CT'] = LoadImage()(CTPath)
@@ -63,7 +63,7 @@ class DataGenerator(torch.utils.data.Dataset):
        if 'Dose' in self.keys:
            DosePath = self.SubjectList.loc[i, 'Dose_Path']
            if self.config['DATA']['Nifty']:
-               DosePath = Path(DosePath, 'dose.nii.gz')
+               DosePath = Path(DosePath, 'Dose.nii.gz')
            data['Dose'], meta['Dose'] = LoadImage()(DosePath)
            data['Dose'] = data['Dose'] / 67
            if not self.config['DATA']['Nifty']:
@@ -80,7 +80,7 @@ class DataGenerator(torch.utils.data.Dataset):
        if 'Structs' in self.keys:
            RSPath = self.SubjectList.loc[i, 'Structs_Path']
            if self.config['DATA']['Nifty']:
-               data['Structs'], meta['Structs'] = LoadImage()(Path(RSPath, 'masks.nii.gz'))
+               data['Structs'], meta['Structs'] = LoadImage()(Path(RSPath, 'maskswc.nii.gz'))
 
                # for roi in self.config['DATA']['Structs']:
                #    data['Struct_' + roi], meta['Struct_' + roi] = LoadImage()(Path(RSPath,roi+'.nii.gz'))
@@ -144,11 +144,15 @@ class DataGenerator(torch.utils.data.Dataset):
        if self.inference:
            return data
        else:
-           label = torch.tensor(
-               np.float(self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']]))
-           if self.config['DATA']['threshold'] is not None:  label = torch.where(
-               label > self.config['DATA']['threshold'], 1, 0)
-           label = torch.as_tensor(label, dtype=torch.float32)
+           label_time = torch.tensor(np.float(self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']]))
+           if 'threshold' in self.config['DATA'].keys():
+               label_time = torch.where(label_time > self.config['DATA']['threshold'], 1, 0)
+               label = torch.as_tensor(label_time, dtype=torch.float32)
+               label = [label]
+           else:
+               censored_label = not(np.int8(self.SubjectList.loc[i,'censor_label']).astype('bool'))
+               label_time = torch.as_tensor(label_time, dtype=torch.float32)
+               label = (censored_label, label_time)
            return data, label
 
 
@@ -262,10 +266,10 @@ def QuerySubjectInfo(config, SubjectList, session):
        for i in range(len(SubjectList)):
            subject_label = SubjectList.loc[i, 'subject_label']
            for key in config['MODALITY'].keys():
-               #if key == 'Structs':
-               #    SubjectList.loc[i, key + '_Path'] = Path(config['DATA']['DataFolder'], subject_label, 'struct_TS')
-               #else:
-               SubjectList.loc[i, key + '_Path'] = Path(config['DATA']['DataFolder'], subject_label)
+               if key == 'Structs':
+                   SubjectList.loc[i, key + '_Path'] = Path(config['DATA']['DataFolder'], subject_label, 'struct_TS')
+               else:
+                   SubjectList.loc[i, key + '_Path'] = Path(config['DATA']['DataFolder'], subject_label)
    else:
        with ThreadPoolExecutor(max_workers=10) as executor:
            future_to_url = {executor.submit(get_subject_info, config, session, subjectid) for subjectid in
@@ -331,5 +335,7 @@ def LoadClinicalData(config, PatientList):
    df_trans['xnat_subjectdata_field_map_' + target] = PatientList.loc[:, 'xnat_subjectdata_field_map_' + target]
    df_trans['subject_label'] = PatientList.loc[:, 'subject_label']
    df_trans['subjectid'] = PatientList.loc[:, 'subjectid']
+   if 'censor_label' in config['Records'].keys():
+        df_trans['censor_label'] = PatientList.loc[:, 'xnat_subjectdata_field_map_'+config['Records']['censor_label'][0]]
    return df_trans, clinical_col
 

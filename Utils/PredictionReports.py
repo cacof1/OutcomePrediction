@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 import matplotlib.pyplot as plt
-# plt.switch_backend('agg')
+plt.switch_backend('agg')
 import torchvision
 from pytorch_lightning.loggers import LightningLoggerBase
 from sksurv.metrics import cumulative_dynamic_auc
@@ -74,7 +74,9 @@ class PredictionReports(TensorBoardLogger):
             self.experiment.add_scalar(k, v, step)
 
     def log_image(self, img, text, current_epoch=None):
-        img_batch = img.view(img.shape[0] * img.shape[1], *[1, img.shape[2], img.shape[3]])
+        img = img.transpose(2, 0)
+        img_batch = img.view(img.shape[0], *[1, img.shape[1], img.shape[2]])
+        #img_batch = img.view(img.shape[0] * img.shape[1], *[1, img.shape[2], img.shape[3]])
         grid = torchvision.utils.make_grid(img_batch)
         self.experiment.add_image(text, grid, current_epoch)
         return grid
@@ -103,7 +105,7 @@ class PredictionReports(TensorBoardLogger):
         tp = bcm[1][1]
         fp = bcm[0][1]
         fn = bcm[1][0]
-        if 'ROC' in self.config['CHECKPOINT']['matrix']:
+        if 'AUC' in self.config['CHECKPOINT']['matrix']:
             auroc = torchmetrics.AUROC()
             accuracy = auroc(prediction, label.int())
             c_out[prefix + 'roc'] = accuracy
@@ -126,16 +128,16 @@ class PredictionReports(TensorBoardLogger):
 
     def generate_cumulative_dynamic_auc(self, prediction, label, current_epoch, prefix) -> None:
         # this function has issues
-        risk_score = 1 / prediction
-        va_times = np.arange(int(label.cpu().min()) + 1, label.cpu().max(), 1)
-
+        risk_score = 1/prediction
+        #va_times = np.arange(int(label.cpu().min()) + 1, label.cpu().max(), 1)
+        va_times = np.percentile(label.cpu(), np.linspace(5, 81, 20))
         dtypes = np.dtype([('event', np.bool_), ('time', np.float)])
         construct_test = np.ndarray(shape=(len(label),), dtype=dtypes)
         for i in range(len(label)):
             construct_test[i] = (True, label[i].cpu().numpy())
 
         cph_auc, cph_mean_auc = cumulative_dynamic_auc(
-            construct_test, construct_test, risk_score.cpu(), va_times
+            construct_test, construct_test, risk_score.cpu().squeeze(), va_times
         )
 
         fig = plt.figure()
@@ -168,15 +170,15 @@ class PredictionReports(TensorBoardLogger):
             loss = data['MAE']
             idx = torch.argmax(loss)
             if loss[idx] > worst_AE:
-                if 'CT' in self.config['DATA']['target']:
-                    worst_img = data['CT'][idx]
-                if 'Dose' in self.config['DATA']['target']:
-                    worst_dose = data['dose'][idx]
+                if 'CT' in self.config['MODALITY'].keys():
+                    worst_img = data['Image'][idx][0,:,:,:]
+                if 'Dose' in self.config['MODALITY'].keys():
+                    worst_dose = data['Image'][idx][1,:,:,:]
                 worst_AE = loss[idx]
         out[prefix + 'worst_AE'] = worst_AE
-        if 'CT' in self.config['DATA']['target']:
+        if 'CT' in self.config['MODALITY'].keys():
             out[prefix + 'worst_img'] = worst_img
-        if 'Dose' in self.config['DATA']['target']:
+        if 'Dose' in self.config['MODALITY'].keys():
             out[prefix + 'worst_dose'] = worst_dose
         return out
 
@@ -205,10 +207,10 @@ class PredictionReports(TensorBoardLogger):
         if 'WorstCase' in self.config['CHECKPOINT']['matrix']:
             worst_record = self.worst_case_show(validation_step_outputs, prefix)
             self.log_metrics({prefix + 'worst_AE': worst_record[prefix + 'worst_AE']}, current_epoch)
-            if 'CT' in self.config['DATA']['target']:
+            if 'CT' in self.config['MODALITY'].keys():
                 text = 'validate_worst_case_img'
                 self.log_image(worst_record[prefix + 'worst_img'], text, current_epoch)
-            if 'Dose' in self.config['DATA']['target']:
+            if 'Dose' in self.config['MODALITY'].keys():
                 text = 'validate_worst_case_dose'
                 self.log_image(worst_record[prefix + 'worst_dose'], text, current_epoch)
 
@@ -244,7 +246,7 @@ class PredictionReports(TensorBoardLogger):
                 self.experiment.add_text('Specificity:', str(classification_out[prefix + 'accuracy']))
             if 'Precision' in config['CHECKPOINT']['matrix']:
                 self.experiment.add_text('Specificity:', str(classification_out[prefix + 'precision']))
-            if 'ROC' in config['CHECKPOINT']['matrix']:
+            if 'AUC' in config['CHECKPOINT']['matrix']:
                 self.experiment.add_text('ROC:', str(classification_out[prefix + 'roc']))
             return classification_out
 
