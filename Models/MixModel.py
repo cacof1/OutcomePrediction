@@ -14,8 +14,8 @@ class MixModel(LightningModule):
         self.module_dict = module_dict
         out_feat     = np.sum([model.out_feat for model in module_dict.values()])
         self.config      = config
-        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()#(pos_weight=torch.tensor(1.31))
-        self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])(1, 1)
+        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
+        self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         self.classifier  = nn.Sequential(
             nn.Linear(out_feat, 120),
             nn.Dropout(0.3),
@@ -31,55 +31,75 @@ class MixModel(LightningModule):
         return prediction
 
     def training_step(self, batch, batch_idx):
-        #out = {}
-        data_dict, label = batch
-        prediction = self.forward(data_dict)
-        loss = self.loss_fcn(prediction.squeeze(dim=1), label)
+        data_dict, label = batch ## Data_dict is [B, NM, Sx, Sy, Sz, C], Label is [B,(1,1)]
+        prediction = self.forward(data_dict).squeeze(dim=1)
+        loss = self.loss_fcn(prediction, label[-1])
         self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        MAE = torch.abs(prediction.flatten(0) - label)
+        MAE = torch.abs(prediction - label[-1])
         out = copy.deepcopy(data_dict)
-        out['MAE'] = MAE.detach()
+        out['MAE']   = MAE.detach()
         out['prediction'] = prediction.detach()
-        out['label']      = label        
-        out['loss'] = loss
+        out['label'] = label        
+        out['loss']  = loss
         return out
 
     def training_epoch_end(self, step_outputs):
-        labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
+        labels = []
+        for j in range(0, len(step_outputs[0]['label'])):
+            labels.append(torch.cat([out['label'][j] for i, out in enumerate(step_outputs)], dim=0))
         prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
         self.logger.report_epoch(prediction, labels, step_outputs,self.current_epoch, 'train_epoch_')
-                                 
+        with open(self.logger.log_dir + "/train_record.ini", "a") as toml_file:
+            toml_file.write('\n')
+            toml_file.write('label_epoch_' + str(self.current_epoch) + ':\n')
+            toml_file.write(str(labels[1]))
+            toml_file.write('\n')
+            toml_file.write('censor_epoch_' + str(self.current_epoch) + ':\n')
+            toml_file.write(str(labels[0]))
+            toml_file.write('\n')
+            toml_file.write('prediction_epoch_' + str(self.current_epoch) + ':\n')
+            toml_file.write(str(prediction))
+            toml_file.write('\n')
+                         
     def validation_step(self, batch, batch_idx):
-        #print('val step')
-        #out = {}
         data_dict, label = batch
-        prediction = self.forward(data_dict)
-        loss = self.loss_fcn(prediction.squeeze(dim=1), label)
+        prediction = self.forward(data_dict).squeeze(dim=1)
+        loss = self.loss_fcn(prediction, label[-1])
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        MAE = torch.abs(prediction.flatten(0) - label)
-        #out['MAE'] = MAE
+        MAE = torch.abs(prediction - label[-1])
         out = copy.deepcopy(data_dict)
-        out['MAE'] = MAE.detach()
+        out['MAE'] = MAE
         out['prediction'] = prediction
         out['label'] = label
         out['loss'] = loss        
         return out
 
     def validation_epoch_end(self, step_outputs):
-        labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
+        labels = []
+        for j in range(0, len(step_outputs[0]['label'])):
+            labels.append(torch.cat([out['label'][j] for i, out in enumerate(step_outputs)], dim=0))
         prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
         self.logger.report_epoch(prediction.squeeze(), labels, step_outputs, self.current_epoch,'val_epoch_')
+        with open(self.logger.log_dir + "/val_record.ini", "a") as toml_file:
+            toml_file.write('\n')
+            toml_file.write('label_epoch_' + str(self.current_epoch) + ':\n')
+            toml_file.write(str(labels[1]))
+            toml_file.write('\n')
+            toml_file.write('censor_epoch_' + str(self.current_epoch) + ':\n')
+            toml_file.write(str(labels[0]))
+            toml_file.write('\n')
+            toml_file.write('prediction_epoch_' + str(self.current_epoch) + ':\n')
+            toml_file.write(str(prediction))
+            toml_file.write('\n')
 
     def test_step(self, batch, batch_idx):
         data_dict, label = batch
-        prediction = self.forward(data_dict)
-        loss = self.loss_fcn(prediction.squeeze(dim=1), label)
-        #out = {}
-        MAE = torch.abs(prediction.flatten(0) - label)
-        #out['MAE'] = MAE
+        prediction = self.forward(data_dict).squeeze(dim=1)
+        loss = self.loss_fcn(prediction, label[-1])
+        MAE = torch.abs(prediction - label[-1])
         out = copy.deepcopy(data_dict)
-        out['MAE'] = MAE.detach()
-        out['prediction'] = prediction.squeeze(dim=1)
+        out['MAE'] = MAE
+        out['prediction'] = prediction
         out['label'] = label
         out['loss'] = loss                
         return out
@@ -93,6 +113,6 @@ class MixModel(LightningModule):
             m.reset_parameters()
             
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=5e-4, weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
         return [optimizer], [scheduler]

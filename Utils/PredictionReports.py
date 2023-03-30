@@ -4,9 +4,9 @@ import os
 from pytorch_lightning.loggers.base import rank_zero_experiment
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
-
+from lifelines.utils import concordance_index
 import matplotlib.pyplot as plt
-plt.switch_backend('agg')
+import matplotlib
 import torchvision
 from pytorch_lightning.loggers import LightningLoggerBase
 from sksurv.metrics import cumulative_dynamic_auc
@@ -76,8 +76,7 @@ class PredictionReports(TensorBoardLogger):
     def log_image(self, img, text, current_epoch=None):
         img = img.transpose(2, 0)
         img_batch = img.view(img.shape[0], *[1, img.shape[1], img.shape[2]])
-        #img_batch = img.view(img.shape[0] * img.shape[1], *[1, img.shape[2], img.shape[3]])
-        grid = torchvision.utils.make_grid(img_batch)
+        grid = torchvision.utils.make_grid(img_batch, normalize=True)
         self.experiment.add_image(text, grid, current_epoch)
         return grid
 
@@ -87,14 +86,16 @@ class PredictionReports(TensorBoardLogger):
         # str(self.config['MODALITY'].keys())
         self.experiment.add_text('configurations:', configurations)
 
-    def regression_matrix(self, prediction, label, prefix):
+    def regression_matrix(self, prediction, label, prefix): ## matrix should be metrics
         r_out = {}
         if 'cindex' in self.config['CHECKPOINT']['matrix']:
-            cindex = c_index(prediction, label)
-            r_out[prefix + 'cindex'] = cindex[0]
+            cindex = concordance_index(label[1].cpu().detach().numpy(), prediction.cpu().detach().numpy(), label[0].cpu().detach().numpy())
+            r_out[prefix + 'cindex'] = cindex
         if 'r2' in self.config['CHECKPOINT']['matrix']:
-            r2 = r2_index(prediction, label)
+            r2 = r2_index(prediction.detach(), label[1].detach())
             r_out[prefix + 'r2'] = r2
+            if 'train' in prefix:
+                print('r2', r2)
         return r_out
 
     def classification_matrix(self, prediction, label, prefix):
@@ -105,7 +106,7 @@ class PredictionReports(TensorBoardLogger):
         tp = bcm[1][1]
         fp = bcm[0][1]
         fn = bcm[1][0]
-        if 'AUC' in self.config['CHECKPOINT']['matrix']:
+        if 'ROC' in self.config['CHECKPOINT']['matrix']:
             auroc = torchmetrics.AUROC()
             accuracy = auroc(prediction, label.int())
             c_out[prefix + 'roc'] = accuracy
@@ -126,29 +127,30 @@ class PredictionReports(TensorBoardLogger):
             c_out[prefix + 'precision'] = precision
         return c_out
 
-    def generate_cumulative_dynamic_auc(self, prediction, label, current_epoch, prefix) -> None:
-        # this function has issues
-        risk_score = 1/prediction
-        #va_times = np.arange(int(label.cpu().min()) + 1, label.cpu().max(), 1)
-        va_times = np.percentile(label.cpu(), np.linspace(5, 81, 20))
-        dtypes = np.dtype([('event', np.bool_), ('time', np.float)])
-        construct_test = np.ndarray(shape=(len(label),), dtype=dtypes)
-        for i in range(len(label)):
-            construct_test[i] = (True, label[i].cpu().numpy())
-
-        cph_auc, cph_mean_auc = cumulative_dynamic_auc(
-            construct_test, construct_test, risk_score.cpu().squeeze(), va_times
-        )
-
-        fig = plt.figure()
-        plt.plot(va_times, cph_auc, marker="o")
-        plt.axhline(cph_mean_auc, linestyle="--")
-        plt.ylim([0, 1])
-        plt.xlabel("survival months")
-        plt.ylabel("time-dependent AUC")
-        plt.grid(True)
-        self.experiment.add_figure(prefix + "AUC", fig, current_epoch)
-        plt.close(fig)
+    # def generate_cumulative_dynamic_auc(self, prediction, label, current_epoch, prefix) -> None:
+    #     # this function has issues
+    #     risk_score = 1 / prediction
+    #     # risk_score = prediction
+    #     # va_times = np.arange(int(label.cpu().min()) + 1, label.cpu().max(), 1)
+    #     va_times = np.percentile(label.cpu(), np.linspace(5, 81, 20))
+    #     dtypes = np.dtype([('event', np.bool_), ('time', np.float)])
+    #     construct_test = np.ndarray(shape=(len(label),), dtype=dtypes)
+    #     for i in range(len(label)):
+    #         construct_test[i] = (True, label[i].cpu().numpy())
+    #
+    #     cph_auc, cph_mean_auc = cumulative_dynamic_auc(
+    #         construct_test, construct_test, risk_score.cpu().squeeze(), va_times
+    #     )
+    #
+    #     fig = plt.figure()
+    #     plt.plot(va_times, cph_auc, marker="o")
+    #     plt.axhline(cph_mean_auc, linestyle="--")
+    #     plt.ylim([0, 1])
+    #     plt.xlabel("survival months")
+    #     plt.ylabel("time-dependent AUC")
+    #     plt.grid(True)
+    #     self.experiment.add_figure(prefix + "AUC", fig, current_epoch)
+    #     plt.close(fig)
 
     def plot_AUROC(self, prediction, label, prefix, current_epoch=None) -> None:
         roc = torchmetrics.ROC()
@@ -166,47 +168,43 @@ class PredictionReports(TensorBoardLogger):
     def worst_case_show(self, validation_step_outputs, prefix):
         out = {}
         worst_AE = 0
+        label = ''
         for i, data in enumerate(validation_step_outputs):
             loss = data['MAE']
             idx = torch.argmax(loss)
             if loss[idx] > worst_AE:
                 if 'CT' in self.config['MODALITY'].keys():
-                    worst_img = data['Image'][idx][0,:,:,:]
+                    worst_img = data['Image'][idx][0, :, :, :]
                 if 'Dose' in self.config['MODALITY'].keys():
-                    worst_dose = data['Image'][idx][1,:,:,:]
+                    worst_dose = data['Image'][idx][1, :, :, :] ### this index needs to be careful when adding pet image
                 worst_AE = loss[idx]
+                label = data['slabel'][idx]
         out[prefix + 'worst_AE'] = worst_AE
         if 'CT' in self.config['MODALITY'].keys():
             out[prefix + 'worst_img'] = worst_img
         if 'Dose' in self.config['MODALITY'].keys():
             out[prefix + 'worst_dose'] = worst_dose
+        out[prefix + 'slabel'] = label
         return out
-
-    # def report_step(self, prediction, label, step, prefix) -> None:
-    #     if self.config['MODEL']['Prediction_type'] == 'Regression':
-    #         regression_out = self.regression_matrix(prediction, label, prefix)
-    #         self.log_metrics(regression_out, step)
-    #     if self.config['MODEL']['Prediction_type'] == 'Classification':
-    #         classification_out = self.classification_matrix(prediction.squeeze(), label, prefix)
-    #         self.log_metrics(classification_out, step)
 
     def report_epoch(self, prediction, label, validation_step_outputs,
                      current_epoch, prefix) -> None:
         if self.config['MODEL']['Prediction_type'] == 'Regression':
             regression_out = self.regression_matrix(prediction, label, prefix)
+            if 'train' in prefix:
+                print('regression_matrix:', regression_out)
             self.log_metrics(regression_out, current_epoch)
-            if 'AUROC' in self.config['CHECKPOINT']['matrix']:
-                self.generate_cumulative_dynamic_auc(prediction, label, current_epoch, prefix)
 
         if self.config['MODEL']['Prediction_type'] == 'Classification':
-            classification_out = self.classification_matrix(prediction.squeeze(), label, prefix)
+            classification_out = self.classification_matrix(prediction.squeeze(), label[1], prefix)
             self.log_metrics(classification_out, current_epoch)
             if 'AUROC' in self.config['CHECKPOINT']['matrix']:
-                self.plot_AUROC(prediction.squeeze(), label, prefix, current_epoch)
+                self.plot_AUROC(prediction.squeeze(), label[0], prefix, current_epoch)
 
         if 'WorstCase' in self.config['CHECKPOINT']['matrix']:
             worst_record = self.worst_case_show(validation_step_outputs, prefix)
             self.log_metrics({prefix + 'worst_AE': worst_record[prefix + 'worst_AE']}, current_epoch)
+            self.log_metrics('worst_subject: ', str(worst_record[prefix + 'slabel']))
             if 'CT' in self.config['MODALITY'].keys():
                 text = 'validate_worst_case_img'
                 self.log_image(worst_record[prefix + 'worst_img'], text, current_epoch)
@@ -218,6 +216,7 @@ class PredictionReports(TensorBoardLogger):
         if 'WorstCase' in config['CHECKPOINT']['matrix']:
             worst_record = self.worst_case_show(outs, prefix)
             self.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
+            self.experiment.add_text('worst_subject: ', str(worst_record[prefix + 'slabel']))
             if 'CT' in config['MODALITY'].keys():
                 text = 'test_worst_case_img'
                 self.log_image(worst_record[prefix + 'worst_img'], text)
@@ -226,17 +225,16 @@ class PredictionReports(TensorBoardLogger):
                 self.log_image(worst_record[prefix + 'worst_dose'], text)
 
         if config['MODEL']['Prediction_type'] == 'Regression':
-            self.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels)))
-            self.generate_cumulative_dynamic_auc(prediction_labels, validation_labels, 0, prefix)
+            self.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels[1])))
             regression_out = self.regression_matrix(prediction_labels, validation_labels, prefix)
             self.experiment.add_text('test_cindex: ', str(regression_out[prefix + 'cindex']))
             self.experiment.add_text('test_r2: ', str(regression_out[prefix + 'r2']))
             return regression_out
 
         if config['MODEL']['Prediction_type'] == 'Classification':
-            classification_out = self.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
+            classification_out = self.classification_matrix(prediction_labels.squeeze(), validation_labels[1], prefix)
             if 'AUROC' in config['CHECKPOINT']['matrix']:
-                self.plot_AUROC(prediction_labels, validation_labels, prefix)
+                self.plot_AUROC(prediction_labels, validation_labels[0], prefix)
                 self.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
             if 'Specificity' in config['CHECKPOINT']['matrix']:
                 self.experiment.add_text('Specificity:', str(classification_out[prefix + 'specificity']))
@@ -246,24 +244,14 @@ class PredictionReports(TensorBoardLogger):
                 self.experiment.add_text('Specificity:', str(classification_out[prefix + 'accuracy']))
             if 'Precision' in config['CHECKPOINT']['matrix']:
                 self.experiment.add_text('Specificity:', str(classification_out[prefix + 'precision']))
-            if 'AUC' in config['CHECKPOINT']['matrix']:
+            if 'ROC' in config['CHECKPOINT']['matrix']:
                 self.experiment.add_text('ROC:', str(classification_out[prefix + 'roc']))
             return classification_out
 
 
 def r2_index(prediction, label):
-    loss = nn.MSELoss()
-    MSE = loss(prediction, label)
-    SSres = MSE * label.shape[0]
+    loss    = nn.MSELoss(reduction='sum')
+    SSres   = loss(prediction, label) 
     SStotal = torch.sum(torch.square(label - torch.mean(label)))
     r2 = 1 - SSres / SStotal
     return r2
-
-
-def c_index(prediction, label):
-    event_indicator = torch.ones(label.shape, dtype=torch.bool)
-    risk = 1 / prediction.squeeze()
-    cindex = concordance_index_censored(event_indicator.cpu().detach().numpy(),
-                                        event_time=label.cpu().detach().numpy(),
-                                        estimate=risk.cpu().detach().numpy())
-    return cindex

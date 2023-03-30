@@ -1,22 +1,21 @@
 [MODEL]
-Activation  = 'Identity'
+Activation  = 'ReLU'
 Backbone = 'DenseNet'
 Records_Backbone = 'Linear'
 batch_size  = 10
-Prediction_type = 'Classification'
+Prediction_type = 'Regression'
 CT_spatial_dims = 3
-Loss_Function = 'BCEWithLogitsLoss'
+Loss_Function = 'MSELoss'
 
 [MODEL_PARAMETERS]
 spatial_dims = 3
-in_channels = 3
+in_channels = 2
 out_channels = 512
 block_config = [1,2,4,2]
 dropout_prob = 0.3
 
 [MODALITY]
 CT        = '1'
-Dose	  = '1'
 Structs   = '1'
 
 [DATA]
@@ -24,27 +23,20 @@ Nifty = true
 n_classes = 1
 Multichannel = true
 dim = [128,128,32]
-threshold = 24
-Structs = ['esophagus','lung', 'heart', 'ptv']
-DataFolder      = '/home/dgs1/data/Segmentation/nii_root_folder/RTOG/'
+Structs = ['esophagus','pulmonary_artery', 'lung', 'lung_vessels', 'heart_atrium_left', 'heart_atrium_right',
+          'heart_ventricle_left', 'heart_ventricle_right', 'heart_myocardium', 'coronary_arteries' ,'AI_Target']
+DataFolder      = '/home/dgs1/data/Nifty_Data/RTOG0617/'
+LogFolder       = 'Regression/random_seed_75_CT'
 vis             = [0]
 train_size      = 0.7
 val_size        = 0.3
 target          = 'survival_months'
-
-[Records]
-category_feat = ['arm', 'gender', 'race', 'ethnicity', 'zubrod',
-                        'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
-                        'smoke_hx', 'rx_terminated_ae', 'received_conc_chemo','rt_compliance_ptv90',
-                    'received_cons_chemo','rt_dose','pet_staging','received_rt']
-numerical_feat = ['age', 'volume_ptv','v5_lung','v20_lung','dmean_lung',
-                  'v5_heart','v30_heart','v20_esophagus','v60_esophagus']
-
+censor_label = 'lost_to_followup'
 
 [CHECKPOINT]
 monitor         = "val_loss" #"val_acc_epoch"
-mode            = "max"
-matrix = ['ROC', 'Specificity','Sensitivity','Accuracy','Precision']
+mode            = "min"
+matrix = ['r2','cindex']
 
 
 [SERVER]

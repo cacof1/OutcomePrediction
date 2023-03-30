@@ -32,7 +32,7 @@ conda activate UCL_OP
 export PYTHONPATH=$PYTHONPATH:/home/dgs1/Software/OutcomePrediction
 export LS_COLORS="$LS_COLORS:ow=1;34:tw=1;34:"
 #### ENVIRONMENT VARIABLES ABOVE AUTOMATICALLY ADDED FROM QSUB ####
-python Training/Regression.py Configs/Regression/SettingsRTOG_Multi.ini
+python Training/Classification.py Configs/Classification/SettingsRTOG_All_Dicom.ini
 
 ### Run your job here
 #printenv

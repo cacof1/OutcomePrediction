@@ -8,7 +8,7 @@ import sys, os
 import monai
 torch.cuda.empty_cache()
 ## Module - Dataloaders
-from DataGenerator.DataGenerator import *
+from DataGenerator.DataGenerator_PTV import *
 from Models.Classifier import Classifier
 from Models.Linear import Linear
 from Models.MixModel import MixModel
@@ -48,7 +48,7 @@ if config['MODALITY'].values():
 
     val_transform = torchvision.transforms.Compose([
         EnsureChannelFirstd(keys=img_keys),
-        #ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
+        ResampleToMatchd(list(set(img_keys).difference(set(['CT']))), key_dst='CT'),
         monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['Dose'])))),
         #monai.transforms.ResizeWithPadOrCropd(img_keys, spatial_size=config['DATA']['dim']),
         monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
@@ -91,7 +91,7 @@ print(SubjectList)
 rd = [53414, 88536, 89901, 62594, 13787, 21781, 18215, 4182, 10695, 61645, 93967, 35446, 41063, 98435, 94558, 67665,
       98831, 76684, 33670, 66239, 24417, 29551, 68018, 52785, 41160, 60264, 75053, 58354, 55180, 58358, 51182, 8260]
 
-for iter in range(0, 2, 1):
+for iter in range(0, 25, 1):
     seed_everything(rd[iter],workers=True)
 
     dataloader = DataModule(SubjectList,
@@ -116,7 +116,7 @@ for iter in range(0, 2, 1):
         ModelCheckpoint(dirpath=Path(logger.log_dir, 'ckpt'),
                         monitor='val_loss',
                         filename='Iter_' + str(iter),
-                        save_top_k=5,
+                        save_top_k=3,
                         mode='min'),
         # EarlyStopping(monitor='val_loss',
         #               check_finite=True),
@@ -125,9 +125,9 @@ for iter in range(0, 2, 1):
     trainer = Trainer(
         #gpus=1,
         accelerator="gpu",
-        devices=[0,1],
+        devices=[0,1,2,3],
         strategy=DDPStrategy(find_unused_parameters=True),
-        max_epochs=30,
+        max_epochs=40,
         logger=logger,
         callbacks=callbacks,
     )

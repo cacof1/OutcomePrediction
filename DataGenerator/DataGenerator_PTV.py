@@ -81,7 +81,7 @@ class DataGenerator(torch.utils.data.Dataset):
        if 'Structs' in self.keys:
            RSPath = self.SubjectList.loc[i, 'Structs_Path']
            if self.config['DATA']['Nifty']:
-               data['Structs'], meta['Structs'] = LoadImage()(Path(RSPath, 'masks.nii.gz'))
+               data['Structs'], meta['Structs'] = LoadImage()(Path(RSPath, self.config['DATA']['Structs']))
 
                # for roi in self.config['DATA']['Structs']:
                #    data['Struct_' + roi], meta['Struct_' + roi] = LoadImage()(Path(RSPath,roi+'.nii.gz'))
@@ -153,7 +153,6 @@ class DataGenerator(torch.utils.data.Dataset):
            if 'threshold' in self.config['DATA'].keys(): ## Classification
                label = torch.where(label > self.config['DATA']['threshold'], 1, 0)
                label = torch.as_tensor(label, dtype=torch.float32)
-
            label = (censored_label, label)
            return data, label
 
