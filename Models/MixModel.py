@@ -14,13 +14,13 @@ class MixModel(LightningModule):
         self.module_dict = module_dict
         out_feat     = np.sum([model.out_feat for model in module_dict.values()])
         self.config      = config
-        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])()
+        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(1.18))
         self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         self.classifier  = nn.Sequential(
-            nn.Linear(out_feat, 120),
-            nn.Dropout(0.3),
+            nn.Linear(out_feat, 120), 
+            nn.Dropout(0.05),
             nn.Linear(120, 40),
-            nn.Dropout(0.3),
+            nn.Dropout(0.05),
             nn.Linear(40, config['DATA']['n_classes']),
             self.activation
         )
@@ -34,7 +34,7 @@ class MixModel(LightningModule):
         data_dict, label = batch ## Data_dict is [B, NM, Sx, Sy, Sz, C], Label is [B,(1,1)]
         prediction = self.forward(data_dict).squeeze(dim=1)
         loss = self.loss_fcn(prediction, label[-1])
-        self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("train_loss", loss, on_step=True, on_epoch=True, sync_dist=True)
         MAE = torch.abs(prediction - label[-1])
         out = copy.deepcopy(data_dict)
         out['MAE']   = MAE.detach()
@@ -65,7 +65,9 @@ class MixModel(LightningModule):
         data_dict, label = batch
         prediction = self.forward(data_dict).squeeze(dim=1)
         loss = self.loss_fcn(prediction, label[-1])
-        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val_loss", loss, on_step=True, on_epoch=True, sync_dist=True)
+        #acc = nn.MSELoss()(prediction.round(), label[-1])
+        #self.log("val_acc", acc, on_step=True, on_epoch=True, sync_dist=True)
         MAE = torch.abs(prediction - label[-1])
         out = copy.deepcopy(data_dict)
         out['MAE'] = MAE
@@ -113,6 +115,6 @@ class MixModel(LightningModule):
             m.reset_parameters()
             
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=5e-4, weight_decay=1e-5)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4, weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
         return [optimizer], [scheduler]

@@ -5,8 +5,6 @@ from pytorch_lightning import LightningModule
 from torch import nn
 import torchmetrics
 from monai.networks import blocks, nets
-from Models.UnetEncoder import UnetEncoder
-from Models.PretrainedEncoder3D import PretrainedEncoder3D
 ## Model
 class Classifier(LightningModule):
     def __init__(self, config, module_str):
@@ -23,8 +21,8 @@ class Classifier(LightningModule):
             model_str = 'nets.' + model + '(**parameters)'
             self.backbone = eval(model_str)
 
-        self.out_feat = config['MODEL_PARAMETERS']['out_channels']
-
+        # self.out_feat = config['MODEL_PARAMETERS']['out_channels']
+        self.out_feat = config['MODEL_PARAMETERS']['num_classes']
     def forward(self, x):
         return self.backbone(x)
 

@@ -1,0 +1,71 @@
+[MODEL]
+Activation  = 'Sigmoid'
+Backbone = 'DenseNet'
+Records_Backbone = 'Linear'
+batch_size  = 10
+Prediction_type = 'Classification'
+CT_spatial_dims = 3
+Loss_Function = 'BCEWithLogitsLoss'
+
+[MODEL_PARAMETERS]
+spatial_dims = 3
+in_channels  = 3
+out_channels = 512
+block_config = [1,2,4,2]
+dropout_prob = 0.15
+
+[MODALITY]
+CT        = '1'
+Dose	  = '1'
+Structs   = '1'
+
+[DATA]
+Nifty = true
+n_classes = 1
+Multichannel = true
+dim = [128,128,32]
+threshold = 24
+Structs = 'AI_target.nii.gz'
+DataFolder      = '/home/dgs1/data/Segmentation/Seg/RTOG0617/'
+LogFolder       = 'Classification/random_seed_75_all_ptv'
+vis             = [0]
+train_size      = 0.7
+val_size        = 0.3
+target          = 'survival_months'
+censor_label = 'lost_to_followup'
+
+[Records]
+category_feat = ['arm', 'gender', 'race', 'ethnicity', 'zubrod',
+                        'histology', 'nonsquam_squam', 'ajcc_stage_grp', 'rt_technique',
+                        'smoke_hx', 'rx_terminated_ae', 'received_conc_chemo','rt_compliance_ptv90',
+                    'received_cons_chemo','rt_dose','pet_staging','received_rt']
+numerical_feat = ['age', 'volume_ptv','v5_lung','v20_lung','dmean_lung',
+                  'v5_heart','v30_heart','v20_esophagus','v60_esophagus']
+
+
+[CHECKPOINT]
+monitor         = "val_loss" #"val_acc_epoch"
+mode            = "max"
+matrix = ['ROC', 'Specificity','Sensitivity','Accuracy','Precision','WorstCase']
+
+
+[SERVER]
+Address          = 'http://128.16.11.124:8080/xnat'
+Projects         = ["RTOG_0617"]
+User            = "yzhan"
+Password            = "yzhang"
+[CRITERIA]
+analysis_inclusion = 1
+[FILTER]
+patient_id = ['0617-529851', '0617-446756', '0617-647889', '0617-608184', '0617-483479', '0617-381906', '0617-637689', '0617-568854', '0617-444138',
+              '0617-619629', '0617-698612', '0617-647078', '0617-704484', '0617-482383', '0617-704274', '0617-727320', '0617-674729', '0617-583972',
+              '0617-309598', '0617-511240', '0617-656006', '0617-658810', '0617-712281', '0617-559978', '0617-761615', '0617-673098', '0617-673681',
+              '0617-605230', '0617-669208', '0617-607275', '0617-457079', '0617-730769', '0617-449451', '0617-752117', '0617-635346', '0617-657744',
+              '0617-739625', '0617-736925', '0617-620721', '0617-617572', '0617-438343', '0617-553859', '0617-483282', '0617-690485', '0617-689511',
+              '0617-575441', '0617-789552', '0617-682647', '0617-445118', '0617-536867', '0617-457446', '0617-592873', '0617-540476', '0617-619079',
+              '0617-548132', '0617-535250', '0617-654574', '0617-621065', '0617-714849', '0617-613919', '0617-714162', '0617-540662', '0617-711646',
+              '0617-602544', '0617-693977', '0617-596122', '0617-716741', '0617-466966', '0617-579384', '0617-664444', '0617-469897', '0617-761493',
+              '0617-747279', '0617-763022', '0617-805653', '0617-640690']
+
+
+
