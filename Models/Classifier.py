@@ -21,8 +21,12 @@ class Classifier(LightningModule):
             model_str = 'nets.' + model + '(**parameters)'
             self.backbone = eval(model_str)
 
-        # self.out_feat = config['MODEL_PARAMETERS']['out_channels']
-        self.out_feat = config['MODEL_PARAMETERS']['num_classes']
+        if 'out_channels' in config['MODEL_PARAMETERS'].keys():
+            self.out_feat = config['MODEL_PARAMETERS']['out_channels']
+        elif 'num_classes' in config['MODEL_PARAMETERS'].keys():
+            self.out_feat = config['MODEL_PARAMETERS']['num_classes']
+
+
     def forward(self, x):
         return self.backbone(x)
 

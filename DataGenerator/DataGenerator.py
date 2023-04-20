@@ -216,7 +216,7 @@ def get_subject_info(config, session, subjectid):
     return data
 
 
-def QuerySubjectInfo(config, SubjectList, session):
+def QuerySubjectInfo(config, SubjectList):
     for i in range(len(SubjectList)):
         subject_label = SubjectList.loc[i, 'subject_label']
         for key in config['MODALITY'].keys():

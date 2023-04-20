@@ -6,7 +6,8 @@ import nibabel as nib
 import numpy as np
 from Utils.DicomTools import *
 from pathlib import Path
-from DataGenerator.DataGenerator import QuerySubjectList, SynchronizeData
+from DataGenerator.DataGenerator import SynchronizeData, QuerySubjectList
+from Utils.DicomTools import QuerySubjectInfo
 from Utils.DicomTools import *
 import os
 from rt_utils import RTStructBuilder
@@ -33,7 +34,7 @@ for key in config['MODALITY'].keys():
 
 QuerySubjectInfo(config, SubjectList, session)
 
-roi_name = 'gtv'
+roi_name = 'ptv'
 path = config['DATA']['NiiFolder']
 sPatient = SubjectList
 
@@ -73,8 +74,8 @@ for i in range(0, len(SubjectList), 1):
 
         if not os.path.isdir(spath):
             os.mkdir(spath)
-        nib.save(ni_ct, Path(spath, 'ct.nii.gz'))
-        nib.save(ni_dose, Path(spath, 'dose.nii.gz'))
+        nib.save(ni_ct, Path(spath, 'CT.nii.gz'))
+        nib.save(ni_dose, Path(spath, 'Dose.nii.gz'))
 
         # First define the ROI based on target
         RSPath = SubjectList[SubjectList.subjectid == subjectid]['Structs_Path']
@@ -85,20 +86,20 @@ for i in range(0, len(SubjectList), 1):
         strList = [x.lower() for x in roi_names]
         r1 = [r for r in strList if roi_name in r]
 
-        mask = np.zeros_like(CTArray)
+        if len(r1) > 0:
+            mask = np.zeros_like(CTArray)
+            for j in range(len(r1)):
+                roi = r1[j]
+                index = strList.index(roi.lower())
+                mask_img = RS.get_roi_mask_by_name(roi_names[index])
+                mask_img = np.rot90(mask_img)
+                mask_img = np.flip(mask_img, 0)
+                mask = mask + mask_img
 
-        for j in range(len(r1)):
-            roi = r1[j]
-            index = strList.index(roi.lower())
-            mask_img = RS.get_roi_mask_by_name(roi_names[index])
-            mask_img = np.rot90(mask_img)
-            mask_img = np.flip(mask_img, 0)
-            mask = mask + mask_img
-
-        mask = ndimage.binary_dilation(mask, structure=se, iterations=3)  ## if needs expansion
-        mask = MetaTensor(mask.copy(), meta=meta)
-        mask = EnsureChannelFirst()(mask)
-        mask = Spacing(pixdim=(1, 1, 3))(mask)
-        mask_array = mask.array.squeeze()
-        ni_mask = nib.Nifti1Image(mask_array.astype('int'), affine=mask.affine, dtype='uint8')
-        nib.save(ni_mask, Path(spath, 'AI_target.nii.gz'))
+            mask = ndimage.binary_dilation(mask, structure=se, iterations=3)  ## if needs expansion
+            mask = MetaTensor(mask.copy(), meta=meta)
+            mask = EnsureChannelFirst()(mask)
+            mask = Spacing(pixdim=(1, 1, 3))(mask)
+            mask_array = mask.array.squeeze()
+            ni_mask = nib.Nifti1Image(mask_array.astype('int'), affine=mask.affine, dtype='uint8')
+            nib.save(ni_mask, Path(spath, 'struct_TS', 'AI_target.nii.gz'))

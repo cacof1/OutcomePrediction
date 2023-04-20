@@ -10,6 +10,7 @@ Training/DeepSurv*.ckpt
 *.txt
 wandb/
 Training/*.xml
-Configs/*
+Configs/Classification/*.ini
+Configs/Regression/*.ini
 *.png
 Training/test*.py

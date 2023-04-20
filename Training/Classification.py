@@ -6,23 +6,29 @@ from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 import sys, os
 import monai
+
 torch.cuda.empty_cache()
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import *
 from Models.Classifier import Classifier
 from Models.Linear import Linear
 from Models.MixModel import MixModel
-from monai.transforms import EnsureChannelFirstd, ScaleIntensityd, ResampleToMatchd
+from monai.transforms import EnsureChannelFirstd, ScaleIntensityd, ResampleToMatchd, BoundingRectd
 ## Main
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import toml
 from Utils.GenerateSmoothLabel import get_smoothed_label_distribution, get_module
 from Utils.PredictionReports import PredictionReports
-from pathlib import Path
+from pathlib import Path  #
 from torchmetrics import ConfusionMatrix
 import torchmetrics
 
 config = toml.load(sys.argv[1])
+
+
+def threshold_at_one(x):
+    return x > 0
+
 
 ## 2D transform
 img_keys = list(config['MODALITY'].keys())
@@ -30,8 +36,9 @@ img_keys = list(config['MODALITY'].keys())
 if config['MODALITY'].values():
     train_transform = torchvision.transforms.Compose([
         EnsureChannelFirstd(keys=img_keys),
-        monai.transforms.ScaleIntensityd(keys=list(set(img_keys).difference(set(['Dose'])))),
+        monai.transforms.CropForegroundd(keys=img_keys, source_key='Structs', select_fn=threshold_at_one),
         monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
+        monai.transforms.ScaleIntensityd(keys=list(set(img_keys).difference(set(['Dose'])))),
         # monai.transforms.RandAffined(keys=img_keys),
         # monai.transforms.RandHistogramShiftd(keys=img_keys),
         # monai.transforms.RandAdjustContrastd(keys=img_keys),
@@ -41,25 +48,27 @@ if config['MODALITY'].values():
 
     val_transform = torchvision.transforms.Compose([
         EnsureChannelFirstd(keys=img_keys),
-        monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['Dose'])))),
+        monai.transforms.CropForegroundd(keys=img_keys, source_key='Structs', select_fn=threshold_at_one),
         monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
+        monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['Dose'])))),
     ])
 else:
     train_transform = None
     val_transform = None
 
 ## First Connect to XNAT
-session     = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'],password=config['SERVER']['Password'])
+session = xnat.connect(config['SERVER']['Address'], user=config['SERVER']['User'],
+                       password=config['SERVER']['Password'])
 SubjectList = QuerySubjectList(config, session)
 SynchronizeData(config, SubjectList)
 SubjectList.dropna(subset=['xnat_subjectdata_field_map_survival_months'], inplace=True)
 
 module_dict = nn.ModuleDict()
-if config['DATA']['Multichannel']: ## Single-Model Multichannel learning
+if config['DATA']['Multichannel']:  ## Single-Model Multichannel learning
     if config['MODALITY'].keys():
         module_dict['Image'] = Classifier(config, 'Image')
 else:
-    for key in config['MODALITY'].keys():# Multi-Model Single Channel learning
+    for key in config['MODALITY'].keys():  # Multi-Model Single Channel learning
         module_dict[key] = Classifier(config, key)
 
 if 'Records' in config.keys():
@@ -70,8 +79,8 @@ else:
 
 ## GeneratePath
 for key in config['MODALITY'].keys():
-    SubjectList[key+'_Path'] = ""
-QuerySubjectInfo(config, SubjectList, session)
+    SubjectList[key + '_Path'] = ""
+QuerySubjectInfo(config, SubjectList)
 print(SubjectList)
 
 for iter in range(0, 15, 1):
@@ -117,4 +126,3 @@ for iter in range(0, 15, 1):
 #     toml_file.write(str(train_transform))
 #     toml_file.write("Val/Test transform:\n")
 #     toml_file.write(str(val_transform))
-
