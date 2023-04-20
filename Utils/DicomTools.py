@@ -15,7 +15,8 @@ from monai.transforms import LoadImage
 sitk.ProcessObject_SetGlobalWarningDisplay(False)
 from rt_utils import RTStructBuilder
 from scipy.ndimage import *
-
+from concurrent.futures import ThreadPoolExecutor
+import concurrent
 
 def get_bbox_from_mask(mask, img_shape):
     pos = np.where(mask)
@@ -124,14 +125,6 @@ def get_masked_img_voxel(ImageVoxel, mask_voxel):
 #     return transform
 
 
-def class_stratify(SubjectList, config):
-    ptarget = SubjectList['xnat_subjectdata_field_map_' + config['DATA']['target']]
-    kbins = KBinsDiscretizer(n_bins=15, encode='ordinal', strategy='uniform')
-    ptarget = np.array(ptarget).reshape((len(ptarget), 1))
-    data_trans = kbins.fit_transform(ptarget)
-    return data_trans
-
-
 def get_RS_masks(slabel, CTPath, mask_imgs, RSfile, mask_names):
      #RS = RTStructBuilder.create_from(dicom_series_path=CTPath, rt_struct_path=RSfile)
      #roi_names = RS.get_roi_names()
@@ -186,3 +179,44 @@ def BitSet(n, p, b):
     mask = 1 << p
     bm = b << p
     return (n & ~mask) | bm
+
+def QuerySubjectInfo(config, SubjectList, session):
+    if config['DATA']['Nifty']:
+        for i in range(len(SubjectList)):
+            subject_label = SubjectList.loc[i,'subject_label']
+            for key in config['MODALITY'].keys():
+                SubjectList.loc[i, key + '_Path'] = Path(config['DATA']['DataFolder'], subject_label)
+    else:
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_url = {executor.submit(get_subject_info, config, session, subjectid) for subjectid in
+                             SubjectList['subjectid']}
+            executor.shutdown(wait=True)
+        for future in concurrent.futures.as_completed(future_to_url):
+            subjectdata = future.result()
+            subjectid = subjectdata["xnat:Subject"][0]["@ID"]
+            for key in config['MODALITY'].keys():
+                path = GeneratePath(subjectdata, Modality=key, config=config)
+                if key == 'CT':
+                    SubjectList.loc[SubjectList.subjectid == subjectid, key + '_Path'] = path
+                else:
+                    spath = glob.glob(path + '/*dcm')
+                    SubjectList.loc[SubjectList.subjectid == subjectid, key + '_Path'] = spath[0]
+
+def GeneratePath(subjectdata, Modality, config):
+    subject = subjectdata['xnat:Subject'][0]
+    subject_label = subject['@label']
+    experiments = subject['xnat:experiments'][0]['xnat:experiment']
+
+    ## Won't work with many experiments yet
+    for experiment in experiments:
+        experiment_label = experiment['@label']
+        scans = experiment['xnat:scans'][0]['xnat:scan']
+        for scan in scans:
+            if (scan['@type'] in Modality):
+                scan_label = scan['@ID'] + '-' + scan['@type']
+                resources_label = scan['xnat:file'][0]['@label']
+                if resources_label == 'SNAPSHOTS':
+                    resources_label = scan['xnat:file'][1]['@label']
+                path = os.path.join(config['DATA']['DataFolder'], subject_label, experiment_label, 'scans',
+                                    scan_label, 'resources', resources_label, 'files')
+                return path

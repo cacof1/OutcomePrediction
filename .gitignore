@@ -10,3 +10,6 @@ Training/DeepSurv*.ckpt
 *.txt
 wandb/
 Training/*.xml
+Configs/*
+*.png
+Training/test*.py
