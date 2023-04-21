@@ -94,35 +94,35 @@ for iter in range(0, 15, 1):
                             inference=False)
 
     model = MixModel(module_dict, config)
-#     model.apply(model.weights_reset)
-#     filename = config['DATA']['LogFolder']
-#
-#     logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
-#     logger.log_text()
-#     logger._version = iter
-#     callbacks = [
-#         ModelCheckpoint(dirpath=Path(logger.log_dir, 'ckpt'),
-#                         monitor='val_loss_epoch',
-#                         filename='Iter_' + str(iter),
-#                         save_top_k=2,
-#                         mode='min'),
-#         # EarlyStopping(monitor='val_loss',
-#         #               check_finite=True),
-#     ]
-#
-#     trainer = Trainer(
-#         accelerator="gpu",
-#         devices=[0, 1, 2, 3],
-#         strategy=DDPStrategy(find_unused_parameters=True),
-#         max_epochs=40,
-#         logger=logger,
-#         callbacks=callbacks,
-#     )
-#     trainer.fit(model, dataloader)
-#
-# with open(logger.root_dir + "/Config.ini", "w+") as toml_file:
-#     toml.dump(config, toml_file)
-#     toml_file.write("Train transform:\n")
-#     toml_file.write(str(train_transform))
-#     toml_file.write("Val/Test transform:\n")
-#     toml_file.write(str(val_transform))
+    model.apply(model.weights_reset)
+    filename = config['DATA']['LogFolder']
+
+    logger = PredictionReports(config=config, save_dir='lightning_logs', name=filename)
+    logger.log_text()
+    logger._version = iter
+    callbacks = [
+        ModelCheckpoint(dirpath=Path(logger.log_dir, 'ckpt'),
+                        monitor='val_loss',
+                        filename='Iter_' + str(iter),
+                        save_top_k=2,
+                        mode='min'),
+        # EarlyStopping(monitor='val_loss',
+        #               check_finite=True),
+    ]
+
+    trainer = Trainer(
+        accelerator="gpu",
+        devices=[0, 1, 2, 3],
+        strategy=DDPStrategy(find_unused_parameters=True),
+        max_epochs=40,
+        logger=logger,
+        callbacks=callbacks,
+    )
+    trainer.fit(model, dataloader)
+
+with open(logger.root_dir + "/Config.ini", "w+") as toml_file:
+    toml.dump(config, toml_file)
+    toml_file.write("Train transform:\n")
+    toml_file.write(str(train_transform))
+    toml_file.write("Val/Test transform:\n")
+    toml_file.write(str(val_transform))
