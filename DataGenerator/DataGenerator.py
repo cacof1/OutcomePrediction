@@ -87,14 +87,14 @@ class DataGenerator(torch.utils.data.Dataset):
         else:  ##Training
             label = torch.tensor(
                 np.float(self.SubjectList.loc[i, "xnat_subjectdata_field_map_" + self.config['DATA']['target']]))
-            censored_label = not (np.int8(
+            censor_status = not (np.int8(
                 self.SubjectList.loc[i, 'xnat_subjectdata_field_map_' + self.config['DATA']['censor_label']]).astype(
                 'bool'))
             if 'threshold' in self.config['DATA'].keys():  ## Classification
                 label = torch.where(label > self.config['DATA']['threshold'], 1, 0)
                 label = torch.as_tensor(label, dtype=torch.float32)
-            label = (censored_label, label)
-            return data, label
+            #label = (censored_label, label)
+            return data, censor_status, label
 
 
 ### DataLoader

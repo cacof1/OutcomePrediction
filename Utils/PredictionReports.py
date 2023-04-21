@@ -21,6 +21,7 @@ import logging
 from pytorch_lightning.loggers import TensorBoardLogger
 from torchmetrics import ConfusionMatrix
 
+
 class PredictionReports(TensorBoardLogger):
     def __init__(self, config,
                  save_dir: str,
@@ -86,16 +87,15 @@ class PredictionReports(TensorBoardLogger):
         # str(self.config['MODALITY'].keys())
         self.experiment.add_text('configurations:', configurations)
 
-    def regression_matrix(self, prediction, label, prefix): ## matrix should be metrics
+    def regression_matrix(self, prediction, censor_status, label, prefix):  ## matrix should be metrics
         r_out = {}
         if 'cindex' in self.config['CHECKPOINT']['matrix']:
-            cindex = concordance_index(label[1].cpu().detach().numpy(), prediction.cpu().detach().numpy(), label[0].cpu().detach().numpy())
+            cindex = concordance_index(label.cpu().detach().numpy(), prediction.cpu().detach().numpy(),
+                                       censor_status.cpu().detach().numpy())
             r_out[prefix + 'cindex'] = cindex
         if 'r2' in self.config['CHECKPOINT']['matrix']:
-            r2 = r2_index(prediction.detach(), label[1].detach())
+            r2 = r2_index(prediction.detach(), label.detach())
             r_out[prefix + 'r2'] = r2
-            if 'train' in prefix:
-                print('r2', r2)
         return r_out
 
     def classification_matrix(self, prediction, label, prefix):
@@ -111,7 +111,7 @@ class PredictionReports(TensorBoardLogger):
             accuracy = auroc(prediction, label.int())
             c_out[prefix + 'roc'] = accuracy
         if 'Specificity' in self.config['CHECKPOINT']['matrix']:
-            spec = tn /(tn + fp)
+            spec = tn / (tn + fp)
             c_out[prefix + 'specificity'] = spec
 
         if 'Sensitivity' in self.config['CHECKPOINT']['matrix']:
@@ -176,7 +176,8 @@ class PredictionReports(TensorBoardLogger):
                 if 'CT' in self.config['MODALITY'].keys():
                     worst_img = data['Image'][idx][0, :, :, :]
                 if 'Dose' in self.config['MODALITY'].keys():
-                    worst_dose = data['Image'][idx][1, :, :, :] ### this index needs to be careful when adding pet image
+                    worst_dose = data['Image'][idx][1, :, :,
+                                 :]  ### this index needs to be careful when adding pet image
                 worst_AE = loss[idx]
                 label = data['slabel'][idx]
         out[prefix + 'worst_AE'] = worst_AE
@@ -187,19 +188,17 @@ class PredictionReports(TensorBoardLogger):
         out[prefix + 'slabel'] = label
         return out
 
-    def report_epoch(self, prediction, label, validation_step_outputs,
+    def report_epoch(self, prediction, censor_status, label, validation_step_outputs,
                      current_epoch, prefix) -> None:
         if self.config['MODEL']['Prediction_type'] == 'Regression':
-            regression_out = self.regression_matrix(prediction, label, prefix)
-            if 'train' in prefix:
-                print('regression_matrix:', regression_out)
+            regression_out = self.regression_matrix(prediction, censor_status, label, prefix)
             self.log_metrics(regression_out, current_epoch)
 
         if self.config['MODEL']['Prediction_type'] == 'Classification':
-            classification_out = self.classification_matrix(prediction.squeeze(), label[1], prefix)
+            classification_out = self.classification_matrix(prediction.squeeze(), label, prefix)
             self.log_metrics(classification_out, current_epoch)
             if 'AUROC' in self.config['CHECKPOINT']['matrix']:
-                self.plot_AUROC(prediction.squeeze(), label[0], prefix, current_epoch)
+                self.plot_AUROC(prediction.squeeze(), label, prefix, current_epoch)
 
         if 'WorstCase' in self.config['CHECKPOINT']['matrix']:
             worst_record = self.worst_case_show(validation_step_outputs, prefix)
@@ -212,7 +211,7 @@ class PredictionReports(TensorBoardLogger):
                 text = 'validate_worst_case_dose'
                 self.log_image(worst_record[prefix + 'worst_dose'], text, current_epoch)
 
-    def report_test(self, config, outs, model, prediction_labels, validation_labels, prefix):
+    def report_test(self, config, outs, model, prediction_labels, validation_censor, validation_labels, prefix):
         if 'WorstCase' in config['CHECKPOINT']['matrix']:
             worst_record = self.worst_case_show(outs, prefix)
             self.experiment.add_text('worst_test_AE: ', str(worst_record[prefix + 'worst_AE']))
@@ -225,16 +224,16 @@ class PredictionReports(TensorBoardLogger):
                 self.log_image(worst_record[prefix + 'worst_dose'], text)
 
         if config['MODEL']['Prediction_type'] == 'Regression':
-            self.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels[1])))
-            regression_out = self.regression_matrix(prediction_labels, validation_labels, prefix)
+            self.experiment.add_text('test loss: ', str(model.loss_fcn(prediction_labels, validation_labels)))
+            regression_out = self.regression_matrix(prediction_labels, validation_censor, validation_labels, prefix)
             self.experiment.add_text('test_cindex: ', str(regression_out[prefix + 'cindex']))
             self.experiment.add_text('test_r2: ', str(regression_out[prefix + 'r2']))
             return regression_out
 
         if config['MODEL']['Prediction_type'] == 'Classification':
-            classification_out = self.classification_matrix(prediction_labels.squeeze(), validation_labels[1], prefix)
+            classification_out = self.classification_matrix(prediction_labels.squeeze(), validation_labels, prefix)
             if 'AUROC' in config['CHECKPOINT']['matrix']:
-                self.plot_AUROC(prediction_labels, validation_labels[0], prefix)
+                self.plot_AUROC(prediction_labels, validation_labels, prefix)
                 self.experiment.add_text('test_AUROC: ', str(classification_out[prefix + 'roc']))
             if 'Specificity' in config['CHECKPOINT']['matrix']:
                 self.experiment.add_text('Specificity:', str(classification_out[prefix + 'specificity']))
@@ -250,8 +249,8 @@ class PredictionReports(TensorBoardLogger):
 
 
 def r2_index(prediction, label):
-    loss    = nn.MSELoss(reduction='sum')
-    SSres   = loss(prediction, label) 
+    loss = nn.MSELoss(reduction='sum')
+    SSres = loss(prediction, label)
     SStotal = torch.sum(torch.square(label - torch.mean(label)))
     r2 = 1 - SSres / SStotal
     return r2
