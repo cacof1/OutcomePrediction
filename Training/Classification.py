@@ -83,7 +83,7 @@ for key in config['MODALITY'].keys():
 QuerySubjectInfo(config, SubjectList)
 print(SubjectList)
 
-for iter in range(0, 15, 1):
+for iter in range(0, 3, 1):
     seed_everything(np.random.randint(0, 10000), workers=True)
     dataloader = DataModule(SubjectList,
                             config=config,
