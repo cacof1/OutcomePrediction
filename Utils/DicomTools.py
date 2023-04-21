@@ -1,14 +1,11 @@
 import os
 import glob
-#import cv2
 import SimpleITK as sitk
 import pydicom as dicom
 from pydicom import dcmread
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-#from monai.data import ITKReader, PILReader
-#import torchio as tio
 from pathlib import Path
 from sklearn.preprocessing import KBinsDiscretizer
 from monai.transforms import LoadImage

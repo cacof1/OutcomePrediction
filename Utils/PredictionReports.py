@@ -39,35 +39,6 @@ class PredictionReports(TensorBoardLogger):
     def log_hyperparams(self, params: argparse.Namespace, *args, **kwargs):
         pass
 
-    # @property
-    # def version(self):
-    #     description = ''
-    #     for i, param in enumerate(self.config['CRITERIA'].keys()):
-    #         clinical_criteria = str(self.config['CRITERIA'][param])
-    #         if i > 0:
-    #             description = description + '_'
-    #         description = description + param + '+' + '+'.join(clinical_criteria)
-    #     # Return the experiment version, int or str.
-    #
-    #     sub_str = description + '_' + 'modalities' + '+' + '+'.join(self.config['MODALITY'].keys())
-    #     description = description + '_' + 'modalities' + '+' + '+'.join(self.config['MODALITY'].keys()) + '_' + str(self._get_next_version(sub_str))
-    #     return description
-    #
-    # def _get_next_version(self, sub_str):
-    #     root_dir = self.root_dir
-    #     listdir_info = self._fs.listdir(root_dir)
-    #     existing_versions = []
-    #     for listing in listdir_info:
-    #         d = listing["name"]
-    #         bn = os.path.basename(d)
-    #         if self._fs.isdir(d) and bn.startswith(sub_str):
-    #             dir_ver = bn.split("_")[-1]
-    #             existing_versions.append(int(dir_ver))
-    #     if len(existing_versions) == 0:
-    #         return 0
-    #
-    #     return max(existing_versions) + 1
-
     def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None):
         for k, v in metrics.items():
             if isinstance(v, torch.Tensor):
@@ -83,8 +54,6 @@ class PredictionReports(TensorBoardLogger):
 
     def log_text(self) -> None:
         configurations = 'The modules included are ' + str(self.config['MODALITY'].keys())
-        # configurations = 'The img_dim is ' + str(self.config['DATA']['dim']) + ' and the modules included are ' +
-        # str(self.config['MODALITY'].keys())
         self.experiment.add_text('configurations:', configurations)
 
     def regression_matrix(self, prediction, censor_status, label, prefix):  ## matrix should be metrics
@@ -127,37 +96,10 @@ class PredictionReports(TensorBoardLogger):
             c_out[prefix + 'precision'] = precision
         return c_out
 
-    # def generate_cumulative_dynamic_auc(self, prediction, label, current_epoch, prefix) -> None:
-    #     # this function has issues
-    #     risk_score = 1 / prediction
-    #     # risk_score = prediction
-    #     # va_times = np.arange(int(label.cpu().min()) + 1, label.cpu().max(), 1)
-    #     va_times = np.percentile(label.cpu(), np.linspace(5, 81, 20))
-    #     dtypes = np.dtype([('event', np.bool_), ('time', np.float)])
-    #     construct_test = np.ndarray(shape=(len(label),), dtype=dtypes)
-    #     for i in range(len(label)):
-    #         construct_test[i] = (True, label[i].cpu().numpy())
-    #
-    #     cph_auc, cph_mean_auc = cumulative_dynamic_auc(
-    #         construct_test, construct_test, risk_score.cpu().squeeze(), va_times
-    #     )
-    #
-    #     fig = plt.figure()
-    #     plt.plot(va_times, cph_auc, marker="o")
-    #     plt.axhline(cph_mean_auc, linestyle="--")
-    #     plt.ylim([0, 1])
-    #     plt.xlabel("survival months")
-    #     plt.ylabel("time-dependent AUC")
-    #     plt.grid(True)
-    #     self.experiment.add_figure(prefix + "AUC", fig, current_epoch)
-    #     plt.close(fig)
-
     def plot_AUROC(self, prediction, label, prefix, current_epoch=None) -> None:
         roc = torchmetrics.ROC()
         fpr, tpr, _ = roc(prediction, label)
         fig = plt.figure()
-        # lw = 2
-        # plt.plot(fpr.cpu(), tpr.cpu(), color='darkorange', lw=lw)
         plt.plot(fpr.cpu(), tpr.cpu(), color='darkorange')
         plt.title(prefix + '_roc_curve')
         plt.xlabel('False Positive Rate')
