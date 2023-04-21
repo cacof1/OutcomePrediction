@@ -93,7 +93,6 @@ class DataGenerator(torch.utils.data.Dataset):
             if 'threshold' in self.config['DATA'].keys():  ## Classification
                 label = torch.where(label > self.config['DATA']['threshold'], 1, 0)
                 label = torch.as_tensor(label, dtype=torch.float32)
-            #label = (censored_label, label)
             return data, censor_status, label
 
 
@@ -106,7 +105,7 @@ class DataModule(LightningDataModule):
         self.num_workers = num_workers
         data_trans = class_stratify(SubjectList, config)
         ## Split Test with fixed seed
-        train_val_list, test_list = train_test_split(SubjectList, train_size=train_size, random_state=75,
+        train_val_list, test_list = train_test_split(SubjectList, train_size=train_size, random_state=42,
                                                      stratify=data_trans)
 
         data_trans = class_stratify(train_val_list, config)

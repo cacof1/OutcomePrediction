@@ -51,17 +51,6 @@ class MixModel(LightningModule):
         censor_status = torch.cat([out['censor_status'] for i, out in enumerate(step_outputs)], dim=0)
         prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
         self.logger.report_epoch(prediction, censor_status, labels, step_outputs,self.current_epoch, 'train_epoch_')
-        # with open(self.logger.log_dir + "/train_record.ini", "a") as toml_file:
-        #     toml_file.write('\n')
-        #     toml_file.write('label_epoch_' + str(self.current_epoch) + ':\n')
-        #     toml_file.write(str(labels[1]))
-        #     toml_file.write('\n')
-        #     toml_file.write('censor_epoch_' + str(self.current_epoch) + ':\n')
-        #     toml_file.write(str(labels[0]))
-        #     toml_file.write('\n')
-        #     toml_file.write('prediction_epoch_' + str(self.current_epoch) + ':\n')
-        #     toml_file.write(str(prediction))
-        #     toml_file.write('\n')
                          
     def validation_step(self, batch, batch_idx):
         data_dict, censor_status, label = batch
@@ -82,17 +71,6 @@ class MixModel(LightningModule):
         censor_status = torch.cat([out['censor_status'] for i, out in enumerate(step_outputs)], dim=0)
         prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
         self.logger.report_epoch(prediction, censor_status, labels, step_outputs, self.current_epoch, 'val_epoch_')
-        # with open(self.logger.log_dir + "/val_record.ini", "a") as toml_file:
-        #     toml_file.write('\n')
-        #     toml_file.write('label_epoch_' + str(self.current_epoch) + ':\n')
-        #     toml_file.write(str(labels[1]))
-        #     toml_file.write('\n')
-        #     toml_file.write('censor_epoch_' + str(self.current_epoch) + ':\n')
-        #     toml_file.write(str(labels[0]))
-        #     toml_file.write('\n')
-        #     toml_file.write('prediction_epoch_' + str(self.current_epoch) + ':\n')
-        #     toml_file.write(str(prediction))
-        #     toml_file.write('\n')
 
     def test_step(self, batch, batch_idx):
         data_dict, censor_status, label = batch
