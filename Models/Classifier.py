@@ -24,7 +24,7 @@ class Classifier(LightningModule):
             model_str = 'nets.' + model + '(**parameters)'
             self.backbone = eval(model_str)
 
-        layers = list(self.backbone.children())[:-1]
+        layers = list(self.backbone.children())[:-1] ## N->embedding
         self.model = nn.Sequential(*layers)
 
         self.flatten = nn.Sequential(
@@ -35,8 +35,6 @@ class Classifier(LightningModule):
             nn.Flatten(),
         )
         self.model.apply(self.weights_init)
-        self.accuracy = torchmetrics.AUROC(task="binary")
-        self.loss_fcn = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, x):
         features = self.model(x)

@@ -1,0 +1,4 @@
+PatientID, CT_Path, Age, IntervalStartRTDateLastFU, Dead
+0617-259694, /home/dgs1/data/DICOM/OutcomePrediction/RTOG0617/0617-259694/0617-259694/scans/1-CT/resources/DICOM/files/, 40, 34, 1
+0617-436359, /home/dgs1/data/DICOM/OutcomePrediction/RTOG0617/0617-436359/0617-436359/scans/1-CT/resources/DICOM/files/, 67, 25, 1
+0617-483670, /home/dgs1/data/DICOM/OutcomePrediction/RTOG0617/0617-483670/0617-483670/scans/1-CT/resources/DICOM/files/, 60, 29, 0

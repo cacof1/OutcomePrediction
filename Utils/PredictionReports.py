@@ -1,14 +1,13 @@
 import argparse
 from typing import Dict, Optional, Union
 import os
-from pytorch_lightning.loggers.base import rank_zero_experiment
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 import matplotlib.pyplot as plt
 # plt.switch_backend('agg')
 import torchvision
-from pytorch_lightning.loggers import LightningLoggerBase
+from pytorch_lightning.loggers import Logger
 from sksurv.metrics import cumulative_dynamic_auc
 import torch
 from torch import nn
@@ -16,7 +15,7 @@ from sksurv.metrics import concordance_index_censored
 import torchmetrics
 from pytorch_lightning.utilities import rank_zero_only
 from pytorch_lightning.core.saving import save_hparams_to_yaml
-from pytorch_lightning.utilities.cloud_io import get_filesystem
+from lightning_fabric.utilities.cloud_io import get_filesystem
 import logging
 from pytorch_lightning.loggers import TensorBoardLogger
 from torchmetrics import ConfusionMatrix
