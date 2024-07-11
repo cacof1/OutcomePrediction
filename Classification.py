@@ -69,7 +69,8 @@ def build_model(config, clinical_cols):
     else:
         for key in config['MODALITY'].keys():  # Multi-Model Single Channel learning
             module_dict[key] = Classifier(config, key)
-            module_dict.pop('Structs')
+            if 'Structs' in module_dict.keys():
+                module_dict.pop('Structs')
 
     if 'Records' in config.keys():
         module_dict['Records'] = Linear(in_feat=len(clinical_cols), out_feat=42)
@@ -96,7 +97,9 @@ def get_logger(config, model_name):
 def main(config, rd):
     seed_everything(rd, workers=True)
     model_name = 'banana'
-    SubjectList, clinical_cols = pd.read_csv(config['DATA']['SubjectListFileName'])
+    SubjectList = pd.read_csv(config['DATA']['SubjectListFileName'])
+    print(SubjectList)
+    clinical_cols = config['DATA']['clinical_cols']
     logger = get_logger(config, model_name)
     callbacks = get_callbacks()
     train_transform, val_transform = transform_pipeline(config)

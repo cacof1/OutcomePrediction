@@ -2,3 +2,5 @@
  04-07-2024 13:56:33:424 [pid=1746681 tid=1746681] NOTICE  cufio-drv:727 running in compatible mode
  04-07-2024 13:57:38:145 [pid=1746909 tid=1746909] NOTICE  cufio-drv:727 running in compatible mode
  04-07-2024 15:04:30:867 [pid=1777251 tid=1777251] NOTICE  cufio-drv:727 running in compatible mode
+ 10-07-2024 16:20:08:212 [pid=2463886 tid=2463886] NOTICE  cufio-drv:727 running in compatible mode
+ 10-07-2024 16:20:08:878 [pid=2463886 tid=2463970] ERROR  cufio_core:55 Threadpool Thread ID:  140141811783424 cuDevicePrimaryCtxRetain failed with error 2

@@ -12,7 +12,7 @@ class MixModel(LightningModule):
         super().__init__()
         self.module_dict = module_dict
         self.config      = config
-        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(1.21))
+        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(1.21))  # TODO: Why 1.21??, Doesn't work with CrossEntropyLoss
         self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])()
         self.classifier  = nn.Sequential(
             nn.Linear(198, 120),
@@ -43,7 +43,7 @@ class MixModel(LightningModule):
         out['loss'] = loss
         return out
 
-    def training_epoch_end(self, step_outputs):
+    def on_train_epoch_end(self, step_outputs):
         labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
         prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
         self.logger.report_epoch(prediction, labels, step_outputs,self.current_epoch, 'train_epoch_')
@@ -62,7 +62,7 @@ class MixModel(LightningModule):
         out['loss'] = loss        
         return out
 
-    def validation_epoch_end(self, step_outputs):
+    def on_validation_epoch_end(self, step_outputs):
         labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
         prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
         self.logger.report_epoch(prediction.squeeze(), labels, step_outputs, self.current_epoch,'val_epoch_')
