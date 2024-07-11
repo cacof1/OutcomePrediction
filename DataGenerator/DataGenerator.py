@@ -9,6 +9,7 @@ from sklearn.compose import ColumnTransformer
 from pathlib import Path
 from collections import Counter
 from monai.visualize.utils import matshow3d
+from monai.transforms import LoadImage, EnsureChannelFirstd, ResampleToMatchd, ResizeWithPadOrCropd
 
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, SubjectList, config=None, keys=['CT'], transform=None, inference=False,
@@ -109,7 +110,7 @@ class DataModule(LightningDataModule):
                                                   num_workers=self.num_workers, pin_memory=True, shuffle=False)
 
     def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size,
-                                                  num_workers=self.num_workers, pin_memory=True, shuffle=True)
+                                                  num_workers=self.num_workers, pin_memory=True, shuffle=False)
 
     def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size,
                                                   num_workers=self.num_workers, pin_memory=True)

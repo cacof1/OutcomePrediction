@@ -118,7 +118,8 @@ def main(config, rd):
 
     trainer = Trainer(
         accelerator="gpu",
-        devices=[0, 1, 2, 3],
+        # devices=[0, 1, 2, 3],
+        devices=[0],
         strategy=DDPStrategy(find_unused_parameters=True),
         max_epochs=40,
         logger=logger,
