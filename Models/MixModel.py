@@ -12,10 +12,10 @@ class MixModel(LightningModule):
         super().__init__()
         self.module_dict = module_dict
         self.config      = config
-        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["Loss_Function"])(pos_weight=torch.tensor(1.21))  # TODO: Why 1.21??, Doesn't work with CrossEntropyLoss
-        self.activation  = getattr(torch.nn, self.config["MODEL"]["Activation"])()
+        self.loss_fcn    = getattr(torch.nn, self.config["MODEL"]["loss_function"])(pos_weight=torch.tensor(1.21))  # TODO: Why 1.21??, Doesn't work with CrossEntropyLoss
+        self.activation  = getattr(torch.nn, self.config["MODEL"]["activation"])()
         self.classifier  = nn.Sequential(
-            nn.Linear(198, 120),
+            nn.Linear(124, 120),
             nn.Dropout(0.3),
             nn.Linear(120, 40),
             nn.Dropout(0.3),
@@ -24,8 +24,12 @@ class MixModel(LightningModule):
         )
         self.classifier.apply(self.weights_init)
 
+        self.training_outputs = []
+        self.validation_outputs = []
+
     def forward(self, data_dict):
-        features   = torch.cat([self.module_dict[key](data_dict[key]) for key in self.module_dict.keys()], dim=1)
+        features   = torch.cat([self.module_dict[key](data_dict[key]) for key in self.module_dict.keys()
+                                if key in data_dict.keys()], dim=1)
         prediction = self.classifier(features)
         return prediction
 
@@ -39,14 +43,16 @@ class MixModel(LightningModule):
         out['MAE'] = MAE.detach()
         out = copy.deepcopy(data_dict)
         out['prediction'] = prediction.detach()
-        out['label']      = label        
+        out['label'] = label
         out['loss'] = loss
+        self.training_outputs.append(out)
         return out
 
-    def on_train_epoch_end(self, step_outputs):
-        labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
-        prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
-        self.logger.report_epoch(prediction, labels, step_outputs,self.current_epoch, 'train_epoch_')
+    def on_train_epoch_end(self):
+        labels = torch.cat([out['label'] for i, out in enumerate(self.training_outputs)], dim=0)
+        prediction = torch.cat([out['prediction'] for i, out in enumerate(self.training_outputs)], dim=0)
+        # self.logger.report_epoch(prediction, labels, self.training_outputs,self.current_epoch, 'train_epoch_')
+        self.training_outputs.clear()
                                  
     def validation_step(self, batch, batch_idx):
         out = {}
@@ -59,13 +65,15 @@ class MixModel(LightningModule):
         out = copy.deepcopy(data_dict)
         out['prediction'] = prediction
         out['label'] = label
-        out['loss'] = loss        
+        out['loss'] = loss
+        self.validation_outputs.append(out)
         return out
 
-    def on_validation_epoch_end(self, step_outputs):
-        labels = torch.cat([out['label'] for i, out in enumerate(step_outputs)], dim=0)
-        prediction = torch.cat([out['prediction'] for i, out in enumerate(step_outputs)], dim=0)
-        self.logger.report_epoch(prediction.squeeze(), labels, step_outputs, self.current_epoch,'val_epoch_')
+    def on_validation_epoch_end(self):
+        labels = torch.cat([out['label'] for i, out in enumerate(self.validation_outputs)], dim=0)
+        prediction = torch.cat([out['prediction'] for i, out in enumerate(self.validation_outputs)], dim=0)
+        # self.logger.report_epoch(prediction.squeeze(), labels, self.validation_outputs, self.current_epoch,'val_epoch_')
+        self.validation_outputs.clear()
 
     def test_step(self, batch, batch_idx):
         data_dict, label = batch

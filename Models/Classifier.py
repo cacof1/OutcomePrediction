@@ -12,7 +12,7 @@ class Classifier(LightningModule):
     def __init__(self, config, module_str):
         super().__init__()
 
-        model = config['MODEL']['Backbone']
+        model = config['MODEL']['backbone']
         parameters = config['MODEL_PARAMETERS']
 
         # only use network for features

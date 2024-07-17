@@ -15,6 +15,7 @@ from Models.Classifier import Classifier
 from Models.Linear import Linear
 from Models.MixModel import MixModel
 from monai.transforms import EnsureChannelFirstd, ScaleIntensityd, ResampleToMatchd, BoundingRectd
+from Utils.DataExtraction import create_subject_list
 
 ## Main
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -34,25 +35,25 @@ def load_config():
 
 
 def transform_pipeline(config):
-    img_keys = list(config['MODALITY'].keys())
+    img_keys = [k for k in config['MODALITY'].keys() if config['MODALITY'][k]]
 
     if config['MODALITY'].values():
         train_transform = torchvision.transforms.Compose([
-            EnsureChannelFirstd(keys=img_keys),
-            monai.transforms.CropForegroundd(keys=img_keys, source_key='Structs', select_fn=threshold_at_one),
+            EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if 'RTSTRUCT' in config['MODALITY'].keys() else img_keys),
+            monai.transforms.CropForegroundd(keys=img_keys, source_key='RTSTRUCT', select_fn=threshold_at_one),
             monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
             monai.transforms.RandAffined(keys=img_keys),
             monai.transforms.RandHistogramShiftd(keys=img_keys),
             monai.transforms.RandAdjustContrastd(keys=img_keys),
             monai.transforms.RandGaussianNoised(keys=img_keys),
-            monai.transforms.ScaleIntensityd(keys=list(set(img_keys).difference(set(['Dose'])))),
+            monai.transforms.ScaleIntensityd(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
         ])
 
         val_transform = torchvision.transforms.Compose([
-            EnsureChannelFirstd(keys=img_keys),
-            monai.transforms.CropForegroundd(keys=img_keys, source_key='Structs', select_fn=threshold_at_one),
+            EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if 'RTSTRUCT' in config['MODALITY'].keys() else img_keys),
+            monai.transforms.CropForegroundd(keys=img_keys, source_key='RTSTRUCT', select_fn=threshold_at_one),
             monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
-            monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['Dose'])))),
+            monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['RTDOSE'])))),
         ])
     else:
         train_transform = None
@@ -63,14 +64,15 @@ def transform_pipeline(config):
 
 def build_model(config, clinical_cols):
     module_dict = nn.ModuleDict()
-    if config['DATA']['Multichannel']:  ## Single-Model Multichannel learning
+    if config['DATA']['multichannel']:  ## Single-Model Multichannel learning
         if config['MODALITY'].keys():
             module_dict['Image'] = Classifier(config, 'Image')
     else:
         for key in config['MODALITY'].keys():  # Multi-Model Single Channel learning
-            module_dict[key] = Classifier(config, key)
-            if 'Structs' in module_dict.keys():
-                module_dict.pop('Structs')
+            if config['MODALITY'][key]:
+                module_dict[key] = Classifier(config, key)
+                if 'RTSTRUCT' in module_dict.keys():
+                    module_dict.pop('RTSTRUCT')
 
     if 'Records' in config.keys():
         module_dict['Records'] = Linear(in_feat=len(clinical_cols), out_feat=42)
@@ -89,7 +91,7 @@ def get_callbacks():
 
 
 def get_logger(config, model_name):
-    logger_folder = config['DATA']['LogFolder']
+    logger_folder = config['DATA']['log_folder']
     logger = TensorBoardLogger(save_dir='lightning_logs', name=logger_folder)
     return logger
 
@@ -97,7 +99,7 @@ def get_logger(config, model_name):
 def main(config, rd):
     seed_everything(rd, workers=True)
     model_name = 'banana'
-    SubjectList = pd.read_csv(config['DATA']['SubjectListFileName'])
+    SubjectList = create_subject_list(config)
     print(SubjectList)
     clinical_cols = config['DATA']['clinical_cols']
     logger = get_logger(config, model_name)
@@ -158,5 +160,5 @@ if __name__ == "__main__":
         random_seed_list.append(rd)
         main(config, rd)
 
-    # print(random_seed_list)
+    print(random_seed_list)
 

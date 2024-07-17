@@ -10,6 +10,9 @@ from pathlib import Path
 from collections import Counter
 from monai.visualize.utils import matshow3d
 from monai.transforms import LoadImage, EnsureChannelFirstd, ResampleToMatchd, ResizeWithPadOrCropd
+from monai.data.meta_tensor import MetaTensor
+from copy import deepcopy
+
 
 class DataGenerator(torch.utils.data.Dataset):
     def __init__(self, SubjectList, config=None, keys=['CT'], transform=None, inference=False,
@@ -29,35 +32,38 @@ class DataGenerator(torch.utils.data.Dataset):
 
         data = {}
         meta = {}
-        data['slabel']  = self.SubjectList.loc[i, 'subject_label']
+        data['slabel']  = self.SubjectList.loc[i, self.config['DATA']['subject_label']]
         ## Load CT
-        if 'CT' in self.keys:
+        if 'CT' in self.keys and self.config['MODALITY']['CT']:
             CTPath = self.SubjectList.loc[i, 'CT_Path']
             CT_Path = Path(CTPath, 'CT.nii.gz')
             data['CT'] = LoadImage(image_only=True)(CT_Path)
 
         ## Load RTDOSE
-        if 'RTDOSE' in self.keys:
+        if 'RTDOSE' in self.keys and self.config['MODALITY']['RTDOSE']:
             RTDOSEPath = self.SubjectList.loc[i, 'RTDOSE_Path']
             RTDOSEPath = Path(RTDOSEPath, 'Dose.nii.gz')
             data['RTDOSE'] = LoadImage(image_only=True)(RTDOSEPath)
             data['RTDOSE'] = data['RTDOSE'] / 67  ## Probably need to make it a variable
 
         ## Load PET
-        if 'PET' in self.keys:
+        if 'PET' in self.keys and self.config['MODALITY']['PET']:
             PETPath = self.SubjectList.loc[i, 'PET_Path']
             if self.config['DATA']['Nifty']:
                 PETPath = Path(PETPath, 'pet.nii.gz')
             data['PET'] = LoadImage(image_only=True)(PETPath)
 
         ## Load Mask
-        if 'RTSTRUCT' in self.keys:
+        if 'RTSTRUCT' in self.keys and self.config['MODALITY']['RTSTRUCT']:
             RSPath = self.SubjectList.loc[i, 'RTSTRUCT_Path']
             data['RTSTRUCT'] = LoadImage(image_only=True)(Path(RSPath, self.config['DATA']['Structs']))
+        else:
+            data['RTSTRUCT'] = deepcopy(data['CT'])
+            data['RTSTRUCT'][:] = 3
 
         if self.transform: data = self.transform(data)
 
-        if self.config['DATA']['Multichannel']:
+        if self.config['DATA']['multichannel']:
             old_keys = list(self.keys)
             data['Image'] = np.concatenate([data[key] for key in old_keys], axis=0)
             for key in old_keys: data.pop(key)

@@ -17,10 +17,10 @@ import torchmetrics
 
 ## Model
 class Linear(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, in_feat, out_feat):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(51, 42),
+            nn.Linear(in_feat, out_feat),
             nn.Dropout(0.3),
             nn.LayerNorm(42),
             nn.ReLU(),
