@@ -185,7 +185,7 @@ def main(config, rd):
 
 if __name__ == "__main__":
     config = (load_config()
-              if len(sys.argv) > 1 else toml.load("/home/dgs1/Software/Miguel/OutcomePrediction/TestConfiguration.ini"))
+              if len(sys.argv) > 1 else toml.load("/OPConfiguration.ini"))
     y = range(config['RUN']['bootstrap_n'])
     if 'random_state' in config['RUN'].keys():
         np.random.seed(seed=config['RUN']['random_state'])
