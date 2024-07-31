@@ -1,3 +1,5 @@
+from typing import Any
+
 import matplotlib.pyplot as plt
 import torch
 import copy
@@ -6,6 +8,7 @@ from torch import nn
 import torch.distributed as dist
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 from torchmetrics.classification import BinaryAccuracy, BinaryAUROC, BinaryF1Score
+from torchmetrics.regression import MeanAbsoluteError, R2Score, MeanAbsolutePercentageError, MeanSquaredError
 from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
 from torcheval.metrics.aggregation.auc import AUC
 from torcheval.metrics.toolkit import sync_and_compute
@@ -33,15 +36,24 @@ class MixModel(LightningModule):
         )
         self.classifier.apply(self.weights_init)
 
-        self.train_accuracy = BinaryAccuracy()
-        self.train_auc = BinaryAUROC()
-        self.train_f1score = BinaryF1Score()
-        self.validation_accuracy = BinaryAccuracy()
-        self.validation_auc = BinaryAUROC()
-        self.validation_f1score = BinaryF1Score()
+        if config['MODEL']['mode'] == 'classification':
+            self.train_accuracy = BinaryAccuracy()
+            self.train_auc = BinaryAUROC()
+            self.train_f1score = BinaryF1Score()
+            self.validation_accuracy = BinaryAccuracy()
+            self.validation_auc = BinaryAUROC()
+            self.validation_f1score = BinaryF1Score()
+
+        if config['MODEL']['mode'] == 'regression':
+            self.train_mae = MeanAbsoluteError()
+            self.train_mape = MeanAbsolutePercentageError()
+            self.train_r2 = R2Score()
+            self.validation_mae = MeanAbsoluteError()
+            self.validation_mape = MeanAbsolutePercentageError()
+            self.validation_r2 = R2Score()
 
         self.training_outputs = []
-        self.validation_outputs = [torch.empty((0, 2))]
+        self.validation_outputs = []
 
     def forward(self, data_dict):
         features = torch.cat([self.module_dict[key](data_dict[key]) for key in self.module_dict.keys()
@@ -51,18 +63,25 @@ class MixModel(LightningModule):
 
     def training_step(self, batch, batch_idx):
         out = {}
-        data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else (batch[0], batch[2])
+        data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else batch[:2]
         prediction = self.forward(data_dict)
         loss = self.loss_fcn(prediction.squeeze(dim=1), label)
         self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        self.train_accuracy(prediction.squeeze(dim=1), label)
-        self.train_auc(prediction.squeeze(dim=1), label)
-        self.train_f1score(prediction.squeeze(dim=1), label)
+        if self.config['MODEL']['mode'] == 'classification':
+            prediction_final = self.activation(prediction.detach()).squeeze(dim=1)
+            self.train_accuracy(prediction_final, label)
+            self.train_auc(prediction_final, label)
+            self.train_f1score(prediction_final, label)
+        elif self.config['MODEL']['mode'] == 'regression':
+            prediction_final = prediction.detach().squeeze(dim=1)
+            self.train_mae(prediction_final, label)
+            self.train_mape(prediction_final, label)
+            self.train_r2(prediction_final, label)
         # self.log('train_acc_step', self.train_accuracy, sync_dist=True)
-        MAE = torch.abs(prediction.flatten(0) - label)
+        MAE = torch.abs(prediction - label)
         out['MAE'] = MAE.detach()
         out = copy.deepcopy(data_dict)
-        out['prediction'] = self.activation(prediction.detach())
+        out['prediction'] = prediction_final
         out['label'] = label
         out['loss'] = loss
         # train_results = torch.cat([self.activation(prediction.detach()), label[:, None]], dim=1)
@@ -80,11 +99,20 @@ class MixModel(LightningModule):
         # prediction = torch.cat([out['prediction'] for i, out in enumerate(self.training_outputs)], dim=0)
         # self.log("raw_train_results", torch.cat([labels[:, None], prediction], dim=1), sync_dist=True)
         # self.logger.report_epoch(prediction, labels, self.training_outputs,self.current_epoch, 'train_epoch_')
-        self.log('train_accuracy_epoch', self.train_accuracy, on_step=False, on_epoch=True, sync_dist=True,
-                 prog_bar=True)
-        self.log("train_auc_epoch", self.train_auc, on_step=False, on_epoch=True, sync_dist=True, prog_bar=False)
-        self.log('train_f1score_epoch', self.train_f1score, on_step=False, on_epoch=True, sync_dist=True,
-                 prog_bar=False)
+        if self.config['MODEL']['mode'] == 'classification':
+            self.log('train_accuracy_epoch', self.train_accuracy, on_step=False, on_epoch=True, sync_dist=True,
+                     prog_bar=True)
+            self.log("train_auc_epoch", self.train_auc, on_step=False, on_epoch=True, sync_dist=True,
+                     prog_bar=False)
+            self.log('train_f1score_epoch', self.train_f1score, on_step=False, on_epoch=True, sync_dist=True,
+                     prog_bar=False)
+        elif self.config['MODEL']['mode'] == 'regression':
+            self.log('train_mae_epoch', self.train_mae, on_step=False, on_epoch=True, sync_dist=True,
+                     prog_bar=True)
+            self.log("train_mape_epoch", self.train_mape, on_step=False, on_epoch=True, sync_dist=True,
+                     prog_bar=False)
+            self.log('train_r2_epoch', self.train_r2, on_step=False, on_epoch=True, sync_dist=True,
+                     prog_bar=False)
         # if self.global_rank == 0:
         #     results = pd.DataFrame(self.training_outputs[0].cpu(), columns=['Prediction', 'Target'])
         #     print(results)
@@ -95,17 +123,24 @@ class MixModel(LightningModule):
                                  
     def validation_step(self, batch, batch_idx):
         out = {}
-        data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else (batch[0], batch[2])
+        data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else batch[:2]
         prediction = self.forward(data_dict)
         loss = self.loss_fcn(prediction.squeeze(dim=1), label)
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        self.validation_accuracy(prediction.squeeze(dim=1), label)
-        self.validation_auc(prediction.squeeze(dim=1), label)
-        self.validation_f1score(prediction.squeeze(dim=1), label)
-        MAE = torch.abs(prediction.flatten(0) - label)
+        if self.config['MODEL']['mode'] == 'classification':
+            prediction_final = self.activation(prediction.detach()).squeeze(dim=1)
+            self.validation_accuracy(prediction_final, label)
+            self.validation_auc(prediction_final, label)
+            self.validation_f1score(prediction_final, label)
+        elif self.config['MODEL']['mode'] == 'regression':
+            prediction_final = prediction.detach().squeeze(dim=1)
+            self.validation_mae(prediction_final, label)
+            self.validation_mape(prediction_final, label)
+            self.validation_r2(prediction_final, label)
+        MAE = torch.abs(prediction - label)
         out['MAE'] = MAE
         out = copy.deepcopy(data_dict)
-        out['prediction'] = prediction.detach()
+        out['prediction'] = prediction_final
         out['label'] = label
         out['loss'] = loss
         return out
@@ -113,23 +148,32 @@ class MixModel(LightningModule):
     def on_validation_epoch_end(self):
         # labels = torch.cat([out['label'] for i, out in enumerate(self.validation_outputs)], dim=0)
         # prediction = torch.cat([out['prediction'] for i, out in enumerate(self.validation_outputs)], dim=0)
-        self.log('validation_accuracy_epoch', self.validation_accuracy, on_step=False, on_epoch=True,
-                 sync_dist=True, prog_bar=True)
-        self.log('validation_auc_epoch', self.validation_auc, on_step=False, on_epoch=True, sync_dist=True,
-                 prog_bar=False)
-        self.log('validation_f1score_epoch', self.validation_f1score, on_step=False, on_epoch=True,
-                 sync_dist=True, prog_bar=False)
+        if self.config['MODEL']['mode'] == 'classification':
+            self.log('validation_accuracy_epoch', self.validation_accuracy, on_step=False, on_epoch=True,
+                     sync_dist=True, prog_bar=True)
+            self.log('validation_auc_epoch', self.validation_auc, on_step=False, on_epoch=True, sync_dist=True,
+                     prog_bar=False)
+            self.log('validation_f1score_epoch', self.validation_f1score, on_step=False, on_epoch=True,
+                     sync_dist=True, prog_bar=False)
+        elif self.config['MODEL']['mode'] == 'regression':
+            self.log('validation_mae_epoch', self.validation_mae, on_step=False, on_epoch=True,
+                     sync_dist=True, prog_bar=True)
+            self.log('validation_mape_epoch', self.validation_mape, on_step=False, on_epoch=True, sync_dist=True,
+                     prog_bar=False)
+            self.log('validation_r2_epoch', self.validation_r2, on_step=False, on_epoch=True,
+                     sync_dist=True, prog_bar=False)
         self.validation_outputs.clear()
 
     def test_step(self, batch, batch_idx):
-        data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else (batch[0], batch[2])
+        data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else batch[:2]
         prediction = self.forward(data_dict)
         loss = self.loss_fcn(prediction.squeeze(dim=1), label)
+        sig_prediction = self.activation(prediction.detach()).squeeze(dim=1)
         out = {}
-        MAE = torch.abs(prediction.flatten(0) - label)
+        MAE = torch.abs(sig_prediction - label)
         out['MAE'] = MAE
         out = copy.deepcopy(data_dict)
-        out['prediction'] = prediction.squeeze(dim=1)
+        out['prediction'] = sig_prediction
         out['label'] = label
         out['loss'] = loss                
         return out
@@ -147,3 +191,7 @@ class MixModel(LightningModule):
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.config['MODEL']['lr_step_size'],
                                                     gamma=self.config['MODEL']['lr_gamma'])
         return [optimizer], [scheduler]
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        data_dict = batch[0]
+        return self.activation(self.forward(data_dict).squeeze(dim=1)), *batch[1:]

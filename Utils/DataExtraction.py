@@ -30,10 +30,17 @@ def create_subject_list(config):
             filename = config['DATA'][f'{modality}_path']
             subject_list[f'{modality}_Path'] = [pat / filename for pat in patient_paths]
 
-    # Exclude all patients with censored times before the threshold
-    exclusion_cond = ((subject_list.loc[:, config['DATA']['censor_label']] == 1) &
-                      (subject_list.loc[:, config['DATA']['target']] < config['DATA']['threshold']))
-    subject_list = subject_list.loc[~exclusion_cond]
+    if config['DATA']['exclude_event_nan']:
+        subject_list = subject_list.loc[subject_list[config['DATA']['target']].notna()]
+
+    if not config['DATA']['include_censored']:
+        subject_list = subject_list.loc[subject_list.loc[:, config['DATA']['censor_label']] == 0]
+
+    if 'threshold' in config['DATA']:  # it's classification
+        # Exclude all patients with censored times before the threshold
+        exclusion_cond = ((subject_list.loc[:, config['DATA']['censor_label']] == 1) &
+                          (subject_list.loc[:, config['DATA']['target']] < config['DATA']['threshold']))
+        subject_list = subject_list.loc[~exclusion_cond]
 
     if 'RECORDS' in config.keys() and config['RECORDS']['records'] and 'categorical_cols' in config['DATA']:
         subject_list_old = subject_list.copy()

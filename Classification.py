@@ -10,6 +10,7 @@ from pytorch_lightning.strategies import DDPStrategy
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from itertools import chain
 
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule
@@ -40,6 +41,31 @@ def load_config():
     return config
 
 
+def get_results_table(results, dataloader, config):
+    columns = (['Prediction', 'Target', 'Censored', 'Index']
+               if len(results[0]) == 4 else ['Prediction', 'Target', 'Index'])
+    arr = np.array([list(chain(*[r[idx] for r in results])) for idx in range(len(results[0]))], dtype=float)
+    tab = pd.DataFrame(arr.transpose(), columns=columns)
+    tab[config['DATA']['subject_label']] = dataloader.full_list.loc[tab['Index'], config['DATA']['subject_label']]
+    tab['Train Set'] = tab[config['DATA']['subject_label']].isin(dataloader.train_list[config['DATA']['subject_label']])
+    tab['Validation Set'] = tab[config['DATA']['subject_label']].isin(
+        dataloader.val_list[config['DATA']['subject_label']])
+    tab['Test Set'] = tab[config['DATA']['subject_label']].isin(dataloader.test_list[config['DATA']['subject_label']])
+    tab = tab.set_index(config['DATA']['subject_label'], drop=True)
+    return tab.drop('Index', axis=1)
+
+
+def get_train_val_test_tab(dataloader, rd):
+    tab = dataloader.full_list.loc[:, [config['DATA']['subject_label']]]
+    tab['Train Set'] = tab[config['DATA']['subject_label']].isin(dataloader.train_list[config['DATA']['subject_label']])
+    tab['Validation Set'] = tab[config['DATA']['subject_label']].isin(
+        dataloader.val_list[config['DATA']['subject_label']])
+    tab['Test Set'] = tab[config['DATA']['subject_label']].isin(dataloader.test_list[config['DATA']['subject_label']])
+    tab = tab.set_index(config['DATA']['subject_label'], drop=True)
+    tab.loc['random_seed', 'Train Set'] = rd
+    return tab
+
+
 def transform_pipeline(config):
     img_keys = [k for k in config['MODALITY'].keys() if config['MODALITY'][k]]
     records_keys = ['records'] if config['RECORDS']['records'] else []
@@ -63,7 +89,6 @@ def transform_pipeline(config):
             condition = (('RTSTRUCT' not in config['MODALITY'].keys()) or (not config['MODALITY']['RTSTRUCT']) and
                          (config['MODALITY']['CT']) and ('CT' in config['MODALITY'].keys()))
             train_transform = [
-                # EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if 'RTSTRUCT' in config['MODALITY'].keys() else img_keys),
                 EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
                 monai.transforms.CropForegroundd(keys=img_keys, source_key='RTSTRUCT', select_fn=threshold_at_one),
                 monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
@@ -75,12 +100,15 @@ def transform_pipeline(config):
             ]
 
             val_transform = [
-                # EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if 'RTSTRUCT' in config['MODALITY'].keys() else img_keys),
                 EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
                 monai.transforms.CropForegroundd(keys=img_keys, source_key='RTSTRUCT', select_fn=threshold_at_one),
                 monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
                 monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['RTDOSE'])))),
             ]
+
+            if not config['DATA']['crop_foreground']:
+                del train_transform[-7]  # remove crop foreground
+                del val_transform[-3]  # remove crop foreground
 
         train_transform = torchvision.transforms.Compose(train_transform)
         val_transform = torchvision.transforms.Compose(val_transform)
@@ -130,7 +158,7 @@ def main(config, rd):
     seed_everything(rd, workers=True)
     model_name = 'banana'
     SubjectList = create_subject_list(config)
-    SubjectList.to_csv(Path(config['DATA']['log_folder'])/'data_table.csv')
+    SubjectList.to_csv(Path(config['DATA']['log_folder'])/'data_table.csv', index=False)
     clinical_cols = config['DATA']['clinical_cols']
     logger = get_logger(config, model_name)
     callbacks = get_callbacks()
@@ -162,16 +190,8 @@ def main(config, rd):
     if is_rank_zero():
         if not Path(logger.log_dir).exists():
             Path(logger.log_dir).mkdir(parents=True)
-        with open(logger.log_dir + '/patient_list.ini', 'w+') as patient_list_file:
-            patient_list_file.write('random_seed:\n')
-            patient_list_file.write(str(rd))
-            patient_list_file.write('\n')
-            patient_list_file.write('train_patient_list:\n')
-            patient_list_file.write('. '.join(list(dataloader.train_list[config['DATA']['subject_label']])))
-            patient_list_file.write('\n')
-            patient_list_file.write('val_patient_list:\n')
-            patient_list_file.write('. '.join(list(dataloader.val_list[config['DATA']['subject_label']])))
-            patient_list_file.write('\n')
+        patient_list = get_train_val_test_tab(dataloader, rd)
+        patient_list.to_csv(logger.log_dir + '/patient_list.csv', index=False)
 
         with open(logger.root_dir + "/Config.ini", "w+") as config_file:
             toml.dump(config, config_file)
@@ -181,11 +201,18 @@ def main(config, rd):
             config_file.write(str(val_transform))
 
     trainer.fit(model, dataloader)
+    checkpoint_path = list((Path(logger.log_dir) / 'checkpoints').glob('*.ckpt'))[-1]
+    h_param_path = logger.log_dir + 'hparams.yaml'
+    best_model = MixModel.load_from_checkpoint(checkpoint_path, hparams_file=h_param_path, module_dict=module_dict,
+                                               config=config)
+    results = trainer.predict(best_model, dataloader)
+    results_table = get_results_table(results, dataloader, config)
+    results_table.to_csv(logger.log_dir + '/results.csv')
 
 
 if __name__ == "__main__":
     config = (load_config()
-              if len(sys.argv) > 1 else toml.load("/home/dgs1/Software/Miguel/OutcomePrediction/TestConfiguration.ini"))
+              if len(sys.argv) > 1 else toml.load("./OPConfigurationMultichannelRegression.ini"))
     y = range(config['RUN']['bootstrap_n'])
     if 'random_state' in config['RUN'].keys():
         np.random.seed(seed=config['RUN']['random_state'])

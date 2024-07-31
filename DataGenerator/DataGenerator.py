@@ -1,4 +1,5 @@
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
+from pytorch_lightning.utilities.types import EVAL_DATALOADERS
 from torch.utils.data import DataLoader
 import numpy as np
 import torch
@@ -15,15 +16,16 @@ from copy import deepcopy
 
 
 class DataGenerator(torch.utils.data.Dataset):
-    def __init__(self, SubjectList, config=None, keys=['CT'], transform=None, inference=False,
-                 clinical_cols=None, session=None, **kwargs):
+    def __init__(self, SubjectList, config=None, keys=['CT'], transform=None, inference=False, clinical_cols=None,
+                 session=None, predict=False, **kwargs):
         super().__init__()
         self.config = config
         self.SubjectList = SubjectList
-        self.keys = keys
+        self.keys = [k for k in keys if config['MODALITY'][k]]
         self.transform = transform
         self.inference = inference
         self.clinical_cols = clinical_cols
+        self.predict = predict
 
     def __len__(self):
         return int(self.SubjectList.shape[0])
@@ -82,18 +84,17 @@ class DataGenerator(torch.utils.data.Dataset):
 
         if self.inference:
             return data
-
-        else:  ##Training
+        else:
             label = np.float32(self.SubjectList.loc[i, self.config['DATA']['target']])
-            if 'threshold' in self.config['DATA'].keys():  ## Classification
+            if self.config['MODEL']['mode'] == 'classification':  # Classification
                 label = np.where(label > self.config['DATA']['threshold'], 1, 0)
                 label = torch.as_tensor(label, dtype=torch.float32)
             if 'censor_label' in self.config['DATA'].keys():
                 censor_status = np.float32(
                     self.SubjectList.loc[i, self.config['DATA']['censor_label']]).astype('bool')
-                return data, censor_status, label
+                return (data, label, censor_status, i) if self.predict else (data, label, censor_status)
             else:
-                return data, label
+                return (data, label, i) if self.predict else (data, label)
 
 
 # DataLoader
@@ -114,10 +115,12 @@ class DataModule(LightningDataModule):
         self.train_list = train_list.reset_index(drop=True)
         self.val_list = val_list.reset_index(drop=True)
         self.test_list = test_list.reset_index(drop=True)
+        self.full_list = SubjectList.reset_index(drop=True)
 
         self.train_data = DataGenerator(self.train_list, config=config, transform=train_transform, **kwargs)
         self.val_data = DataGenerator(self.val_list, config=config, transform=val_transform, **kwargs)
         self.test_data = DataGenerator(self.test_list, config=config, transform=val_transform, **kwargs)
+        self.full_data = DataGenerator(SubjectList, config=config, transform=val_transform, predict=True, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,
                                                   num_workers=self.num_workers, pin_memory=True, shuffle=True)
@@ -127,6 +130,9 @@ class DataModule(LightningDataModule):
 
     def test_dataloader(self): return DataLoader(self.test_data, batch_size=self.batch_size,
                                                  num_workers=self.num_workers, pin_memory=True)
+
+    def predict_dataloader(self): return DataLoader(self.full_data, batch_size=self.batch_size,
+                                                    num_workers=self.num_workers, shuffle=False, pin_memory=True)
 
     @staticmethod
     def transform_fit(transform, data_list, config):
@@ -140,6 +146,4 @@ class DataModule(LightningDataModule):
             if hasattr(elem, 'fit'):
                 transform.transforms[i].fit(data_list.loc[:, cols])
         return transform
-
-
 
