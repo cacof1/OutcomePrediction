@@ -32,7 +32,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
         data = {}
         meta = {}
-        data['slabel']  = self.SubjectList.loc[i, self.config['DATA']['subject_label']]
+        data['slabel'] = self.SubjectList.loc[i, self.config['DATA']['subject_label']]
         ## Load CT
         if 'CT' in self.keys and self.config['MODALITY']['CT']:
             CTPath = self.SubjectList.loc[i, 'CT_Path']
@@ -56,10 +56,16 @@ class DataGenerator(torch.utils.data.Dataset):
         ## Load Mask
         if 'RTSTRUCT' in self.keys and self.config['MODALITY']['RTSTRUCT']:
             RSPath = self.SubjectList.loc[i, 'RTSTRUCT_Path']
-            data['RTSTRUCT'] = LoadImage(image_only=True)(Path(RSPath, self.config['DATA']['Structs']))
-        else:
+            RS_Path = Path(RSPath, self.config['DATA']['structs'] + '.nii.gz')
+            data['RTSTRUCT'] = LoadImage(image_only=True)(RS_Path)
+            data['RTSTRUCT'][data['RTSTRUCT'] > 0] += 3
+        elif 'CT' in self.keys and self.config['MODALITY']['CT']:
             data['RTSTRUCT'] = deepcopy(data['CT'])
             data['RTSTRUCT'][:] = 3
+
+        # Add clinical record at the end
+        if 'RECORDS' in self.config.keys() and self.config['RECORDS']['records']:
+            data['records'] = self.SubjectList.loc[i, self.clinical_cols].values.astype('float')
 
         if self.transform: data = self.transform(data)
 
@@ -72,11 +78,7 @@ class DataGenerator(torch.utils.data.Dataset):
                 data['RTDOSE'] = np.concatenate([data[key] for key in ['RTDOSE', 'RTSTRUCT']], axis=0)
                 data.pop('RTSTRUCT')
             elif 'RTSTRUCT' in data.keys():
-                data.pop('RTSTRUCT')  ## No need for mask in single-channel multi-branch
-
-        ## Add clinical record at the end
-        if 'Records' in self.config.keys():
-            data['Records'] = self.SubjectList.loc[i, self.clinical_cols].values.astype('float')
+                data.pop('RTSTRUCT')  # No need for mask in single-channel multi-branch
 
         if self.inference:
             return data
@@ -92,7 +94,9 @@ class DataGenerator(torch.utils.data.Dataset):
                 return data, censor_status, label
             else:
                 return data, label
-### DataLoader
+
+
+# DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, SubjectList, config=None, train_transform=None, val_transform=None, train_size=0.7, rd=None,
                  rd_tv=None, num_workers=1, **kwargs):
@@ -100,26 +104,42 @@ class DataModule(LightningDataModule):
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = 32
 
-        train_list, val_test_list = train_test_split(SubjectList, train_size=train_size,random_state=rd_tv) ## 0.7/0.3
+        train_list, val_test_list = train_test_split(SubjectList, train_size=train_size, random_state=rd_tv)  ## 0.7/0.3
 
-        val_list, test_list = train_test_split(val_test_list, train_size=0.5,random_state=rd_tv)## 0.15/0.15
+        val_list, test_list = train_test_split(val_test_list, train_size=0.5, random_state=rd_tv)  ## 0.15/0.15
+
+        train_transform = self.transform_fit(train_transform, train_list, config)
+        val_transform = self.transform_fit(val_transform, train_list, config)
 
         self.train_list = train_list.reset_index(drop=True)
-        self.val_list   = val_list.reset_index(drop=True)
-        self.test_list  = test_list.reset_index(drop=True)
+        self.val_list = val_list.reset_index(drop=True)
+        self.test_list = test_list.reset_index(drop=True)
 
         self.train_data = DataGenerator(self.train_list, config=config, transform=train_transform, **kwargs)
-        self.val_data   = DataGenerator(self.val_list, config=config, transform=val_transform, **kwargs)
-        self.test_data  = DataGenerator(self.test_list, config=config, transform=val_transform, **kwargs)
+        self.val_data = DataGenerator(self.val_list, config=config, transform=val_transform, **kwargs)
+        self.test_data = DataGenerator(self.test_list, config=config, transform=val_transform, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,
-                                                  num_workers=self.num_workers, pin_memory=True, shuffle=False)
+                                                  num_workers=self.num_workers, pin_memory=True, shuffle=True)
 
-    def val_dataloader(self):   return DataLoader(self.val_data, batch_size=self.batch_size,
-                                                  num_workers=self.num_workers, pin_memory=True, shuffle=False)
+    def val_dataloader(self): return DataLoader(self.val_data, batch_size=self.batch_size,
+                                                num_workers=self.num_workers, pin_memory=True, shuffle=False)
 
-    def test_dataloader(self):  return DataLoader(self.test_data, batch_size=self.batch_size,
-                                                  num_workers=self.num_workers, pin_memory=True)
+    def test_dataloader(self): return DataLoader(self.test_data, batch_size=self.batch_size,
+                                                 num_workers=self.num_workers, pin_memory=True)
+
+    @staticmethod
+    def transform_fit(transform, data_list, config):
+        if transform is None:
+            return transform
+        if config is not None and config['DATA']['clinical_cols']:
+            cols = config['DATA']['clinical_cols']
+        else:
+            cols = list(data_list.columns)
+        for i, elem in enumerate(transform.transforms):
+            if hasattr(elem, 'fit'):
+                transform.transforms[i].fit(data_list.loc[:, cols])
+        return transform
 
 
 

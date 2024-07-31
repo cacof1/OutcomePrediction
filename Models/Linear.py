@@ -15,30 +15,32 @@ import sklearn
 from pytorch_lightning import loggers as pl_loggers
 import torchmetrics
 
+
 ## Model
 class Linear(pl.LightningModule):
-    def __init__(self, in_feat, out_feat):
+    def __init__(self, config, in_feat, out_feat):
         super().__init__()
         self.model = nn.Sequential(
             nn.Linear(in_feat, out_feat),
-            nn.Dropout(0.3),
-            nn.LayerNorm(42),
+            nn.Dropout(config['MODEL']['dropout_prob']),
+            nn.LayerNorm(out_feat),
             nn.ReLU(),
         )
         self.loss_fcn = nn.CrossEntropyLoss()
+        self.config = config
 
     def forward(self, x):
         return self.model(x.float())
 
-    def training_step(self, batch,batch_idx):
-        image,label = batch
-        prediction  = self.forward(image)
+    def training_step(self, batch, batch_idx):
+        image, label = batch
+        prediction = self.forward(image)
         loss = self.loss_fcn(prediction, label)
         return loss
 
-    def validation_step(self, batch,batch_idx):
+    def validation_step(self, batch, batch_idx):
         image,label = batch
-        prediction  = self.forward(image)
+        prediction = self.forward(image)
         loss = self.loss_fcn(prediction, label)
         return loss
 
@@ -47,7 +49,8 @@ class Linear(pl.LightningModule):
             nn.init.xavier_uniform_(m.weight.data)
         
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.config['MODEL']['learning_rate'])
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.config['MODEL']['lr_step_size'],
+                                                    gamma=self.config['MODEL']['lr_gamma'])
         return [optimizer], [scheduler]
 

@@ -7,6 +7,8 @@ import torchmetrics
 from monai.networks import blocks, nets
 from Models.UnetEncoder import UnetEncoder
 from Models.PretrainedEncoder3D import PretrainedEncoder3D
+
+
 ## Model
 class Classifier(LightningModule):
     def __init__(self, config, module_str):
@@ -30,7 +32,7 @@ class Classifier(LightningModule):
         self.flatten = nn.Sequential(
             # nn.Dropout(0.3),
             # nn.AdaptiveAvgPool3d(output_size=(4, 4, 4)),
-            nn.Dropout(0.3),
+            nn.Dropout(config['MODEL']['dropout_prob']),
             nn.AdaptiveAvgPool3d(output_size=(1, 1, 1)),
             nn.Flatten(),
         )
