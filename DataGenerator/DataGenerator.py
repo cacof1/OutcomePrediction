@@ -12,6 +12,7 @@ from collections import Counter
 from monai.visualize.utils import matshow3d
 from monai.transforms import LoadImage, EnsureChannelFirstd, ResampleToMatchd, ResizeWithPadOrCropd
 from monai.data.meta_tensor import MetaTensor
+from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from copy import deepcopy
 
 
@@ -85,13 +86,14 @@ class DataGenerator(torch.utils.data.Dataset):
         if self.inference:
             return data
         else:
-            label = np.float32(self.SubjectList.loc[i, self.config['DATA']['target']])
-            if self.config['MODEL']['mode'] == 'classification':  # Classification
-                label = np.where(label > self.config['DATA']['threshold'], 1, 0)
-                label = torch.as_tensor(label, dtype=torch.float32)
+            label = np.array(
+                self.SubjectList.loc[i, [self.config['DATA']['target']]+self.config['DATA']['additional_targets']],
+                dtype=np.float32)
+            if self.config['MODEL']['modes'][0] == 'classification':  # Classification
+                label[0] = np.where(label[0] > self.config['DATA']['threshold'], 1, 0)
+                label[0] = torch.as_tensor(label[0], dtype=torch.float32)
             if 'censor_label' in self.config['DATA'].keys():
-                censor_status = np.float32(
-                    self.SubjectList.loc[i, self.config['DATA']['censor_label']]).astype('bool')
+                censor_status = np.float32(self.SubjectList.loc[i, 'Censored']).astype('bool')
                 return (data, label, censor_status, i) if self.predict else (data, label, censor_status)
             else:
                 return (data, label, i) if self.predict else (data, label)
@@ -117,10 +119,20 @@ class DataModule(LightningDataModule):
         self.test_list = test_list.reset_index(drop=True)
         self.full_list = SubjectList.reset_index(drop=True)
 
+        # scale targets
+        self.target_preprocessing = dict()
+        for i, col in enumerate([config['DATA']['target']] + config['DATA']['additional_targets']):
+            t_preproc = RobustScaler() if config['MODEL']['modes'][i] == 'regression' else MinMaxScaler()
+            self.train_list.loc[:, [col]] = t_preproc.fit_transform(self.train_list.loc[:, [col]]).astype(np.float32)
+            self.val_list.loc[:, [col]] = t_preproc.transform(self.val_list.loc[:, [col]]).astype(np.float32)
+            self.test_list.loc[:, [col]] = t_preproc.transform(self.test_list.loc[:, [col]]).astype(np.float32)
+            self.full_list.loc[:, [col]] = t_preproc.transform(self.full_list.loc[:, [col]]).astype(np.float32)
+            self.target_preprocessing[col] = t_preproc
+
         self.train_data = DataGenerator(self.train_list, config=config, transform=train_transform, **kwargs)
         self.val_data = DataGenerator(self.val_list, config=config, transform=val_transform, **kwargs)
         self.test_data = DataGenerator(self.test_list, config=config, transform=val_transform, **kwargs)
-        self.full_data = DataGenerator(SubjectList, config=config, transform=val_transform, predict=True, **kwargs)
+        self.full_data = DataGenerator(self.full_list, config=config, transform=val_transform, predict=True, **kwargs)
 
     def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,
                                                   num_workers=self.num_workers, pin_memory=True, shuffle=True)

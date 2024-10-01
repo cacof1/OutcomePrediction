@@ -17,7 +17,7 @@ from DataGenerator.DataGenerator import DataModule
 from Models.Classifier import Classifier
 from Models.Linear import Linear
 from Models.MixModel import MixModel
-from monai.transforms import EnsureChannelFirstd, ScaleIntensityd, ResampleToMatchd, BoundingRectd
+from monai.transforms import EnsureChannelFirstd, ResizeWithPadOrCropd
 from Utils.DataExtraction import create_subject_list
 from Utils.Transformations import StandardScalerd
 
@@ -41,11 +41,24 @@ def load_config():
     return config
 
 
+def inverse_transform_target(results, dataloader, config, include_binary=False):
+    t_preproc = dataloader.target_preprocessing
+    for i, col in enumerate(t_preproc):
+        if not include_binary and config['MODEL']['modes'][i] == 'classification':
+            continue
+        results.loc[:, [f'Prediction_{col}']] = t_preproc[col].inverse_transform(results.loc[:, [f'Prediction_{col}']])
+        results.loc[:, [f'Target_{col}']] = t_preproc[col].inverse_transform(results.loc[:, [f'Target_{col}']])
+    return results
+
+
 def get_results_table(results, dataloader, config):
-    columns = (['Prediction', 'Target', 'Censored', 'Index']
-               if len(results[0]) == 4 else ['Prediction', 'Target', 'Index'])
-    arr = np.array([list(chain(*[r[idx] for r in results])) for idx in range(len(results[0]))], dtype=float)
-    tab = pd.DataFrame(arr.transpose(), columns=columns)
+    end_columns = ['Censored', 'Index'] if len(results[0]) == 4 else ['Index']
+    pred_columns = [f'Prediction_{i}' for i in [config['DATA']['target']] + config['DATA']['additional_targets']]
+    target_columns = [f'Target_{i}' for i in [config['DATA']['target']] + config['DATA']['additional_targets']]
+    columns = pred_columns + target_columns + end_columns
+    arr = [(np.array(list(chain(*[r[idx] for r in results])))) for idx in range(len(results[0]))]
+    arr = np.concatenate([arr_[:, None] if arr_.ndim == 1 else arr_ for arr_ in arr], axis=1)
+    tab = pd.DataFrame(arr, columns=columns)
     tab[config['DATA']['subject_label']] = dataloader.full_list.loc[tab['Index'], config['DATA']['subject_label']]
     tab['Train Set'] = tab[config['DATA']['subject_label']].isin(dataloader.train_list[config['DATA']['subject_label']])
     tab['Validation Set'] = tab[config['DATA']['subject_label']].isin(
@@ -66,7 +79,7 @@ def get_train_val_test_tab(dataloader, rd):
     return tab
 
 
-def transform_pipeline(config):
+def transform_pipeline_old(config):
     img_keys = [k for k in config['MODALITY'].keys() if config['MODALITY'][k]]
     records_keys = ['records'] if config['RECORDS']['records'] else []
 
@@ -109,6 +122,59 @@ def transform_pipeline(config):
             if not config['DATA']['crop_foreground']:
                 del train_transform[-7]  # remove crop foreground
                 del val_transform[-3]  # remove crop foreground
+
+        train_transform = torchvision.transforms.Compose(train_transform)
+        val_transform = torchvision.transforms.Compose(val_transform)
+    else:
+        train_transform = None
+        val_transform = None
+
+    return train_transform, val_transform
+
+
+def transform_pipeline(config):
+    img_keys = [k for k in config['MODALITY'].keys() if config['MODALITY'][k]]
+    records_keys = ['records'] if config['RECORDS']['records'] else []
+
+    if len(records_keys) > 0 or len(img_keys) > 0:
+        train_transform = []
+        val_transform = []
+
+        if len(records_keys) > 0:
+            if 'continuous_cols' not in config['DATA'].keys():
+                non_continuous = [config['DATA']['target'], config['DATA']['censor_label'],
+                                  config['DATA']['subject_label']]
+                config['DATA']['continuous_cols'] = [col for col in config['DATA']['clinical_cols']
+                                                     if col not in non_continuous]
+            train_transform += [
+                StandardScalerd(keys=records_keys, continuous_variables=config['DATA']['continuous_cols']),]
+            val_transform += [
+                StandardScalerd(keys=records_keys, continuous_variables=config['DATA']['continuous_cols']),]
+
+        if len(img_keys) > 0:
+            condition = (('RTSTRUCT' not in config['MODALITY'].keys()) or (not config['MODALITY']['RTSTRUCT']) and
+                         (config['MODALITY']['CT']) and ('CT' in config['MODALITY'].keys()))
+            train_transform = [
+                EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
+                monai.transforms.Spacingd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, pixdim=[3, 3, 3]),
+                monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
+                monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
+                                                      spatial_size=config['DATA']['dim']),
+                monai.transforms.RandAffined(keys=img_keys),
+                monai.transforms.RandHistogramShiftd(keys=img_keys),
+                monai.transforms.RandAdjustContrastd(keys=img_keys),
+                monai.transforms.RandGaussianNoised(keys=img_keys),
+                monai.transforms.ScaleIntensityd(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
+            ]
+
+            val_transform = [
+                EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
+                monai.transforms.Spacingd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, pixdim=[3, 3, 3]),
+                monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
+                monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
+                                                      spatial_size=config['DATA']['dim']),
+                monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['RTDOSE'])))),
+            ]
 
         train_transform = torchvision.transforms.Compose(train_transform)
         val_transform = torchvision.transforms.Compose(val_transform)
@@ -207,12 +273,13 @@ def main(config, rd):
                                                config=config)
     results = trainer.predict(best_model, dataloader)
     results_table = get_results_table(results, dataloader, config)
+    results_table = inverse_transform_target(results_table, dataloader, config)
     results_table.to_csv(logger.log_dir + '/results.csv')
 
 
 if __name__ == "__main__":
     config = (load_config()
-              if len(sys.argv) > 1 else toml.load("./OPConfigurationMultichannelRegression.ini"))
+              if len(sys.argv) > 1 else toml.load("./OPConfigurationRegressionDebug.ini"))
     y = range(config['RUN']['bootstrap_n'])
     if 'random_state' in config['RUN'].keys():
         np.random.seed(seed=config['RUN']['random_state'])
