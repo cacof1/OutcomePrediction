@@ -266,6 +266,10 @@ def main(config, rd):
             config_file.write("Val/Test transform:\n")
             config_file.write(str(val_transform))
 
+    # if config['MODEL']['model_path']:
+    #     h_param_path = Path(config['MODEL']['model_path']) / 'hparams.yml'
+    #     model = MixModel.load_from_checkpoint(config['MODEL']['model_path'], hparams_file=h_param_path,
+    #                                           module_dict=module_dict, config=config)
     trainer.fit(model, dataloader)
     checkpoint_path = list((Path(logger.log_dir) / 'checkpoints').glob('*.ckpt'))[-1]
     h_param_path = logger.log_dir + 'hparams.yaml'
@@ -279,7 +283,7 @@ def main(config, rd):
 
 if __name__ == "__main__":
     config = (load_config()
-              if len(sys.argv) > 1 else toml.load("./OPConfigurationRegressionDebug.ini"))
+              if len(sys.argv) > 1 else toml.load("./OPConfigurationRegressionUnivariateRTOG+LUNG1+UCLH.ini"))
     y = range(config['RUN']['bootstrap_n'])
     if 'random_state' in config['RUN'].keys():
         np.random.seed(seed=config['RUN']['random_state'])
@@ -287,6 +291,5 @@ if __name__ == "__main__":
     print(random_seed_list)
     for i in y:
         main(config, random_seed_list[i])
-
     print(random_seed_list)
 

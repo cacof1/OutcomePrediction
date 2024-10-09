@@ -61,7 +61,7 @@ def create_subject_list(config):
         config['DATA']['categorical_cols'] = new_categorical_cols
         config['DATA']['clinical_cols'] = config['DATA']['continuous_cols'] + config['DATA']['categorical_cols']
 
-    if config['DATA']['imputation'] == 'mice':
+    if config['DATA']['imputation'] == 'mice' and len(config['DATA']['clinical_cols']) > 0:
         imputer = IterativeImputer()
         subject_list.loc[:, config['DATA']['clinical_cols']] = imputer.fit_transform(
             subject_list.loc[:, config['DATA']['clinical_cols']]).astype(np.float32)
