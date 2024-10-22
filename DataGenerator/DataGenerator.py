@@ -105,7 +105,7 @@ class DataModule(LightningDataModule):
                  rd_tv=None, num_workers=1, **kwargs):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
-        self.num_workers = 32
+        self.num_workers = num_workers
 
         train_list, val_test_list = train_test_split(SubjectList, train_size=train_size, random_state=rd_tv)  ## 0.7/0.3
 
