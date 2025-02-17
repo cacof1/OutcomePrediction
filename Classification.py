@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from itertools import chain
+from pytorch_lightning.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
 
 ## Module - Dataloaders
 from DataGenerator.DataGenerator import DataModule
@@ -24,10 +25,8 @@ from Utils.Transformations import StandardScalerd
 ## Main
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import toml
-from Utils.PredictionReports import PredictionReports
 from pathlib import Path
 from pytorch_lightning.loggers import TensorBoardLogger
-
 
 def is_rank_zero():
     return not dist.is_initialized() or dist.get_rank() == 0
@@ -79,59 +78,6 @@ def get_train_val_test_tab(dataloader, rd):
     return tab
 
 
-def transform_pipeline_old(config):
-    img_keys = [k for k in config['MODALITY'].keys() if config['MODALITY'][k]]
-    records_keys = ['records'] if config['RECORDS']['records'] else []
-
-    if len(records_keys) > 0 or len(img_keys) > 0:
-        train_transform = []
-        val_transform = []
-
-        if len(records_keys) > 0:
-            if 'continuous_cols' not in config['DATA'].keys():
-                non_continuous = [config['DATA']['target'], config['DATA']['censor_label'],
-                                  config['DATA']['subject_label']]
-                config['DATA']['continuous_cols'] = [col for col in config['DATA']['clinical_cols']
-                                                     if col not in non_continuous]
-            train_transform += [
-                StandardScalerd(keys=records_keys, continuous_variables=config['DATA']['continuous_cols']),]
-            val_transform += [
-                StandardScalerd(keys=records_keys, continuous_variables=config['DATA']['continuous_cols']),]
-
-        if len(img_keys) > 0:
-            condition = (('RTSTRUCT' not in config['MODALITY'].keys()) or (not config['MODALITY']['RTSTRUCT']) and
-                         (config['MODALITY']['CT']) and ('CT' in config['MODALITY'].keys()))
-            train_transform = [
-                EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
-                monai.transforms.CropForegroundd(keys=img_keys, source_key='RTSTRUCT', select_fn=threshold_at_one),
-                monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
-                monai.transforms.RandAffined(keys=img_keys),
-                monai.transforms.RandHistogramShiftd(keys=img_keys),
-                monai.transforms.RandAdjustContrastd(keys=img_keys),
-                monai.transforms.RandGaussianNoised(keys=img_keys),
-                monai.transforms.ScaleIntensityd(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
-            ]
-
-            val_transform = [
-                EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
-                monai.transforms.CropForegroundd(keys=img_keys, source_key='RTSTRUCT', select_fn=threshold_at_one),
-                monai.transforms.Resized(keys=img_keys, spatial_size=config['DATA']['dim']),
-                monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['RTDOSE'])))),
-            ]
-
-            if not config['DATA']['crop_foreground']:
-                del train_transform[-7]  # remove crop foreground
-                del val_transform[-3]  # remove crop foreground
-
-        train_transform = torchvision.transforms.Compose(train_transform)
-        val_transform = torchvision.transforms.Compose(val_transform)
-    else:
-        train_transform = None
-        val_transform = None
-
-    return train_transform, val_transform
-
-
 def transform_pipeline(config):
     img_keys = [k for k in config['MODALITY'].keys() if config['MODALITY'][k]]
     records_keys = ['records'] if config['RECORDS']['records'] else []
@@ -156,23 +102,23 @@ def transform_pipeline(config):
                          (config['MODALITY']['CT']) and ('CT' in config['MODALITY'].keys()))
             train_transform = [
                 EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
-                monai.transforms.Spacingd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, pixdim=[3, 3, 3]),
-                monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
-                monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
-                                                      spatial_size=config['DATA']['dim']),
+                # monai.transforms.Spacingd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, pixdim=[3, 3, 9]),
+                # monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
+                # monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
+                #                                       spatial_size=config['DATA']['dim']),
                 monai.transforms.RandAffined(keys=img_keys),
-                monai.transforms.RandHistogramShiftd(keys=img_keys),
-                monai.transforms.RandAdjustContrastd(keys=img_keys),
-                monai.transforms.RandGaussianNoised(keys=img_keys),
+                monai.transforms.RandHistogramShiftd(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
+                monai.transforms.RandAdjustContrastd(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
+                monai.transforms.RandGaussianNoised(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
                 monai.transforms.ScaleIntensityd(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
             ]
 
             val_transform = [
                 EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
-                monai.transforms.Spacingd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, pixdim=[3, 3, 3]),
-                monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
-                monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
-                                                      spatial_size=config['DATA']['dim']),
+                # monai.transforms.Spacingd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, pixdim=[3, 3, 9]),
+                # monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
+                # monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
+                #                                       spatial_size=config['DATA']['dim']),
                 monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['RTDOSE'])))),
             ]
 
@@ -241,7 +187,8 @@ def main(config, rd):
                             clinical_cols=clinical_cols,
                             rd=np.int16(rd),
                             inference=False,
-                            num_workers=13)
+                            num_workers=5,
+                            prefetch_factor=5)
 
     trainer = Trainer(
         accelerator="gpu",
@@ -251,6 +198,10 @@ def main(config, rd):
         logger=logger,
         log_every_n_steps=1,
         callbacks=callbacks,
+        # profiler=PyTorchProfiler(
+        #     on_trace_ready=torch.profiler.tensorboard_trace_handler("lightning_logs"),
+        #     record_shapes=True
+        # )
     )
 
     # Ensure the directory exists only on rank 0
@@ -273,6 +224,7 @@ def main(config, rd):
     #                                           module_dict=module_dict, config=config)
     trainer.fit(model, dataloader)
     checkpoint_path = list((Path(logger.log_dir) / 'checkpoints').glob('*.ckpt'))[-1]
+    # checkpoint_path = "/home/dgs1/Software/Miguel/OutcomePrediction/Logs/OnlyCT/GTVPrediction/SimpleCNN/version_1_CNN1-32-64-128/checkpoints/model_name=0-epochepoch=97.ckpt"
     h_param_path = logger.log_dir + 'hparams.yaml'
     best_model = MixModel.load_from_checkpoint(checkpoint_path, hparams_file=h_param_path, module_dict=module_dict,
                                                config=config)
@@ -283,8 +235,10 @@ def main(config, rd):
 
 
 if __name__ == "__main__":
+    # config = (load_config()
+    #           if len(sys.argv) > 1 else toml.load("./OPConfigurationRegressionUnivariate2x2x2Channels3.ini"))
     config = (load_config()
-              if len(sys.argv) > 1 else toml.load("./OPConfigurationRegressionUnivariateResNet2x2x2Channels3.ini"))
+              if len(sys.argv) > 1 else toml.load("./OPConfigurationRegressionSimpleCNN.ini"))
     y = range(config['RUN']['bootstrap_n'])
     if 'random_state' in config['RUN'].keys():
         np.random.seed(seed=config['RUN']['random_state'])

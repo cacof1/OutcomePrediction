@@ -29,16 +29,27 @@ class MixModel(LightningModule):
         self.loss_weights = (torch.ones(len(self.loss_fcns))*self.config["MODEL"]["loss_weights"]
                              if type(self.config["MODEL"]["loss_weights"]) is not list
                              else [getattr(torch.nn, elem)() for elem in self.config["MODEL"]["loss_weights"]])
-        self.classifier = nn.Sequential(
-            nn.Linear(config['MODEL']['classifier_in'], 120),
-            nn.Dropout(config['MODEL']['dropout_prob']),
-            nn.Linear(120, 40),
-            nn.Dropout(config['MODEL']['dropout_prob']),
-            nn.Linear(40, config['DATA']['n_classes']),
-            # self.activation
-        )
+        layers = ([config['MODEL']['classifier_in']] + config['MODEL']['classifier_config'] +
+                  [config['DATA']['n_classes']])
+        self.classifier = nn.Sequential()
+        for i in range(len(layers)-1):
+            self.classifier += nn.Sequential(
+                nn.Linear(layers[i], layers[i+1]),
+                nn.Dropout(config['MODEL']['dropout_prob'])
+            )
         self.classifier.apply(self.weights_init)
         self.survival_prediction_mode = config['MODEL']['modes'][0]
+
+        # self.classifier = nn.Sequential(
+        #     nn.Linear(config['MODEL']['classifier_in'], 120),
+        #     nn.Dropout(config['MODEL']['dropout_prob']),
+        #     nn.Linear(120, 40),
+        #     nn.Dropout(config['MODEL']['dropout_prob']),
+        #     nn.Linear(40, config['DATA']['n_classes']),
+        #     # self.activation
+        # )
+        # self.classifier.apply(self.weights_init)
+        # self.survival_prediction_mode = config['MODEL']['modes'][0]
 
         if self.survival_prediction_mode == 'classification':
             self.train_accuracy = BinaryAccuracy()

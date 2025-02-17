@@ -86,7 +86,7 @@ class ResNetLayer(nn.Module):
 
 class ResNetEncoder(nn.Module):
     """
-    ResNet encoder composed by decreasing size with increasing features.
+    ResNet0617+UCLH encoder composed by decreasing size with increasing features.
     """
     def __init__(self, in_channels=3, wf=5, depth =4, activation=nn.ReLU, block=ResNetResidualBlock, *args,**kwargs):
         super().__init__()
@@ -106,7 +106,7 @@ class ResNetEncoder(nn.Module):
 
 class ResnetDecoder(nn.Module):
     """
-    ResNet decoder composed by increasing size with decreasing features.
+    ResNet0617+UCLH decoder composed by increasing size with decreasing features.
     """
     def __init__(self, in_channels=512, wf= 5, depth=4, n_classes =3,  activation=nn.ReLU, block=ResNetResidualBlock, *args,**kwargs):
         super().__init__()

@@ -14,6 +14,23 @@ from monai.transforms import LoadImage, EnsureChannelFirstd, ResampleToMatchd, R
 from monai.data.meta_tensor import MetaTensor
 from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from copy import deepcopy
+import time
+import SimpleITK as sitk
+import nibabel as nib
+
+
+def timeit_decorator(repeats=1000):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            start = time.perf_counter()
+            for _ in range(repeats):
+                result = func(*args, **kwargs)
+            end = time.perf_counter()
+            elapsed_time = (end - start) / repeats
+            print(f"Average execution `get_item` time over {repeats} runs: {elapsed_time:.6f} seconds")
+            return result
+        return wrapper
+    return decorator
 
 
 class DataGenerator(torch.utils.data.Dataset):
@@ -27,12 +44,16 @@ class DataGenerator(torch.utils.data.Dataset):
         self.inference = inference
         self.clinical_cols = clinical_cols
         self.predict = predict
+        self.n = 0
+        self.m = 0
+        self.times = []
+        self.times_m = []
+        # self.TEST_IMG = LoadImage(image_only=True)(r'/home/dgs1/data/Nifty_Data/UCLH_NSCLC/00001/CT.nii.gz')
 
     def __len__(self):
         return int(self.SubjectList.shape[0])
 
     def __getitem__(self, i):
-
         data = {}
         meta = {}
         data['slabel'] = self.SubjectList.loc[i, self.config['DATA']['subject_label']]
@@ -40,7 +61,17 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'CT' in self.keys and self.config['MODALITY']['CT']:
             CTPath = self.SubjectList.loc[i, 'CT_Path']
             CT_Path = Path(CTPath, 'CT.nii.gz')
-            data['CT'] = LoadImage(image_only=True)(CT_Path)
+            start = time.perf_counter()
+            # data['CT'] = LoadImage(image_only=True)(CT_Path)
+            # data['CT'] = deepcopy(self.TEST_IMG)
+            data['CT'] = LoadImage(image_only=True, reader='ITKReader')(CT_Path)
+            end = time.perf_counter()
+            elapsed_time = end - start
+            self.times_m.append(elapsed_time)
+            self.m += 1
+            if self.m % 200 == 0:
+                print(f"Average execution `LoadImage` for CT time over {len(self.times_m)} runs: {np.average(self.times_m):.1f} seconds")
+                self.times_m = []
 
         ## Load RTDOSE
         if 'RTDOSE' in self.keys and self.config['MODALITY']['RTDOSE']:
@@ -70,7 +101,16 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'RECORDS' in self.config.keys() and self.config['RECORDS']['records']:
             data['records'] = self.SubjectList.loc[i, self.clinical_cols].values.astype('float')
 
-        if self.transform: data = self.transform(data)
+        if self.transform:
+            start = time.perf_counter()
+            data = self.transform(data)
+            end = time.perf_counter()
+            elapsed_time = end - start
+            self.times.append(elapsed_time)
+            self.n += 1
+            if self.n % 100 == 0:
+                print(f"Average execution `transform_pipeline` time over {len(self.times)} runs: {np.average(self.times):.1f} seconds")
+                self.times = []
 
         if self.config['DATA']['multichannel']:
             old_keys = list(self.keys)
@@ -102,10 +142,11 @@ class DataGenerator(torch.utils.data.Dataset):
 # DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, SubjectList, config=None, train_transform=None, val_transform=None, train_size=0.7, rd=None,
-                 rd_tv=None, num_workers=1, **kwargs):
+                 rd_tv=None, num_workers=1, prefetch_factor=None, **kwargs):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = num_workers
+        self.prefetch_factor = prefetch_factor
 
         train_list, val_test_list = train_test_split(SubjectList, train_size=train_size, random_state=rd_tv)  ## 0.7/0.3
 
@@ -158,4 +199,3 @@ class DataModule(LightningDataModule):
             if hasattr(elem, 'fit'):
                 transform.transforms[i].fit(data_list.loc[:, cols])
         return transform
-

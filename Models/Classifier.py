@@ -6,8 +6,9 @@ from torch import nn
 from torch._dynamo import OptimizedModule
 import torchmetrics
 from monai.networks import blocks, nets
-from Models.UnetEncoder import UnetEncoder
-from Models.PretrainedEncoder3D import PretrainedEncoder3D
+#from .UnetEncoder import UnetEncoder
+#from .PretrainedEncoder3D import PretrainedEncoder3D
+from .SimpleCNNTesting import SimpleCNN
 import os
 from totalsegmentator.python_api import totalsegmentator
 from copy import deepcopy
@@ -17,7 +18,7 @@ from copy import deepcopy
 class Classifier(LightningModule):
     def __init__(self, config, module_str):
         super().__init__()
-
+        self.config = config
         self.backbone_fixed = config['MODEL']['backbone_fixed']
         model = config['MODEL']['backbone']
         parameters = config['MODEL_PARAMETERS']
@@ -28,6 +29,7 @@ class Classifier(LightningModule):
             model_str = 'models.' + model_name + '(pretrained=True)'
             self.backbone = eval(model_str)
             layers = list(self.backbone.children())[:-1]  ## N->embedding
+            self.model = nn.Sequential(*layers)
         elif model == 'totalsegmentator':
             # totalsegmentator(config['MODEL']['backbone_folder'], config['MODEL']['backbone_folder'], fast=True)
             os.environ["nnUNet_raw"] = str(config['MODEL']['backbone_folder'])  # not needed, just needs to be an existing directory
@@ -55,12 +57,15 @@ class Classifier(LightningModule):
             encoder = self.backbone.encoder
             encoder = self.add_channels_to_ts(encoder, config['DATA']['n_channel'])
             layers = list(encoder.children())
+            self.model = nn.Sequential(*layers)
+        elif model == 'simpleCNN':
+            self.backbone = SimpleCNN(config, use_residual=False, use_dropout=False)
+            self.model = self.backbone
         else:
             model_str = 'nets.' + model + '(**parameters)'
             self.backbone = eval(model_str)
             layers = list(self.backbone.children())[:-1] ## N->embedding
-
-        self.model = nn.Sequential(*layers)
+            self.model = nn.Sequential(*layers)
 
         if self.backbone_fixed:
             self.model.requires_grad_(False)
@@ -90,7 +95,7 @@ class Classifier(LightningModule):
         self.flatten.apply(self.weights_init)
 
     def forward(self, x):
-        return self.flatten(self.model(x))
+        return self.flatten(self.model(x)) if self.config['MODEL']['backbone'] != 'simpleCNN' else self.model(x)
 
     @staticmethod
     def weights_init(m):

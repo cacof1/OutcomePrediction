@@ -13,7 +13,7 @@ def create_subject_list(config):
     if 'censor_label' in config['DATA'].keys():
         data_columns.append(config['DATA']['censor_label'])
     subject_list = pd.read_csv(config['DATA']['clinical_table_path'], index_col=config['DATA']['subject_label'])
-    subject_list = subject_list.loc[patients, data_columns]
+    subject_list = subject_list.loc[subject_list.index.isin(patients), data_columns]
     # Certify censored value is 0 and event 1
     if 'censor_label' in config['DATA'].keys() and 'censored_value' in config['DATA'].keys():
         subject_list['Censored'] = (
