@@ -13,7 +13,7 @@ from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
 from torcheval.metrics.aggregation.auc import AUC
 from torcheval.metrics.toolkit import sync_and_compute
 
-from Losses.loss import WeightedMSE, CrossEntropy
+from Losses.loss import WeightedMSE, CrossEntropy, MaskedMSELoss
 from sksurv.metrics import concordance_index_censored
 from monai.networks import nets
 
@@ -24,7 +24,8 @@ class MixModel(LightningModule):
         self.module_dict = module_dict
         self.config = config
         # self.loss_fcn = getattr(torch.nn, self.config["MODEL"]["loss_function"])(pos_weight=torch.tensor(1.21))  # TODO: Why 1.21??, Doesn't work with CrossEntropyLoss
-        self.loss_fcns = [getattr(torch.nn, elem)() for elem in self.config["MODEL"]["loss_functions"]]
+        self.loss_fcns = [getattr(torch.nn, elem)(reduction="mean") for elem in self.config["MODEL"]["loss_functions"]]
+        self.loss_fcns = [elem if elem is not torch.nn.MSELoss else MaskedMSELoss for elem in self.loss_fcns]
         self.activations = [getattr(torch.nn, elem)() for elem in self.config["MODEL"]["activations"]]
         self.loss_weights = (torch.ones(len(self.loss_fcns))*self.config["MODEL"]["loss_weights"]
                              if type(self.config["MODEL"]["loss_weights"]) is not list
@@ -32,11 +33,14 @@ class MixModel(LightningModule):
         layers = ([config['MODEL']['classifier_in']] + config['MODEL']['classifier_config'] +
                   [config['DATA']['n_classes']])
         self.classifier = nn.Sequential()
-        for i in range(len(layers)-1):
-            self.classifier += nn.Sequential(
-                nn.Linear(layers[i], layers[i+1]),
-                nn.Dropout(config['MODEL']['dropout_prob'])
-            )
+        if config['MODEL']['backbone'] != 'efficientnet':
+            for i in range(len(layers)-1):
+                self.classifier += nn.Sequential(
+                    nn.Linear(layers[i], layers[i+1]),
+                    nn.Dropout(config['MODEL']['dropout_prob'])
+                )
+        else:
+            self.classifier += nn.Sequential(nn.Identity())
         self.classifier.apply(self.weights_init)
         self.survival_prediction_mode = config['MODEL']['modes'][0]
 
@@ -80,11 +84,12 @@ class MixModel(LightningModule):
         out = {}
         data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else batch[:2]
         prediction = self.forward(data_dict)
-        survival_prediction = prediction[:, 0]
-        survival_label = label[:, 0]
-        loss = self.loss_weights[0] * self.loss_fcns[0](prediction[:, 0], label[:, 0])
+        mask = ~torch.isnan(label)
+        survival_prediction = prediction[mask[:, 0], 0]
+        survival_label = label[mask[:, 0], 0]
+        loss = self.loss_weights[0] * self.loss_fcns[0](prediction[mask[:, 0], 0], label[mask[:, 0], 0]) if mask[:, 0].any() else 0
         for i in range(1, label.shape[1]):
-            loss += self.loss_weights[i] * self.loss_fcns[i](prediction[:, i], label[:, i])
+            loss += self.loss_weights[i] * self.loss_fcns[i](prediction[mask[:, i], i], label[mask[:, i], i]) if mask[:, i].any() else 0
         self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         prediction_final = self.activations[0](survival_prediction.detach())
         if self.survival_prediction_mode == 'classification':
@@ -144,11 +149,12 @@ class MixModel(LightningModule):
         out = {}
         data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else batch[:2]
         prediction = self.forward(data_dict)
-        survival_prediction = prediction[:, 0]
-        survival_label = label[:, 0]
-        loss = self.loss_weights[0] * self.loss_fcns[0](prediction[:, 0], label[:, 0])
+        mask = ~torch.isnan(label)
+        survival_prediction = prediction[mask[:, 0], 0]
+        survival_label = label[mask[:, 0], 0]
+        loss = self.loss_weights[0] * self.loss_fcns[0](prediction[mask[:, 0], 0], label[mask[:, 0], 0]) if mask[:, 0].any() else 0
         for i in range(1, label.shape[1]):
-            loss += self.loss_weights[i] * self.loss_fcns[i](prediction[:, i], label[:, i])
+            loss += self.loss_weights[i] * self.loss_fcns[i](prediction[mask[:, i], i], label[mask[:, i], i]) if mask[:, i].any() else 0
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         prediction_final = self.activations[0](survival_prediction.detach())
         if self.survival_prediction_mode == 'classification':
@@ -190,12 +196,13 @@ class MixModel(LightningModule):
     def test_step(self, batch, batch_idx):
         data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else batch[:2]
         prediction = self.forward(data_dict)
-        survival_prediction = prediction[:, 0]
-        survival_label = label[:, 0]
+        mask = ~torch.isnan(label)
+        survival_prediction = prediction[mask[:, 0], 0]
+        survival_label = label[mask[:, 0], 0]
         prediction_final = self.activations[0](survival_prediction.detach())
-        loss = self.loss_weights[0] * self.loss_fcns[0](prediction[:, 0], label[:, 0])
+        loss = self.loss_weights[0] * self.loss_fcns[0](prediction[mask[:, 0], 0], label[:, 0])
         for i in range(1, label.shape[1]):
-            loss += self.loss_weights[i] * self.loss_fcns[i](prediction[:, i], label[:, i])
+            loss += self.loss_weights[i] * self.loss_fcns[i](prediction[mask[:, i], i], label[mask[:, i], i])
         out = {}
         MAE = torch.abs(prediction_final - survival_label)
         out['MAE'] = MAE

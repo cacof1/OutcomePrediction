@@ -3,7 +3,7 @@ from pytorch_lightning.utilities.types import EVAL_DATALOADERS
 from torch.utils.data import DataLoader
 import numpy as np
 import torch
-from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, KFold
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, LabelEncoder, OrdinalEncoder
 from sklearn.compose import ColumnTransformer
@@ -45,9 +45,7 @@ class DataGenerator(torch.utils.data.Dataset):
         self.clinical_cols = clinical_cols
         self.predict = predict
         self.n = 0
-        self.m = 0
         self.times = []
-        self.times_m = []
         # self.TEST_IMG = LoadImage(image_only=True)(r'/home/dgs1/data/Nifty_Data/UCLH_NSCLC/00001/CT.nii.gz')
 
     def __len__(self):
@@ -61,17 +59,9 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'CT' in self.keys and self.config['MODALITY']['CT']:
             CTPath = self.SubjectList.loc[i, 'CT_Path']
             CT_Path = Path(CTPath, 'CT.nii.gz')
-            start = time.perf_counter()
             # data['CT'] = LoadImage(image_only=True)(CT_Path)
             # data['CT'] = deepcopy(self.TEST_IMG)
             data['CT'] = LoadImage(image_only=True, reader='ITKReader')(CT_Path)
-            end = time.perf_counter()
-            elapsed_time = end - start
-            self.times_m.append(elapsed_time)
-            self.m += 1
-            if self.m % 200 == 0:
-                print(f"Average execution `LoadImage` for CT time over {len(self.times_m)} runs: {np.average(self.times_m):.1f} seconds")
-                self.times_m = []
 
         ## Load RTDOSE
         if 'RTDOSE' in self.keys and self.config['MODALITY']['RTDOSE']:
@@ -102,15 +92,15 @@ class DataGenerator(torch.utils.data.Dataset):
             data['records'] = self.SubjectList.loc[i, self.clinical_cols].values.astype('float')
 
         if self.transform:
-            start = time.perf_counter()
+            # start = time.perf_counter()
             data = self.transform(data)
-            end = time.perf_counter()
-            elapsed_time = end - start
-            self.times.append(elapsed_time)
-            self.n += 1
-            if self.n % 100 == 0:
-                print(f"Average execution `transform_pipeline` time over {len(self.times)} runs: {np.average(self.times):.1f} seconds")
-                self.times = []
+            # end = time.perf_counter()
+            # elapsed_time = end - start
+            # self.times.append(elapsed_time)
+            # self.n += 1
+            # if self.n % 100 == 0:
+            #     print(f"Average execution `transform_pipeline` time over {len(self.times)} runs: {np.average(self.times):.1f} seconds")
+            #     self.times = []
 
         if self.config['DATA']['multichannel']:
             old_keys = list(self.keys)
@@ -148,9 +138,7 @@ class DataModule(LightningDataModule):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
 
-        train_list, val_test_list = train_test_split(SubjectList, train_size=train_size, random_state=rd_tv)  ## 0.7/0.3
-
-        val_list, test_list = train_test_split(val_test_list, train_size=0.5, random_state=rd_tv)  ## 0.15/0.15
+        train_list, val_list, test_list = self.get_train_val_test(config, rd, train_size, SubjectList)
 
         train_transform = self.transform_fit(train_transform, train_list, config)
         val_transform = self.transform_fit(val_transform, train_list, config)
@@ -186,6 +174,28 @@ class DataModule(LightningDataModule):
 
     def predict_dataloader(self): return DataLoader(self.full_data, batch_size=self.batch_size,
                                                     num_workers=self.num_workers, shuffle=False, pin_memory=True)
+
+    def get_train_val_test(self, config, rd, train_size, subject_list):
+        if config['RUN']['cross_validation']:
+            train_list, val_list, test_list = self._cv_(
+                subject_list, train_size, config['RUN']['cv_k'], config['RUN']['cv_fold'], rd)
+        else:
+            train_list, val_list, test_list = self._random_split_(
+                subject_list, train_size, rd)
+        return train_list, val_list, test_list
+
+    def _cv_(self, subject_list, train_size, k, fold, rd):
+        train_list, val_list, test_list = self._random_split_(subject_list, train_size, rd)
+        full_train = pd.concat([train_list, val_list], axis=0)
+        k_splitter = KFold(k, shuffle=True, random_state=rd)
+        k_folds = list(k_splitter.split(full_train))
+        return full_train.iloc[k_folds[fold][0]], full_train.iloc[k_folds[fold][1]], test_list
+
+    @staticmethod
+    def _random_split_(subject_list, train_size, rd):
+        train_list, val_test_list = train_test_split(subject_list, train_size=train_size, random_state=rd)  ## 0.7/0.3
+        val_list, test_list = train_test_split(val_test_list, train_size=0.5, random_state=rd)  ## 0.15/0.15
+        return train_list, val_list, test_list
 
     @staticmethod
     def transform_fit(transform, data_list, config):

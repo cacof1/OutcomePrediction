@@ -8,11 +8,15 @@ from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 
 def create_subject_list(config):
     patients = pd.read_csv(config['DATA']['patient_ids_file_path'])['PatientID']
-    patient_paths = [Path(config['DATA']['data_folder']) / pat for pat in patients]
     data_columns = config['DATA']['clinical_cols'] + [config['DATA']['target']] + config['DATA']['additional_targets']
     if 'censor_label' in config['DATA'].keys():
         data_columns.append(config['DATA']['censor_label'])
-    subject_list = pd.read_csv(config['DATA']['clinical_table_path'], index_col=config['DATA']['subject_label'])
+    subject_list = pd.read_csv(config['DATA']['clinical_table_path'])
+    subject_list.loc[:, 'PatientPathSuffix'] = subject_list.loc[:, 'PatientID']
+    subject_list.loc[:, 'PatientID'] = subject_list.loc[:, 'PatientID'].apply(lambda x: Path(x).parts[-1])
+    subject_list = subject_list.set_index('PatientID')
+    patient_paths = [Path(config['DATA']['data_folder']) / subject_list.loc[pat, 'PatientPathSuffix']
+                     for pat in patients if pat in subject_list.index]
     subject_list = subject_list.loc[subject_list.index.isin(patients), data_columns]
     # Certify censored value is 0 and event 1
     if 'censor_label' in config['DATA'].keys() and 'censored_value' in config['DATA'].keys():

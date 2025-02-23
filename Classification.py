@@ -98,6 +98,8 @@ def transform_pipeline(config):
                 StandardScalerd(keys=records_keys, continuous_variables=config['DATA']['continuous_cols']),]
 
         if len(img_keys) > 0:
+            reduced_keys = list(set(img_keys).difference(set(['RTDOSE'])))
+            reduced_keys = reduced_keys if len(reduced_keys) > 0 else ['dummy']
             condition = (('RTSTRUCT' not in config['MODALITY'].keys()) or (not config['MODALITY']['RTSTRUCT']) and
                          (config['MODALITY']['CT']) and ('CT' in config['MODALITY'].keys()))
             train_transform = [
@@ -106,11 +108,11 @@ def transform_pipeline(config):
                 # monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
                 # monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
                 #                                       spatial_size=config['DATA']['dim']),
-                monai.transforms.RandAffined(keys=img_keys),
-                monai.transforms.RandHistogramShiftd(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
-                monai.transforms.RandAdjustContrastd(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
-                monai.transforms.RandGaussianNoised(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
-                monai.transforms.ScaleIntensityd(keys=list(set(img_keys).difference(set(['RTDOSE'])))),
+                monai.transforms.RandAffined(keys=img_keys, allow_missing_keys=True),
+                monai.transforms.RandHistogramShiftd(keys=reduced_keys, allow_missing_keys=True),
+                monai.transforms.RandAdjustContrastd(keys=reduced_keys, allow_missing_keys=True),
+                monai.transforms.RandGaussianNoised(keys=reduced_keys, allow_missing_keys=True),
+                monai.transforms.ScaleIntensityd(keys=reduced_keys, allow_missing_keys=True),
             ]
 
             val_transform = [
@@ -119,7 +121,7 @@ def transform_pipeline(config):
                 # monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
                 # monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
                 #                                       spatial_size=config['DATA']['dim']),
-                monai.transforms.ScaleIntensityd(list(set(img_keys).difference(set(['RTDOSE'])))),
+                monai.transforms.ScaleIntensityd(keys=reduced_keys, allow_missing_keys=True)
             ]
 
         train_transform = torchvision.transforms.Compose(train_transform)
@@ -238,7 +240,7 @@ if __name__ == "__main__":
     # config = (load_config()
     #           if len(sys.argv) > 1 else toml.load("./OPConfigurationRegressionUnivariate2x2x2Channels3.ini"))
     config = (load_config()
-              if len(sys.argv) > 1 else toml.load("./OPConfigurationRegressionSimpleCNN.ini"))
+              if len(sys.argv) > 1 else toml.load("OPConfigurationMultivariatePredictionEfficientNet.ini"))
     y = range(config['RUN']['bootstrap_n'])
     if 'random_state' in config['RUN'].keys():
         np.random.seed(seed=config['RUN']['random_state'])

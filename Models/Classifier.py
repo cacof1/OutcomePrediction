@@ -61,6 +61,13 @@ class Classifier(LightningModule):
         elif model == 'simpleCNN':
             self.backbone = SimpleCNN(config, use_residual=False, use_dropout=False)
             self.model = self.backbone
+        elif model == 'efficientnet':
+            self.backbone = nets.EfficientNetBN("efficientnet-b0",
+                                                spatial_dims=3,
+                                                in_channels=self.config['DATA']['n_channel'],
+                                                num_classes=self.config['DATA']['n_classes'],
+                                                pretrained=self.config['MODEL']['pretrained'])
+            self.model = self.backbone
         else:
             model_str = 'nets.' + model + '(**parameters)'
             self.backbone = eval(model_str)
@@ -95,7 +102,8 @@ class Classifier(LightningModule):
         self.flatten.apply(self.weights_init)
 
     def forward(self, x):
-        return self.flatten(self.model(x)) if self.config['MODEL']['backbone'] != 'simpleCNN' else self.model(x)
+        return (self.flatten(self.model(x))
+                if self.config['MODEL']['backbone'] not in ['simpleCNN', 'efficientnet'] else self.model(x))
 
     @staticmethod
     def weights_init(m):
