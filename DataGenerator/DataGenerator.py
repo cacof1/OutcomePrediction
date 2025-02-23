@@ -1,9 +1,9 @@
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 from pytorch_lightning.utilities.types import EVAL_DATALOADERS
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
 import numpy as np
 import torch
-from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, KFold
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, LabelEncoder, OrdinalEncoder
 from sklearn.compose import ColumnTransformer
@@ -17,6 +17,7 @@ from copy import deepcopy
 import time
 import SimpleITK as sitk
 import nibabel as nib
+import random
 
 
 def timeit_decorator(repeats=1000):
@@ -29,7 +30,9 @@ def timeit_decorator(repeats=1000):
             elapsed_time = (end - start) / repeats
             print(f"Average execution `get_item` time over {repeats} runs: {elapsed_time:.6f} seconds")
             return result
+
         return wrapper
+
     return decorator
 
 
@@ -45,9 +48,7 @@ class DataGenerator(torch.utils.data.Dataset):
         self.clinical_cols = clinical_cols
         self.predict = predict
         self.n = 0
-        self.m = 0
         self.times = []
-        self.times_m = []
         # self.TEST_IMG = LoadImage(image_only=True)(r'/home/dgs1/data/Nifty_Data/UCLH_NSCLC/00001/CT.nii.gz')
 
     def __len__(self):
@@ -61,17 +62,9 @@ class DataGenerator(torch.utils.data.Dataset):
         if 'CT' in self.keys and self.config['MODALITY']['CT']:
             CTPath = self.SubjectList.loc[i, 'CT_Path']
             CT_Path = Path(CTPath, 'CT.nii.gz')
-            start = time.perf_counter()
             # data['CT'] = LoadImage(image_only=True)(CT_Path)
             # data['CT'] = deepcopy(self.TEST_IMG)
             data['CT'] = LoadImage(image_only=True, reader='ITKReader')(CT_Path)
-            end = time.perf_counter()
-            elapsed_time = end - start
-            self.times_m.append(elapsed_time)
-            self.m += 1
-            if self.m % 200 == 0:
-                print(f"Average execution `LoadImage` for CT time over {len(self.times_m)} runs: {np.average(self.times_m):.1f} seconds")
-                self.times_m = []
 
         ## Load RTDOSE
         if 'RTDOSE' in self.keys and self.config['MODALITY']['RTDOSE']:
@@ -102,15 +95,15 @@ class DataGenerator(torch.utils.data.Dataset):
             data['records'] = self.SubjectList.loc[i, self.clinical_cols].values.astype('float')
 
         if self.transform:
-            start = time.perf_counter()
+            # start = time.perf_counter()
             data = self.transform(data)
-            end = time.perf_counter()
-            elapsed_time = end - start
-            self.times.append(elapsed_time)
-            self.n += 1
-            if self.n % 100 == 0:
-                print(f"Average execution `transform_pipeline` time over {len(self.times)} runs: {np.average(self.times):.1f} seconds")
-                self.times = []
+            # end = time.perf_counter()
+            # elapsed_time = end - start
+            # self.times.append(elapsed_time)
+            # self.n += 1
+            # if self.n % 100 == 0:
+            #     print(f"Average execution `transform_pipeline` time over {len(self.times)} runs: {np.average(self.times):.1f} seconds")
+            #     self.times = []
 
         if self.config['DATA']['multichannel']:
             old_keys = list(self.keys)
@@ -127,30 +120,32 @@ class DataGenerator(torch.utils.data.Dataset):
             return data
         else:
             label = np.array(
-                self.SubjectList.loc[i, [self.config['DATA']['target']]+self.config['DATA']['additional_targets']],
+                self.SubjectList.loc[i, [self.config['DATA']['target']] + self.config['DATA']['additional_targets']],
                 dtype=np.float32)
             if self.config['MODEL']['modes'][0] == 'classification':  # Classification
                 label[0] = np.where(label[0] > self.config['DATA']['threshold'], 1, 0)
                 label[0] = torch.as_tensor(label[0], dtype=torch.float32)
             if 'censor_label' in self.config['DATA'].keys():
                 censor_status = np.float32(self.SubjectList.loc[i, 'Censored']).astype('bool')
-                return (data, label, censor_status, i) if self.predict else (data, label, censor_status)
+                return (data, label, censor_status, i) if self.predict else (data, label, censor_status, i)
             else:
-                return (data, label, i) if self.predict else (data, label)
+                return (data, label, i) if self.predict else (data, label, i)
 
 
 # DataLoader
 class DataModule(LightningDataModule):
     def __init__(self, SubjectList, config=None, train_transform=None, val_transform=None, train_size=0.7, rd=None,
-                 rd_tv=None, num_workers=1, prefetch_factor=None, **kwargs):
+                 rd_worker=None, num_workers=1, prefetch_factor=None, **kwargs):
         super().__init__()
         self.batch_size = config['MODEL']['batch_size']
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
+        self.rd = rd
+        self.rd_worker = rd_worker
+        self.generator = torch.Generator()
+        self.generator.manual_seed(int(self.rd_worker))
 
-        train_list, val_test_list = train_test_split(SubjectList, train_size=train_size, random_state=rd_tv)  ## 0.7/0.3
-
-        val_list, test_list = train_test_split(val_test_list, train_size=0.5, random_state=rd_tv)  ## 0.15/0.15
+        train_list, val_list, test_list = self.get_train_val_test(config, rd, train_size, SubjectList)
 
         train_transform = self.transform_fit(train_transform, train_list, config)
         val_transform = self.transform_fit(val_transform, train_list, config)
@@ -175,17 +170,45 @@ class DataModule(LightningDataModule):
         self.test_data = DataGenerator(self.test_list, config=config, transform=val_transform, **kwargs)
         self.full_data = DataGenerator(self.full_list, config=config, transform=val_transform, predict=True, **kwargs)
 
-    def train_dataloader(self): return DataLoader(self.train_data, batch_size=self.batch_size,
-                                                  num_workers=self.num_workers, pin_memory=True, shuffle=True)
+        self.train_sampler = RandomSampler(self.train_data, generator=self.generator)
 
-    def val_dataloader(self): return DataLoader(self.val_data, batch_size=self.batch_size,
-                                                num_workers=self.num_workers, pin_memory=True, shuffle=False)
+    def train_dataloader(self):
+        return DataLoader(self.train_data, batch_size=self.batch_size,
+                          num_workers=self.num_workers, pin_memory=True, sampler=self.train_sampler)
 
-    def test_dataloader(self): return DataLoader(self.test_data, batch_size=self.batch_size,
-                                                 num_workers=self.num_workers, pin_memory=True)
+    def val_dataloader(self):
+        return DataLoader(self.val_data, batch_size=self.batch_size,
+                          num_workers=self.num_workers, pin_memory=True, shuffle=False)
 
-    def predict_dataloader(self): return DataLoader(self.full_data, batch_size=self.batch_size,
-                                                    num_workers=self.num_workers, shuffle=False, pin_memory=True)
+    def test_dataloader(self):
+        return DataLoader(self.test_data, batch_size=self.batch_size,
+                          num_workers=self.num_workers, pin_memory=True, shuffle=False)
+
+    def predict_dataloader(self):
+        return DataLoader(self.full_data, batch_size=self.batch_size,
+                          num_workers=self.num_workers, pin_memory=True, shuffle=False)
+
+    def get_train_val_test(self, config, rd, train_size, subject_list):
+        if config['RUN']['cross_validation']:
+            train_list, val_list, test_list = self._cv_(
+                subject_list, train_size, config['RUN']['cv_k'], config['RUN']['cv_fold'], rd)
+        else:
+            train_list, val_list, test_list = self._random_split_(
+                subject_list, train_size, rd)
+        return train_list, val_list, test_list
+
+    def _cv_(self, subject_list, train_size, k, fold, rd):
+        train_list, val_list, test_list = self._random_split_(subject_list, train_size, rd)
+        full_train = pd.concat([train_list, val_list], axis=0)
+        k_splitter = KFold(k, shuffle=True, random_state=rd)
+        k_folds = list(k_splitter.split(full_train))
+        return full_train.iloc[k_folds[fold][0]], full_train.iloc[k_folds[fold][1]], test_list
+
+    @staticmethod
+    def _random_split_(subject_list, train_size, rd):
+        train_list, val_test_list = train_test_split(subject_list, train_size=train_size, random_state=rd)  ## 0.7/0.3
+        val_list, test_list = train_test_split(val_test_list, train_size=0.5, random_state=rd)  ## 0.15/0.15
+        return train_list, val_list, test_list
 
     @staticmethod
     def transform_fit(transform, data_list, config):
@@ -199,3 +222,7 @@ class DataModule(LightningDataModule):
             if hasattr(elem, 'fit'):
                 transform.transforms[i].fit(data_list.loc[:, cols])
         return transform
+
+    def seed_worker(self, worker_id):
+        np.random.seed(self.rd_worker)
+        random.seed(self.rd_worker)

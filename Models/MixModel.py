@@ -1,5 +1,4 @@
-from typing import Any
-
+from typing import Any, Dict, Tuple
 import matplotlib.pyplot as plt
 import torch
 import copy
@@ -12,31 +11,47 @@ from torchmetrics.regression import MeanAbsoluteError, R2Score, MeanAbsolutePerc
 from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
 from torcheval.metrics.aggregation.auc import AUC
 from torcheval.metrics.toolkit import sync_and_compute
+from torch.optim.lr_scheduler import LambdaLR, SequentialLR, StepLR
 
-from Losses.loss import WeightedMSE, CrossEntropy
+from Losses.loss import WeightedMSE, CrossEntropy, MaskedMSELoss
 from sksurv.metrics import concordance_index_censored
 from monai.networks import nets
 
 
+def get_parameter_mean(model):
+    weights = [p.data for p in model.parameters() if p.requires_grad]
+    all_weights = torch.cat([w.flatten() for w in weights])
+    mean_weight = all_weights.mean().item()
+    return mean_weight
+
+
 class MixModel(LightningModule):
-    def __init__(self, module_dict, config, loss_fcn=torch.nn.BCEWithLogitsLoss()):
+    def __init__(self, module_dict, config):
         super().__init__()
+        self.save_hyperparameters(config)
         self.module_dict = module_dict
         self.config = config
         # self.loss_fcn = getattr(torch.nn, self.config["MODEL"]["loss_function"])(pos_weight=torch.tensor(1.21))  # TODO: Why 1.21??, Doesn't work with CrossEntropyLoss
-        self.loss_fcns = [getattr(torch.nn, elem)() for elem in self.config["MODEL"]["loss_functions"]]
+        self.loss_fcns = [getattr(torch.nn, elem)(reduction="mean") for elem in self.config["MODEL"]["loss_functions"]]
+        self.loss_fcns = [elem if elem is not torch.nn.MSELoss else MaskedMSELoss for elem in self.loss_fcns]
         self.activations = [getattr(torch.nn, elem)() for elem in self.config["MODEL"]["activations"]]
-        self.loss_weights = (torch.ones(len(self.loss_fcns))*self.config["MODEL"]["loss_weights"]
-                             if type(self.config["MODEL"]["loss_weights"]) is not list
-                             else [getattr(torch.nn, elem)() for elem in self.config["MODEL"]["loss_weights"]])
+        self.loss_weights_2 = (torch.ones(len(self.loss_fcns))*self.config["MODEL"]["loss_weights"]
+                               if type(self.config["MODEL"]["loss_weights"]) is not list
+                               else self.config["MODEL"]["loss_weights"])
+        loss_weights = config["MODEL"]["loss_weights"]
+        self.loss_weights = torch.tensor(
+            loss_weights if isinstance(loss_weights, list) else [loss_weights] * len(self.loss_fcns))
         layers = ([config['MODEL']['classifier_in']] + config['MODEL']['classifier_config'] +
                   [config['DATA']['n_classes']])
         self.classifier = nn.Sequential()
-        for i in range(len(layers)-1):
-            self.classifier += nn.Sequential(
-                nn.Linear(layers[i], layers[i+1]),
-                nn.Dropout(config['MODEL']['dropout_prob'])
-            )
+        if config['MODEL']['backbone'] != 'efficientnet':
+            for i in range(len(layers)-1):
+                self.classifier += nn.Sequential(
+                    nn.Linear(layers[i], layers[i+1]),
+                    nn.Dropout(config['MODEL']['dropout_prob'])
+                )
+        else:
+            self.classifier += nn.Sequential(nn.Identity())
         self.classifier.apply(self.weights_init)
         self.survival_prediction_mode = config['MODEL']['modes'][0]
 
@@ -67,57 +82,55 @@ class MixModel(LightningModule):
             self.validation_mape = MeanAbsolutePercentageError()
             # self.validation_r2 = R2Score()
 
-        self.training_outputs = []
-        self.validation_outputs = []
-
     def forward(self, data_dict):
-        features = torch.cat([self.module_dict[key](data_dict[key]) for key in self.module_dict.keys()
-                             if key in data_dict.keys()], dim=1)
+        features = torch.cat([self.module_dict[k](data_dict[k]) for k in self.module_dict if k in data_dict], dim=1)
         prediction = self.classifier(features)
         return prediction
 
+    def compute_loss_and_metrics(self, prediction: torch.Tensor, label: torch.Tensor, mode: str, stage: str) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        mask = ~torch.isnan(label)
+        loss = torch.tensor(0.0, device=prediction.device)
+        for i in range(label.shape[1]):
+            if mask[:, i].any():
+                loss += self.loss_weights[i] * self.loss_fcns[i](prediction[mask[:, i], i], label[mask[:, i], i])
+        loss = loss / mask.any(dim=0).sum()
+
+        survival_prediction = prediction[mask[:, 0], 0]
+        survival_label = label[mask[:, 0], 0]
+        pred_final = self.activations[0](survival_prediction.detach())
+
+        if survival_label.numel() > 0:
+            if mode == 'classification':
+                if stage == 'train':
+                    self.train_accuracy(pred_final, survival_label)
+                    self.train_auc(pred_final, survival_label)
+                    self.train_f1score(pred_final, survival_label)
+                elif stage == 'val':
+                    self.validation_accuracy(pred_final, survival_label)
+                    self.validation_auc(pred_final, survival_label)
+                    self.validation_f1score(pred_final, survival_label)
+            elif mode == 'regression':
+                if stage == 'train':
+                    self.train_mae(pred_final, survival_label)
+                    self.train_mape(pred_final, survival_label)
+                elif stage == 'val':
+                    self.validation_mae(pred_final, survival_label)
+                    self.validation_mape(pred_final, survival_label)
+        return loss, {'prediction': prediction, 'label': label}
+
     def training_step(self, batch, batch_idx):
-        out = {}
-        data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else batch[:2]
+        data_dict, label = batch[:2] if 'censor_label' in self.config['DATA'] else batch
         prediction = self.forward(data_dict)
-        survival_prediction = prediction[:, 0]
-        survival_label = label[:, 0]
-        loss = self.loss_weights[0] * self.loss_fcns[0](prediction[:, 0], label[:, 0])
-        for i in range(1, label.shape[1]):
-            loss += self.loss_weights[i] * self.loss_fcns[i](prediction[:, i], label[:, i])
+        loss, metrics = self.compute_loss_and_metrics(prediction, label, self.survival_prediction_mode, stage='train' if self.training else 'val')
+
+        if batch_idx == 0:
+            lr = self.trainer.lr_scheduler_configs[0].scheduler.optimizer.param_groups[0]['lr']
+            print(f"IMAGE ID 1 MEAN: {data_dict['Image'].mean()}, LABEL: {label.mean()}, LEARNING RATE: {lr}, LOSS: {loss.mean()}")
+
         self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        prediction_final = self.activations[0](survival_prediction.detach())
-        if self.survival_prediction_mode == 'classification':
-            self.train_accuracy(prediction_final, survival_label)
-            self.train_auc(prediction_final, survival_label)
-            self.train_f1score(prediction_final, survival_label)
-        elif self.survival_prediction_mode == 'regression':
-            self.train_mae(prediction_final, survival_label)
-            self.train_mape(prediction_final, survival_label)
-            # self.train_r2(prediction_final, survival_label)
-        # self.log('train_acc_step', self.train_accuracy, sync_dist=True)
-        MAE = torch.abs(prediction_final - survival_label)
-        out['MAE'] = MAE.detach()
-        out = copy.deepcopy(data_dict)
-        out['prediction'] = torch.concat(
-            [self.activations[i](prediction[:, i])[:, None] for i in range(label.shape[1])], dim=1)
-        out['label'] = label
-        out['loss'] = loss
-        # train_results = torch.cat([self.activation(prediction.detach()), label[:, None]], dim=1)
-        # train_results_list = [torch.zeros_like(train_results) for _ in range(dist.get_world_size())]
-        # dist.all_gather(train_results_list, train_results)
-        # if len(self.training_outputs) > 0:
-        #     self.training_outputs[0] = torch.cat(
-        #         [self.training_outputs[0], torch.cat(train_results_list, dim=0)], dim=0)
-        # else:
-        #     self.training_outputs.append(torch.cat(train_results_list, dim=0))
-        return out
+        return {**copy.deepcopy(data_dict), **metrics, 'loss': loss}
 
     def on_train_epoch_end(self):
-        # label = torch.cat([out['label'] for i, out in enumerate(self.training_outputs)], dim=0)
-        # prediction = torch.cat([out['prediction'] for i, out in enumerate(self.training_outputs)], dim=0)
-        # self.log("raw_train_results", torch.cat([labels[:, None], prediction], dim=1), sync_dist=True)
-        # self.logger.report_epoch(prediction, labels, self.training_outputs,self.current_epoch, 'train_epoch_')
         if self.survival_prediction_mode == 'classification':
             self.log('train_accuracy_epoch', self.train_accuracy, on_step=False, on_epoch=True, sync_dist=True,
                      prog_bar=True)
@@ -132,45 +145,15 @@ class MixModel(LightningModule):
                      prog_bar=False)
             # self.log('train_r2_epoch', self.train_r2, on_step=False, on_epoch=True, sync_dist=True,
             #          prog_bar=False)
-        # if self.global_rank == 0:
-        #     results = pd.DataFrame(self.training_outputs[0].cpu(), columns=['Prediction', 'Target'])
-        #     print(results)
-        #     print(accuracy_score(results['Target'].values, results['Prediction'].values >= 0.5))
-        #     # print(roc_auc_score(results['Target'], results['Prediction']))
-        #     print(f1_score(results['Target'].values, results['Prediction'].values >= 0.5, average='macro'))
-        self.training_outputs.clear()
-                                 
+
     def validation_step(self, batch, batch_idx):
-        out = {}
-        data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else batch[:2]
+        data_dict, label = batch[:2] if 'censor_label' in self.config['DATA'] else batch
         prediction = self.forward(data_dict)
-        survival_prediction = prediction[:, 0]
-        survival_label = label[:, 0]
-        loss = self.loss_weights[0] * self.loss_fcns[0](prediction[:, 0], label[:, 0])
-        for i in range(1, label.shape[1]):
-            loss += self.loss_weights[i] * self.loss_fcns[i](prediction[:, i], label[:, i])
+        loss, metrics = self.compute_loss_and_metrics(prediction, label, self.survival_prediction_mode, stage='train' if self.training else 'val')
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        prediction_final = self.activations[0](survival_prediction.detach())
-        if self.survival_prediction_mode == 'classification':
-            self.validation_accuracy(prediction_final, survival_label)
-            self.validation_auc(prediction_final, survival_label)
-            self.validation_f1score(prediction_final, survival_label)
-        elif self.survival_prediction_mode == 'regression':
-            self.validation_mae(prediction_final, survival_label)
-            self.validation_mape(prediction_final, survival_label)
-            # self.validation_r2(prediction_final, survival_label)
-        MAE = torch.abs(prediction_final - survival_label)
-        out['MAE'] = MAE
-        out = copy.deepcopy(data_dict)
-        out['prediction'] = torch.concat(
-            [self.activations[i](prediction[:, i])[:, None] for i in range(label.shape[1])], dim=1)
-        out['label'] = label
-        out['loss'] = loss
-        return out
+        return {**copy.deepcopy(data_dict), **metrics, 'loss': loss}
 
     def on_validation_epoch_end(self):
-        # labels = torch.cat([out['label'] for i, out in enumerate(self.validation_outputs)], dim=0)
-        # prediction = torch.cat([out['prediction'] for i, out in enumerate(self.validation_outputs)], dim=0)
         if self.survival_prediction_mode == 'classification':
             self.log('validation_accuracy_epoch', self.validation_accuracy, on_step=False, on_epoch=True,
                      sync_dist=True, prog_bar=True)
@@ -185,44 +168,57 @@ class MixModel(LightningModule):
                      prog_bar=False)
             # self.log('validation_r2_epoch', self.validation_r2, on_step=False, on_epoch=True,
             #          sync_dist=True, prog_bar=False)
-        self.validation_outputs.clear()
 
     def test_step(self, batch, batch_idx):
-        data_dict, label = batch if 'censor_label' not in self.config['DATA'].keys() else batch[:2]
+        data_dict, label = batch[:2] if 'censor_label' in self.config['DATA'] else batch
         prediction = self.forward(data_dict)
-        survival_prediction = prediction[:, 0]
-        survival_label = label[:, 0]
-        prediction_final = self.activations[0](survival_prediction.detach())
-        loss = self.loss_weights[0] * self.loss_fcns[0](prediction[:, 0], label[:, 0])
-        for i in range(1, label.shape[1]):
-            loss += self.loss_weights[i] * self.loss_fcns[i](prediction[:, i], label[:, i])
-        out = {}
-        MAE = torch.abs(prediction_final - survival_label)
-        out['MAE'] = MAE
-        out = copy.deepcopy(data_dict)
-        out['prediction'] = torch.concat(
-            [self.activations[i](prediction[:, i])[:, None] for i in range(label.shape[1])], dim=1)
-        out['label'] = label
-        out['loss'] = loss
-        return out
-
-    def weights_init(self, m):
-        if isinstance(m, nn.Conv3d) or isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-            nn.init.xavier_uniform_(m.weight.data)
-
-    def weights_reset(self, m):
-        if isinstance(m, nn.Conv3d) or isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-            m.reset_parameters()
-            
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.config['MODEL']['learning_rate'])
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.config['MODEL']['lr_step_size'],
-                                                    gamma=self.config['MODEL']['lr_gamma'])
-        return [optimizer], [scheduler]
+        loss, metrics = self.compute_loss_and_metrics(prediction, label, self.survival_prediction_mode, stage='test')
+        return {**copy.deepcopy(data_dict), **metrics, 'loss': loss}
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         data_dict = batch[0]
         prediction = self.forward(data_dict)
-        prediction_final = torch.concat(
+        prediction_final = torch.cat(
             [self.activations[i](prediction[:, i])[:, None] for i in range(prediction.shape[1])], dim=1)
         return prediction_final, *batch[1:]
+
+    def weights_init(self, m):
+        if isinstance(m, (nn.Conv3d, nn.Conv2d, nn.Linear)):
+            nn.init.xavier_uniform_(m.weight.data)
+
+    def weights_reset(self, m):
+        if isinstance(m, (nn.Conv3d, nn.Conv2d, nn.Linear)):
+            m.reset_parameters()
+            
+    def configure_optimizers(self):
+        def lr_lambda(epoch):
+            warmup_epochs = self.config['MODEL']['lr_warmup_epochs']
+            return (epoch + 1) / (warmup_epochs + 1) if epoch < warmup_epochs else 1.0
+
+        opt_cls = getattr(torch.optim, self.config['MODEL']['optimizer'], torch.optim.Adam)
+        optimizer = opt_cls(self.parameters(), lr=self.config['MODEL']['learning_rate'])
+        #     optimizer = eval(f'torch.optim.{self.config["MODEL"]["optimizer"]}')
+        #     optimizer = optimizer(self.parameters(), lr=self.config['MODEL']['learning_rate'])
+        # else:
+        #     optimizer = torch.optim.Adam(self.parameters(), lr=self.config['MODEL']['learning_rate'])
+
+        warmup_scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
+        decay_scheduler = StepLR(optimizer, step_size=self.config['MODEL']['lr_step_size'],
+                                 gamma=self.config['MODEL']['lr_gamma'])
+        scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, decay_scheduler],
+                                 milestones=[self.config['MODEL']['lr_warmup_epochs']])
+        return {'optimizer': optimizer,
+                'lr_scheduler': {'scheduler': scheduler, 'interval': 'epoch', 'frequency': 1}}
+
+
+    # def configure_optimizers(self):
+    #     if 'optimizer' in self.config['MODEL']:
+    #         optimizer = eval(f'torch.optim.{self.config["MODEL"]["optimizer"]}')
+    #         optimizer = optimizer(self.parameters(), lr=self.config['MODEL']['learning_rate'])
+    #     else:
+    #         optimizer = torch.optim.Adam(self.parameters(), lr=self.config['MODEL']['learning_rate'])
+    #     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.config['MODEL']['lr_step_size'],
+    #                                                 gamma=self.config['MODEL']['lr_gamma'])
+    #     return [optimizer], [scheduler]
+
+

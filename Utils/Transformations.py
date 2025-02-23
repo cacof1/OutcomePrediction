@@ -1,5 +1,6 @@
 # from cuml.preprocessing import StandardScaler
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from monai.transforms import EnsureChannelFirstd
 import numpy as np
 import monai
 import torchvision
@@ -77,6 +78,65 @@ def transform_pipeline_old(config):
             if not config['DATA']['crop_foreground']:
                 del train_transform[-7]  # remove crop foreground
                 del val_transform[-3]  # remove crop foreground
+
+        train_transform = torchvision.transforms.Compose(train_transform)
+        val_transform = torchvision.transforms.Compose(val_transform)
+    else:
+        train_transform = None
+        val_transform = None
+
+    return train_transform, val_transform
+
+
+def transform_pipeline(config, rd=None):
+    img_keys = [k for k in config['MODALITY'].keys() if config['MODALITY'][k]]
+    records_keys = ['records'] if config['RECORDS']['records'] else []
+
+    if len(records_keys) > 0 or len(img_keys) > 0:
+        train_transform = []
+        val_transform = []
+
+        if len(records_keys) > 0:
+            if 'continuous_cols' not in config['DATA'].keys():
+                non_continuous = [config['DATA']['target'], config['DATA']['censor_label'],
+                                  config['DATA']['subject_label']]
+                config['DATA']['continuous_cols'] = [col for col in config['DATA']['clinical_cols']
+                                                     if col not in non_continuous]
+            train_transform += [
+                StandardScalerd(keys=records_keys, continuous_variables=config['DATA']['continuous_cols']),]
+            val_transform += [
+                StandardScalerd(keys=records_keys, continuous_variables=config['DATA']['continuous_cols']),]
+
+        if len(img_keys) > 0:
+            reduced_keys = list(set(img_keys).difference(set(['RTDOSE'])))
+            reduced_keys = reduced_keys if len(reduced_keys) > 0 else ['dummy']
+            condition = (('RTSTRUCT' not in config['MODALITY'].keys()) or (not config['MODALITY']['RTSTRUCT']) and
+                         (config['MODALITY']['CT']) and ('CT' in config['MODALITY'].keys()))
+            train_transform = [
+                EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
+                # monai.transforms.Spacingd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, pixdim=[3, 3, 9]),
+                # monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
+                # monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
+                #                                       spatial_size=config['DATA']['dim']),
+                monai.transforms.RandAffined(keys=img_keys, allow_missing_keys=True),
+                monai.transforms.RandHistogramShiftd(keys=reduced_keys, allow_missing_keys=True),
+                monai.transforms.RandAdjustContrastd(keys=reduced_keys, allow_missing_keys=True),
+                monai.transforms.RandGaussianNoised(keys=reduced_keys, allow_missing_keys=True),
+                monai.transforms.ScaleIntensityd(keys=reduced_keys, allow_missing_keys=True),
+            ]
+
+            val_transform = [
+                EnsureChannelFirstd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys),
+                # monai.transforms.Spacingd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, pixdim=[3, 3, 9]),
+                # monai.transforms.Orientationd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys, axcodes="LPS"),
+                # monai.transforms.ResizeWithPadOrCropd(keys=img_keys + ['RTSTRUCT'] if condition else img_keys,
+                #                                       spatial_size=config['DATA']['dim']),
+                monai.transforms.ScaleIntensityd(keys=reduced_keys, allow_missing_keys=True)
+            ]
+
+        if rd is not None:
+            for j in [1, 2, 3, 4]:
+                train_transform[j].set_random_state(seed=rd)
 
         train_transform = torchvision.transforms.Compose(train_transform)
         val_transform = torchvision.transforms.Compose(val_transform)

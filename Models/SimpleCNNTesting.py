@@ -22,28 +22,26 @@ class SimpleCNN(pl.LightningModule):
 
         # Define the CNN as a Sequential block
         self.cnn = nn.Sequential(
-            nn.Conv3d(1, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv3d(config['DATA']['n_channel'], 16, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool3d(kernel_size=2, stride=2),
+
+            nn.Conv3d(16, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             nn.MaxPool3d(kernel_size=2, stride=2),
 
             nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             nn.MaxPool3d(kernel_size=2, stride=2),
-
-            nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.MaxPool3d(kernel_size=2, stride=2),
-
         )
 
         # Define the feed-forward block as a Sequential block
         self.feed_forward = nn.Sequential(
-            nn.Linear(128 * (config['DATA']['dim'][0] // 32) *
-                      (config['DATA']['dim'][1] // 32) *
-                      (config['DATA']['dim'][2] // 32), 32),
+            nn.Linear(256 * (config['DATA']['dim'][0] // 64 + 1) *
+                      (config['DATA']['dim'][1] // 64 + 1) *
+                      (config['DATA']['dim'][2] // 32), config['MODEL']['classifier_in']),
             nn.ReLU(),
-            self.dropout,
-            nn.Linear(32, config['DATA']['n_classes'])
+            self.dropout
         )
 
     def forward(self, x):
@@ -58,11 +56,12 @@ class SimpleCNN(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self.forward(x)
-        loss = F.cross_entropy(y_hat, y)
-        self.log('train_loss', loss)
-        return loss
+        # x, y = batch
+        # y_hat = self.forward(x)
+        # loss = F.cross_entropy(y_hat, y)
+        # self.log('train_loss', loss)
+        # return loss
+        return
 
     def validation_step(self, batch, batch_idx):
         x, y = batch

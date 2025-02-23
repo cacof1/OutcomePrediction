@@ -9,6 +9,13 @@ def CrossEntropy(output, target):
     return torch.mean(loss)
 
 
+def MaskedMSELoss(y_pred, y_true):
+    """MSE loss that ignores missing values (NaNs) in the target."""
+    mask = ~torch.isnan(y_true)  # Mask where targets are not NaN
+    loss = (y_pred[mask] - y_true[mask]) ** 2
+    return loss.mean() if mask.any() else torch.tensor(0.0, device=y_pred.device)
+
+
 def SoftDiceLoss(output, target):
     """
    Reference: Milletari, F., Navab, N., & Ahmadi, S. (2016). V-Net: Fully Convolutional Neural Networks for Volumetric                                                                                                            
