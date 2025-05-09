@@ -210,6 +210,28 @@ class DataModule(LightningDataModule):
         val_list, test_list = train_test_split(val_test_list, train_size=0.5, random_state=rd)  ## 0.15/0.15
         return train_list, val_list, test_list
 
+    def get_train_val_test(self, config, rd, train_size, subject_list):
+        if config['RUN']['cross_validation']:
+            train_list, val_list, test_list = self._cv_(
+                subject_list, train_size, config['RUN']['cv_k'], config['RUN']['cv_fold'], rd)
+        else:
+            train_list, val_list, test_list = self._random_split_(
+                subject_list, train_size, rd)
+        return train_list, val_list, test_list
+
+    def _cv_(self, subject_list, train_size, k, fold, rd):
+        train_list, val_list, test_list = self._random_split_(subject_list, train_size, rd)
+        full_train = pd.concat([train_list, val_list], axis=0)
+        k_splitter = KFold(k, shuffle=True, random_state=rd)
+        k_folds = list(k_splitter.split(full_train))
+        return full_train.iloc[k_folds[fold][0]], full_train.iloc[k_folds[fold][1]], test_list
+
+    @staticmethod
+    def _random_split_(subject_list, train_size, rd):
+        train_list, val_test_list = train_test_split(subject_list, train_size=train_size, random_state=rd)  ## 0.7/0.3
+        val_list, test_list = train_test_split(val_test_list, train_size=0.5, random_state=rd)  ## 0.15/0.15
+        return train_list, val_list, test_list
+
     @staticmethod
     def transform_fit(transform, data_list, config):
         if transform is None:
